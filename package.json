@@ -1,0 +1,28 @@
+{
+  "name": "fluyo-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for Fluyo — genera, edita y exporta diagramas animados de arquitectura desde Claude.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "fluyo-mcp": "dist/index.js"
+  },
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "tsc -p tsconfig.json --watch",
+    "smoke-test": "tsc -p tsconfig.test.json && node dist-test/scripts/smoke-test.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "5.6.3"
+  }
+}

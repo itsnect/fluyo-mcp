@@ -1,0 +1,102 @@
+{
+  "version": 3,
+  "app": "fluyo",
+  "doc": {
+    "theme": "dark",
+    "pages": [
+      {
+        "name": "Kafka Consumer Pipeline",
+        "nodes": [
+          {
+            "id": 1,
+            "shape": "icon",
+            "x": 200,
+            "y": 720,
+            "w": 120,
+            "h": 92,
+            "label": "Tópico Kafka",
+            "color": "#d08b5b",
+            "pulse": false,
+            "order": 0,
+            "icon": "kafka",
+            "fs": null
+          },
+          {
+            "id": 2,
+            "shape": "rect",
+            "x": 460,
+            "y": 720,
+            "w": 180,
+            "h": 70,
+            "label": "Kafka Consumer",
+            "color": "#6a9fb5",
+            "pulse": true,
+            "order": 1,
+            "fs": null
+          },
+          {
+            "id": 3,
+            "shape": "icon",
+            "x": 720,
+            "y": 720,
+            "w": 120,
+            "h": 92,
+            "label": "Base de Datos",
+            "color": "#7fa66b",
+            "pulse": false,
+            "order": 2,
+            "icon": "db",
+            "fs": null
+          }
+        ],
+        "edges": [
+          {
+            "id": 4,
+            "from": 1,
+            "to": 2,
+            "fromSide": null,
+            "toSide": null,
+            "route": "ortho",
+            "waypoints": [],
+            "label": "consume",
+            "animated": true,
+            "dashed": false,
+            "startArrow": false,
+            "endArrow": true,
+            "flowDir": "normal",
+            "lineColor": null,
+            "dotColor": null,
+            "fs": null
+          },
+          {
+            "id": 5,
+            "from": 2,
+            "to": 3,
+            "fromSide": null,
+            "toSide": null,
+            "route": "ortho",
+            "waypoints": [],
+            "label": "escribe",
+            "animated": true,
+            "dashed": false,
+            "startArrow": false,
+            "endArrow": true,
+            "flowDir": "normal",
+            "lineColor": null,
+            "dotColor": null,
+            "fs": null
+          }
+        ],
+        "nextId": 6
+      }
+    ],
+    "cur": 0
+  },
+  "settings": {
+    "speed": 0.5,
+    "dots": 3,
+    "build": false,
+    "stagger": 0.45,
+    "grid": true
+  }
+}
