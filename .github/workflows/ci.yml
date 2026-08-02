@@ -1,0 +1,90 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  # Compila y testea SIN Fluyo al lado, que es la situación de cualquiera que
+  # clone solo este repo. Si esto se rompe, es que el build empezó a depender de
+  # tener el otro repositorio, y eso no puede pasar.
+  build-and-test:
+    name: Build y tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # 22.18+ ejecuta los scripts .ts directamente, sin paso de compilación.
+          node-version: "22"
+          cache: npm
+
+      - run: npm ci
+
+      - name: Compilar
+        run: npm run build
+
+      - name: Tests (contrato, tools y renderer)
+        run: npm test
+
+      # El aviso va por stderr (es un warning), de ahí el 2>&1.
+      - name: check:config sin fluyo/ debe avisar, no fallar
+        run: |
+          salida="$(npm run --silent check:config 2>&1)"
+          echo "$salida"
+          case "$salida" in
+            *omitido*) echo "OK: sale con aviso cuando no encuentra Fluyo." ;;
+            *) echo "::error::check:config debería omitirse con un aviso cuando falta fluyo/."; exit 1 ;;
+          esac
+
+  # El chequeo de verdad: con los dos repos al lado, ¿siguen sincronizados?
+  # Si este job se pone rojo, Fluyo cambió y este servidor todavía no se ha
+  # enterado. Es exactamente la señal que faltaba cuando se abrió el drift.
+  drift:
+    name: Sincronía con fluyo/
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clonar fluyo-mcp
+        uses: actions/checkout@v4
+        with:
+          path: fluyo-mcp
+
+      - name: Clonar fluyo
+        uses: actions/checkout@v4
+        with:
+          repository: itsnect/fluyo
+          path: fluyo
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: fluyo-mcp/package-lock.json
+
+      - run: npm ci
+        working-directory: fluyo-mcp
+
+      - name: Las constantes generadas coinciden con fluyo/js/config.js
+        working-directory: fluyo-mcp
+        run: npm run check:config
+
+      - name: Las fixtures coinciden con los ejemplos publicados
+        working-directory: fluyo-mcp
+        run: |
+          npm run --silent sync:fixtures
+          if ! git diff --quiet -- test/fixtures; then
+            echo "::error::Los ejemplos de fluyo/ cambiaron y test/fixtures está desactualizado."
+            echo "Ejecuta 'npm run sync:fixtures', revisa el diff y commitea."
+            git diff --stat -- test/fixtures
+            exit 1
+          fi
+          echo "OK: las fixtures están al día."
+
+      - name: El contrato se cumple contra los ejemplos recién sincronizados
+        working-directory: fluyo-mcp
+        run: npm test
