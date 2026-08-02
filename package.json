@@ -1,13 +1,35 @@
 {
   "name": "fluyo-mcp",
-  "version": "0.1.0",
-  "description": "MCP server for Fluyo — genera, edita y exporta diagramas animados de arquitectura desde Claude.",
+  "version": "1.0.0",
+  "description": "Servidor MCP para Fluyo: crea, edita y exporta diagramas de arquitectura animados en formato .fluyo.json desde un asistente de IA.",
   "type": "module",
   "license": "MIT",
+  "author": "itsnect",
+  "homepage": "https://fluyo.space",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/itsnect/fluyo-mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/itsnect/fluyo-mcp/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "fluyo",
+    "diagram",
+    "architecture-diagram",
+    "svg",
+    "claude",
+    "ai"
+  ],
   "bin": {
     "fluyo-mcp": "dist/index.js"
   },
   "main": "dist/index.js",
+  "engines": {
+    "node": ">=22.18.0"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
@@ -16,10 +38,13 @@
     "check:config": "node scripts/sync-config.ts --check",
     "sync:fixtures": "node scripts/sync-fixtures.ts",
     "build:test": "tsc -p tsconfig.test.json",
-    "test": "npm run build:test && node --test \"dist-test/test/**/*.test.js\""
+    "test": "npm run build:test && node --test \"dist-test/test/**/*.test.js\"",
+    "prepublishOnly": "npm run build && npm test"
   },
   "files": [
-    "dist"
+    "dist",
+    "README.md",
+    "LICENSE"
   ],
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.29.0",

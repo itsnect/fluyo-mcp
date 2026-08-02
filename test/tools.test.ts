@@ -12,12 +12,15 @@
 
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 
 import {
   collectDiffs,
   documentOf,
   isToolError,
   loadFixture,
+  packageRoot,
   startHarness,
   summarizeDiffs,
   textBlocks,
@@ -42,6 +45,16 @@ const TOOLS_ESPERADAS = [
   "list_templates",
   "create_from_template",
 ];
+
+describe("identidad del servidor", () => {
+  /** La versión que anuncia el servidor en el handshake es la que ven los
+   *  directorios; si se desincroniza de package.json, reportan otra cosa. */
+  it("la versión del handshake coincide con la de package.json", () => {
+    const pkg = JSON.parse(readFileSync(join(packageRoot(), "package.json"), "utf8"));
+    assert.equal(h.client.getServerVersion()?.version, pkg.version);
+    assert.equal(h.client.getServerVersion()?.name, pkg.name);
+  });
+});
 
 describe("lo que ve un cliente en tools/list", () => {
   it("están las nueve tools", async () => {

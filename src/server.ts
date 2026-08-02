@@ -42,7 +42,8 @@ function summarize(project: ReturnType<typeof createDiagram>): string {
  *  index.ts para poder conectarlo tanto a stdio (uso real) como a un InMemoryTransport
  *  (los tests de test/) sin duplicar las definiciones de herramientas. */
 export function buildServer(): McpServer {
-  const server = new McpServer({ name: "fluyo-mcp", version: "0.1.0" });
+  // Debe coincidir con la versión de package.json; hay un test que lo comprueba.
+  const server = new McpServer({ name: "fluyo-mcp", version: "1.0.0" });
 
 /* ===================== create_diagram ===================== */
 
