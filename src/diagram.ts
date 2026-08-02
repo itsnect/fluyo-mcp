@@ -1,4 +1,4 @@
-import { CANVAS, DEFAULT_SIZES, ICONS, resolveColor } from "./schema.js";
+import { ANIMS, CANVAS, DEFAULT_SIZES, ICONS, resolveColor } from "./schema.js";
 import { layeredLayout } from "./layout.js";
 import {
   FluyoNode,
@@ -21,13 +21,32 @@ function assertValidIcon(shape: string, icon: string | undefined) {
   }
 }
 
-/** Construye un FluyoNode completo a partir de una especificación de alto nivel. */
+function assertValidAnim(shape: string, anim: string | undefined) {
+  if (shape === "anim") {
+    if (!anim) throw new Error("Los nodos con shape='anim' requieren el campo 'anim' (usa list_anims).");
+    if (!ANIMS[anim]) throw new Error(`GIF animado desconocido: "${anim}". Usa list_anims para ver las claves válidas.`);
+  }
+}
+
+/** Etiqueta por defecto según la forma, igual que `newNode()` en fluyo/js/state.js:
+ *  un rectángulo recién creado dice "Nodo" y un texto dice "Texto", mientras que los
+ *  iconos, imágenes y GIFs nacen sin etiqueta. */
+function defaultLabelFor(shape: string): string {
+  if (shape === "text") return "Texto";
+  if (shape === "icon" || shape === "image" || shape === "anim") return "";
+  return "Nodo";
+}
+
+/** Construye un FluyoNode completo a partir de una especificación de alto nivel.
+ *  Los campos de estilo solo se escriben si vienen: un nodo sin `fill` no debe
+ *  acabar con `fill: null`, porque eso ya es una decisión que nadie tomó. */
 export function buildNode(
   id: number,
   spec: Omit<NodeBuildSpec, "key">,
   fallbackOrder: number
 ): FluyoNode {
   assertValidIcon(spec.shape, spec.icon);
+  assertValidAnim(spec.shape, spec.anim);
   const [defW, defH] = DEFAULT_SIZES[spec.shape];
   return {
     id,
@@ -36,12 +55,21 @@ export function buildNode(
     y: spec.y ?? 0,
     w: spec.w ?? defW,
     h: spec.h ?? defH,
-    label: spec.label ?? "",
+    label: spec.label ?? defaultLabelFor(spec.shape),
     color: resolveColor(spec.color),
     pulse: spec.pulse ?? false,
     order: spec.order ?? fallbackOrder,
     icon: spec.shape === "icon" ? spec.icon : undefined,
+    anim: spec.shape === "anim" ? spec.anim : undefined,
     fs: spec.fs ?? null,
+    // 'none' es un valor legal de fill (forma hueca), no un color a resolver.
+    ...(spec.fill !== undefined ? { fill: spec.fill === "none" ? "none" : resolveColor(spec.fill) } : {}),
+    ...(spec.border !== undefined ? { border: spec.border } : {}),
+    ...(spec.lblPos !== undefined ? { lblPos: spec.lblPos } : {}),
+    ...(spec.textBg !== undefined ? { textBg: resolveColor(spec.textBg) } : {}),
+    ...(spec.textColor !== undefined ? { textColor: resolveColor(spec.textColor) } : {}),
+    ...(spec.font !== undefined ? { font: spec.font } : {}),
+    ...(spec.bold !== undefined ? { bold: spec.bold } : {}),
   };
 }
 
@@ -69,6 +97,11 @@ export function buildEdge(
     lineColor: spec.lineColor ? resolveColor(spec.lineColor) : null,
     dotColor: spec.dotColor ? resolveColor(spec.dotColor) : null,
     fs: spec.fs ?? null,
+    ...(spec.font !== undefined ? { font: spec.font } : {}),
+    ...(spec.bold !== undefined ? { bold: spec.bold } : {}),
+    ...(spec.speedFac !== undefined ? { speedFac: spec.speedFac } : {}),
+    ...(spec.dots !== undefined ? { dots: spec.dots, dotsGlobal: spec.dotsGlobal ?? false } : {}),
+    ...(spec.dots === undefined && spec.dotsGlobal !== undefined ? { dotsGlobal: spec.dotsGlobal } : {}),
   };
 }
 

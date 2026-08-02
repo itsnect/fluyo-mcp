@@ -1,83 +1,150 @@
 import { z } from "zod";
 
-/* ===================== Documento Fluyo (formato .fluyo.json) ===================== */
+import { SHAPE_NAMES, SIDES, THEME_NAMES } from "./generated/config.js";
 
-export const ShapeSchema = z.enum(["rect", "cylinder", "diamond", "circle", "hex", "text", "icon", "image"]);
-/** Formas que se pueden crear/editar vía MCP. Se excluye 'image': ese shape depende de
- *  datos binarios pegados a mano en la app (Ctrl+V / arrastrar archivo) y no tiene forma
- *  de recibirse por este canal de texto. Los documentos existentes con nodos 'image'
- *  igual se leen y editan sin problema vía FluyoNodeSchema (round-trip completo). */
-export const CreatableShapeSchema = z.enum(["rect", "cylinder", "diamond", "circle", "hex", "text", "icon"]);
-export const ThemeSchema = z.enum(["dark", "crema", "claro"]);
-export const SideSchema = z.enum(["n", "s", "e", "w"]);
+/* ═══════════════════════════════════════════════════════════════════════════
+   Documento Fluyo (formato .fluyo.json v3)
+
+   Dos reglas gobiernan este archivo:
+
+   1. LIBERAL AL LEER, ESTRICTO AL ESCRIBIR. Los schemas del *documento* aceptan
+      lo que la app produzca, sin adivinar qué valores son legales; los schemas de
+      *entrada* (lo que el modelo rellena) sí usan enums cerrados, que es donde la
+      restricción sirve de guía. Rechazar un documento real de un usuario porque
+      Fluyo estrenó un valor de borde sería el peor resultado posible.
+
+   2. TODO LLEVA .passthrough(). Los campos explícitos documentan la entrada y
+      permiten editarla; el passthrough es la red que evita que la próxima función
+      de Fluyo desaparezca en silencio del documento del usuario. Hacen falta los
+      dos: sin campos explícitos el modelo va a ciegas, y sin passthrough cualquier
+      campo nuevo se borra sin avisar. Eso último ya pasó — ver DRIFT.md §7.2.
+
+   Las listas de formas, temas y anclas salen de src/generated/config.ts, así que
+   una forma nueva en Fluyo queda aceptada aquí en cuanto se corre `sync:config`.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+export const ShapeSchema = z.enum(SHAPE_NAMES);
+export const ThemeSchema = z.enum(THEME_NAMES);
+export const SideSchema = z.enum(SIDES);
+
+/** Todas las formas menos `image`: ese shape lleva los bytes de la imagen dentro
+ *  (`img`, un data URI que se pega o se arrastra en la app) y no hay forma de
+ *  recibirlo por un canal de texto. Los documentos que ya tengan nodos `image` se
+ *  leen, editan y exportan con normalidad. */
+export const CreatableShapeSchema = ShapeSchema.exclude(["image"]);
+
 export const RouteSchema = z.enum(["straight", "ortho"]);
 export const FlowDirSchema = z.enum(["normal", "reverse", "alternate"]);
+export const BorderSchema = z.enum(["solid", "dashed", "dotted"]);
+export const LabelPosSchema = z.enum(["center", "top", "bottom", "left", "right"]);
 
-export const WaypointSchema = z.object({ x: z.number(), y: z.number() });
+export const WaypointSchema = z.object({ x: z.number(), y: z.number() }).passthrough();
 
-export const FluyoNodeSchema = z.object({
-  id: z.number(),
-  shape: ShapeSchema,
-  x: z.number(),
-  y: z.number(),
-  w: z.number(),
-  h: z.number(),
-  label: z.string().default(""),
-  color: z.string(),
-  pulse: z.boolean().default(false),
-  order: z.number().default(0),
-  icon: z.string().optional(),
-  img: z.string().optional(),
-  fs: z.number().nullable().optional(),
-});
+export const FluyoNodeSchema = z
+  .object({
+    id: z.number(),
+    shape: ShapeSchema,
+    x: z.number(),
+    y: z.number(),
+    w: z.number(),
+    h: z.number(),
+    label: z.string().default(""),
+    color: z.string(),
+    pulse: z.boolean().default(false),
+    order: z.number().default(0),
+    icon: z.string().optional(),
+    img: z.string().optional(),
+    /** Clave del GIF animado, solo en nodos `shape:"anim"`. */
+    anim: z.string().optional(),
+    fs: z.number().nullable().optional(),
 
-export const FluyoEdgeSchema = z.object({
-  id: z.number(),
-  from: z.number(),
-  to: z.number(),
-  fromSide: SideSchema.nullable().default(null),
-  toSide: SideSchema.nullable().default(null),
-  route: RouteSchema.default("straight"),
-  waypoints: z.array(WaypointSchema).default([]),
-  label: z.string().default(""),
-  animated: z.boolean().default(true),
-  dashed: z.boolean().default(false),
-  startArrow: z.boolean().default(false),
-  endArrow: z.boolean().default(true),
-  flowDir: FlowDirSchema.default("normal"),
-  lineColor: z.string().nullable().optional(),
-  dotColor: z.string().nullable().optional(),
-  fs: z.number().nullable().optional(),
-});
+    /* Estilo. Todos opcionales y sin `.default()` a propósito: si el documento no
+       los trae, el round-trip no debe inventarlos. */
+    fill: z.string().nullable().optional(),
+    border: z.string().optional(),
+    lblPos: z.string().optional(),
+    textBg: z.string().nullable().optional(),
+    textColor: z.string().nullable().optional(),
+    font: z.string().nullable().optional(),
+    bold: z.boolean().optional(),
+  })
+  .passthrough();
 
-export const FluyoPageSchema = z.object({
-  name: z.string(),
-  nodes: z.array(FluyoNodeSchema),
-  edges: z.array(FluyoEdgeSchema),
-  nextId: z.number(),
-});
+export const FluyoEdgeSchema = z
+  .object({
+    id: z.number(),
+    from: z.number(),
+    to: z.number(),
+    fromSide: SideSchema.nullable().default(null),
+    toSide: SideSchema.nullable().default(null),
+    route: RouteSchema.default("straight"),
+    waypoints: z.array(WaypointSchema).default([]),
+    label: z.string().default(""),
+    animated: z.boolean().default(true),
+    dashed: z.boolean().default(false),
+    startArrow: z.boolean().default(false),
+    endArrow: z.boolean().default(true),
+    flowDir: FlowDirSchema.default("normal"),
+    lineColor: z.string().nullable().optional(),
+    dotColor: z.string().nullable().optional(),
+    fs: z.number().nullable().optional(),
 
-export const FluyoDocSchema = z.object({
-  theme: ThemeSchema,
-  pages: z.array(FluyoPageSchema).min(1),
-  cur: z.number().default(0),
-});
+    /* Tipografía y animación por arista. Opcionales sin default, igual que arriba. */
+    font: z.string().nullable().optional(),
+    bold: z.boolean().optional(),
+    /** Multiplicador de velocidad de los puntos (1–4 en la app). */
+    speedFac: z.number().nullable().optional(),
+    /** Número de puntos propio; solo manda si `dotsGlobal` es false. */
+    dots: z.number().nullable().optional(),
+    dotsGlobal: z.boolean().optional(),
+  })
+  .passthrough();
 
-export const FluyoSettingsSchema = z.object({
-  speed: z.number().default(0.5),
-  dots: z.number().default(3),
-  build: z.boolean().default(false),
-  stagger: z.number().default(0.45),
-  grid: z.boolean().default(true),
-});
+export const FluyoPageSchema = z
+  .object({
+    name: z.string(),
+    nodes: z.array(FluyoNodeSchema),
+    edges: z.array(FluyoEdgeSchema),
+    nextId: z.number(),
+  })
+  .passthrough();
 
-/** Formato completo tal como lo produce/lee "Guardar" / "Abrir" en fluyo.html (serializeProject). */
-export const FluyoProjectSchema = z.object({
-  version: z.number().default(3),
-  app: z.literal("fluyo").default("fluyo"),
-  doc: FluyoDocSchema,
-  settings: FluyoSettingsSchema,
-});
+export const FluyoDocSchema = z
+  .object({
+    theme: ThemeSchema,
+    pages: z.array(FluyoPageSchema).min(1),
+    cur: z.number().default(0),
+    /** Color de fondo que sobrescribe el del tema. "" = usar el del tema. */
+    customBg: z.string().optional(),
+  })
+  .passthrough();
+
+export const FluyoSettingsSchema = z
+  .object({
+    speed: z.number().default(0.5),
+    dots: z.number().default(3),
+    build: z.boolean().default(false),
+    stagger: z.number().default(0.45),
+    grid: z.boolean().default(true),
+    /** Ajuste a rejilla al mover nodos. */
+    snap: z.boolean().optional(),
+    /** Tipografía global; los nodos con `font: null` la heredan. */
+    font: z.string().optional(),
+    /** Modo "pelota única por ruta" en vez de puntos por flecha. */
+    single: z.boolean().optional(),
+  })
+  .passthrough();
+
+/** Formato completo tal como lo produce/lee "Guardar" / "Abrir" en la app
+ *  (`serializeProject()` en fluyo/js/state.js). */
+export const FluyoProjectSchema = z
+  .object({
+    version: z.number().default(3),
+    app: z.literal("fluyo").default("fluyo"),
+    doc: FluyoDocSchema,
+    settings: FluyoSettingsSchema,
+  })
+  .passthrough();
 
 export type Shape = z.infer<typeof ShapeSchema>;
 export type CreatableShape = z.infer<typeof CreatableShapeSchema>;
@@ -89,14 +156,19 @@ export type FluyoPage = z.infer<typeof FluyoPageSchema>;
 export type FluyoDoc = z.infer<typeof FluyoDocSchema>;
 export type FluyoProject = z.infer<typeof FluyoProjectSchema>;
 
-/* ===================== Inputs de alto nivel para create_diagram ===================== */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Entradas de alto nivel — aquí sí, enums cerrados
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 const commonNodeFields = {
   key: z.string().describe("Identificador temporal usado solo dentro de esta llamada para que las aristas referencien este nodo (ej: 'gateway', 'kafka')."),
   shape: CreatableShapeSchema,
-  label: z.string().default(""),
-  color: z.string().optional().describe("Nombre semántico (Servicio, Eventos / Kafka, Datos, IA, Alerta, Externo, Config) o hex (#6a9fb5)."),
+  /** Sin default: si se omite, buildNode aplica el mismo que `newNode()` en la app
+   *  ("Nodo" en una forma, "Texto" en un texto, vacío en iconos y GIFs). */
+  label: z.string().optional(),
+  color: z.string().optional().describe("Nombre semántico (usa list_colors) o hex (#6a9fb5)."),
   icon: z.string().optional().describe("Solo si shape='icon'. Usa list_icons para ver claves válidas (kafka, gke, cloudsql, lambda, s3, azvm, etc)."),
+  anim: z.string().optional().describe("Solo si shape='anim'. Usa list_anims para ver claves válidas (spinner, progress, check, etc)."),
   x: z.number().optional().describe("Posición X manual. Si se omite junto con y, se calcula con auto-layout."),
   y: z.number().optional(),
   w: z.number().optional(),
@@ -104,6 +176,13 @@ const commonNodeFields = {
   pulse: z.boolean().optional().describe("Resalta el nodo con un pulso de brillo (útil para el componente central de un diagrama)."),
   order: z.number().optional().describe("Orden de aparición si se anima 'build' (0 = primero)."),
   fs: z.number().optional().describe("Tamaño de fuente manual del texto."),
+  fill: z.string().optional().describe("Relleno de la forma: hex, o 'none' para dejarla hueca. Por defecto, el color del nodo al 18% de opacidad."),
+  border: BorderSchema.optional().describe("Estilo del borde de la forma."),
+  lblPos: LabelPosSchema.optional().describe("Dónde va la etiqueta dentro de la forma."),
+  textBg: z.string().optional().describe("Color de una caja de fondo tras el texto (hex)."),
+  textColor: z.string().optional().describe("Color del texto. Por defecto lo decide el tema."),
+  font: z.string().optional().describe("Familia tipográfica. Usa list_fonts; si se omite, hereda la global."),
+  bold: z.boolean().optional(),
 };
 
 export const NodeSpecSchema = z.object(commonNodeFields);
@@ -127,6 +206,11 @@ const commonEdgeFields = {
   lineColor: z.string().optional(),
   dotColor: z.string().optional(),
   fs: z.number().optional(),
+  font: z.string().optional().describe("Familia tipográfica de la etiqueta. Usa list_fonts."),
+  bold: z.boolean().optional(),
+  speedFac: z.number().min(1).max(4).optional().describe("Multiplica la velocidad de los puntos de esta arista (1–4)."),
+  dots: z.number().int().min(1).max(6).optional().describe("Número de puntos propio de esta arista. Requiere dotsGlobal=false."),
+  dotsGlobal: z.boolean().optional().describe("Si es false, esta arista usa su propio 'dots' en vez del global."),
 };
 
 export const EdgeSpecSchema = z.object(commonEdgeFields);
@@ -148,6 +232,7 @@ const editNodeFields = {
   label: z.string().optional(),
   color: z.string().optional(),
   icon: z.string().optional(),
+  anim: z.string().optional(),
   x: z.number().optional(),
   y: z.number().optional(),
   w: z.number().optional(),
@@ -155,6 +240,13 @@ const editNodeFields = {
   pulse: z.boolean().optional(),
   order: z.number().optional(),
   fs: z.number().optional(),
+  fill: z.string().optional(),
+  border: BorderSchema.optional(),
+  lblPos: LabelPosSchema.optional(),
+  textBg: z.string().optional(),
+  textColor: z.string().optional(),
+  font: z.string().optional(),
+  bold: z.boolean().optional(),
 };
 
 const editEdgeFields = {
@@ -170,6 +262,11 @@ const editEdgeFields = {
   lineColor: z.string().optional(),
   dotColor: z.string().optional(),
   fs: z.number().optional(),
+  font: z.string().optional(),
+  bold: z.boolean().optional(),
+  speedFac: z.number().min(1).max(4).optional(),
+  dots: z.number().int().min(1).max(6).optional(),
+  dotsGlobal: z.boolean().optional(),
 };
 
 export const OperationSchema = z.discriminatedUnion("op", [
@@ -181,6 +278,6 @@ export const OperationSchema = z.discriminatedUnion("op", [
   z.object({ op: z.literal("remove_edge"), id: z.number() }),
   z.object({ op: z.literal("set_theme"), theme: ThemeSchema }),
   z.object({ op: z.literal("rename_page"), name: z.string() }),
-  z.object({ op: z.literal("relayout") }).describe("Recalcula x/y de todos los nodos de la página en capas, a partir de las aristas actuales."),
+  z.object({ op: z.literal("relayout") }).describe("Recalcula x/y de todos los nodos de la página en capas, a partir de las aristas actuales. Borra TODOS los waypoints manuales de la página: tras mover los nodos quedarían descolgados."),
 ]);
 export type Operation = z.infer<typeof OperationSchema>;
