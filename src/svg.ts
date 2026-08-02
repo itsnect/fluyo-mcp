@@ -1,7 +1,7 @@
-import { CANVAS, THEMES, ICONS, iconDataUri } from "./schema.js";
+import { CANVAS, DEFAULT_FONT, THEMES, animDataUri, iconDataUri } from "./schema.js";
 import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
 
-/* ===================== Geometría de aristas (subset de fluyo.html) ===================== */
+/* ===================== Geometría de aristas (port de fluyo/js/geometry.js) ===================== */
 
 interface Pt { x: number; y: number; }
 
@@ -31,7 +31,7 @@ function autoAnchor(n: FluyoNode, tx: number, ty: number): Pt {
   return { x: n.x + dx * s, y: n.y + dy * s };
 }
 
-function anchorPt(n: FluyoNode, side: "n" | "s" | "e" | "w" | null, tx: number, ty: number): Pt {
+function anchorPt(n: FluyoNode, side: "n" | "s" | "e" | "w" | null | undefined, tx: number, ty: number): Pt {
   return side ? sidePoint(n, side) : autoAnchor(n, tx, ty);
 }
 
@@ -93,15 +93,27 @@ function pointAtMid(pts: Pt[]): Pt {
   return pts[pts.length - 1];
 }
 
-/* ===================== Texto: heurística de ancho (sin DOM) ===================== */
+/* ═══════════════════════════════════════════════════════════════════════════
+   Texto: heurística de ancho — LIMITACIÓN CONOCIDA
+
+   La app mide el texto de verdad: crea un <text> en un <svg> oculto y le pide el
+   getBBox() al navegador (fluyo/js/export.js). Aquí no hay DOM, así que se estima
+   sumando anchos por carácter.
+
+   Consecuencia: cuando una etiqueta no cabe en su forma, el tamaño de fuente al
+   que se encoge puede diferir un poco del que elegiría la app, y el fondo de las
+   etiquetas de arista puede quedar unos píxeles ancho o estrecho. Las etiquetas
+   que caben —la mayoría— salen idénticas.
+
+   No se puede arreglar sin meter un motor de layout de texto o una cabeza de
+   navegador, que para este servidor es un precio desproporcionado. Si algún día
+   importa, el punto de extensión es inyectar el medidor en pageToSVG.
+   ═══════════════════════════════════════════════════════════════════════════ */
 
 const WIDE = new Set("MWmw@%&#GOQ".split(""));
 const NARROW = new Set("iIl1.,'|!;:tfrj".split(""));
 
-/** Ancho aproximado de texto en Georgia/serif. No es exacto (no hay DOM/canvas en el
- *  server), pero es suficiente para decidir cuándo achicar la fuente y para dimensionar
- *  el fondo de las etiquetas de arista. */
-export function approxTextWidth(text: string, fontSize: number): number {
+export function approxTextWidth(text: string, fontSize: number, bold = false): number {
   let units = 0;
   for (const ch of text) {
     if (ch === " ") units += 0.32;
@@ -110,16 +122,18 @@ export function approxTextWidth(text: string, fontSize: number): number {
     else if (/[A-Z]/.test(ch)) units += 0.68;
     else units += 0.52;
   }
-  return units * fontSize;
+  return units * fontSize * (bold ? 1.06 : 1);
 }
 
-function fitFontSize(lines: string[], baseFs: number, maxWidth: number, explicitFs?: number | null): number {
+function fitFontSize(lines: string[], baseFs: number, maxWidth: number, explicitFs?: number | null, bold = false): number {
   if (explicitFs) return explicitFs;
   let fs = baseFs;
-  const maxW = Math.max(...lines.map(l => approxTextWidth(l, fs)), 1);
+  const maxW = Math.max(...lines.map(l => approxTextWidth(l, fs, bold)), 1);
   if (maxW > maxWidth) fs = Math.max(10, (fs * maxWidth) / maxW);
   return fs;
 }
+
+/* ===================== Utilidades ===================== */
 
 function escapeXML(value: unknown): string {
   return String(value ?? "")
@@ -136,21 +150,66 @@ function svgFillColor(hex: string, theme: ThemeName): string {
   return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
 }
 
-function svgLabelLines(n: FluyoNode, theme: ThemeName, baseFs: number, cy: number): string {
+/** Relleno de la forma: `none` deja la caja hueca, un color explícito manda, y si
+ *  no hay nada se usa el color del nodo al 18 % — igual que `fillFor()` en la app. */
+function svgNodeFill(n: FluyoNode, theme: ThemeName): string {
+  if (n.fill === "none") return "none";
+  if (n.fill) return escapeXML(n.fill);
+  return svgFillColor(n.color, theme);
+}
+
+function svgDash(n: FluyoNode): string {
+  if (n.border === "dashed") return ' stroke-dasharray="9 7"';
+  if (n.border === "dotted") return ' stroke-dasharray="2 5"';
+  return "";
+}
+
+/* ===================== Etiquetas ===================== */
+
+/** Port de `svgLabelLines()` de fluyo/js/export.js: respeta lblPos, textBg,
+ *  textColor, font y bold. */
+function svgLabelLines(n: FluyoNode, theme: ThemeName, baseFs: number, cy: number, globalFont: string): string {
   if (!n.label) return "";
   const T = THEMES[theme];
   const lines = String(n.label).split("\n");
-  const fs = fitFontSize(lines, baseFs, n.w - 18, n.fs ?? undefined);
+  const family = n.font || globalFont || DEFAULT_FONT;
+  const bold = !!n.bold;
+  const fs = fitFontSize(lines, baseFs, n.w - 18, n.fs, bold);
   const lh = fs * 1.25;
-  const oy = cy - ((lines.length - 1) * lh) / 2;
-  const fill = n.shape === "text" ? n.color : T.text;
-  const clipId = `clip-label-${n.id}`;
-  const parts = [
-    `<clipPath id="${clipId}"><rect x="${(n.x - n.w / 2 + 2).toFixed(2)}" y="${(oy - fs * 0.6).toFixed(2)}" width="${(n.w - 4).toFixed(2)}" height="${(lines.length * lh).toFixed(2)}"/></clipPath>`,
-  ];
+  const pos = n.lblPos || "center";
+  const inset = Math.min(14, n.w * 0.12, n.h * 0.18);
+
+  let baseY: number;
+  if (pos === "top") baseY = n.y - n.h / 2 + inset + fs * 0.7;
+  else if (pos === "bottom") baseY = n.y + n.h / 2 - inset - (lines.length - 1) * lh - fs * 0.1;
+  else baseY = cy - ((lines.length - 1) * lh) / 2;
+
+  let anchor = "middle";
+  let tx = n.x;
+  if (pos === "left") { anchor = "start"; tx = n.x - n.w / 2 + inset; }
+  else if (pos === "right") { anchor = "end"; tx = n.x + n.w / 2 - inset; }
+
+  // En un texto suelto o un GIF manda el color del nodo; dentro de una caja, el del tema.
+  const fill = n.textColor || (n.shape === "text" || n.shape === "anim" ? n.color : T.text);
+
+  const parts: string[] = [];
+  if (n.textBg) {
+    const maxW = Math.max(...lines.map(l => approxTextWidth(l, fs, bold)), 1);
+    const padX = 10, padY = 6;
+    const bw = maxW + padX * 2, bh = lines.length * lh + padY * 2;
+    let bx: number;
+    if (anchor === "start") bx = tx - padX;
+    else if (anchor === "end") bx = tx - bw + padX;
+    else bx = tx - bw / 2;
+    const by = baseY - fs * 0.7 - padY;
+    parts.push(
+      `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" rx="8" ry="8" fill="${escapeXML(n.textBg)}"/>`
+    );
+  }
+  const weight = bold ? ' font-weight="bold"' : "";
   lines.forEach((l, i) => {
     parts.push(
-      `<text x="${n.x}" y="${(oy + i * lh).toFixed(2)}" font-family="Georgia, serif" font-size="${fs.toFixed(1)}" fill="${fill}" text-anchor="middle" dominant-baseline="middle" clip-path="url(#${clipId})">${escapeXML(l)}</text>`
+      `<text x="${tx.toFixed(2)}" y="${(baseY + i * lh).toFixed(2)}" font-family="${escapeXML(family)}" font-size="${fs.toFixed(1)}"${weight} fill="${escapeXML(fill)}" text-anchor="${anchor}" dominant-baseline="middle">${escapeXML(l)}</text>`
     );
   });
   return parts.join("\n");
@@ -164,72 +223,105 @@ function hexPointsSVG(n: FluyoNode): string {
   ].map(p => p.map(v => v.toFixed(2)).join(",")).join(" ");
 }
 
-function renderNodeToSVG(n: FluyoNode, theme: ThemeName): string {
-  const fill = svgFillColor(n.color, theme), stroke = n.color;
+/* ===================== Nodos ===================== */
+
+function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): string {
+  const fill = svgNodeFill(n, theme);
+  const stroke = escapeXML(n.color);
+  const dash = svgDash(n);
   const parts: string[] = [`<g id="node-${n.id}">`];
+
   switch (n.shape) {
     case "circle":
-      parts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${(n.w / 2).toFixed(2)}" ry="${(n.h / 2).toFixed(2)}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y));
+      parts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${(n.w / 2).toFixed(2)}" ry="${(n.h / 2).toFixed(2)}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
+      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
       break;
+
     case "diamond":
-      parts.push(`<polygon points="${n.x},${(n.y - n.h / 2).toFixed(2)} ${(n.x + n.w / 2).toFixed(2)},${n.y} ${n.x},${(n.y + n.h / 2).toFixed(2)} ${(n.x - n.w / 2).toFixed(2)},${n.y}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y));
+      parts.push(`<polygon points="${n.x},${(n.y - n.h / 2).toFixed(2)} ${(n.x + n.w / 2).toFixed(2)},${n.y} ${n.x},${(n.y + n.h / 2).toFixed(2)} ${(n.x - n.w / 2).toFixed(2)},${n.y}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
+      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
       break;
+
     case "hex":
-      parts.push(`<polygon points="${hexPointsSVG(n)}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y));
+      parts.push(`<polygon points="${hexPointsSVG(n)}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
+      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
       break;
+
     case "cylinder": {
       const { x, y, w, h } = n, ry = Math.min(16, h * 0.18), top = y - h / 2, bot = y + h / 2;
       const d = `M ${(x - w / 2).toFixed(2)} ${(top + ry).toFixed(2)} L ${(x - w / 2).toFixed(2)} ${(bot - ry).toFixed(2)} C ${(x - w / 2).toFixed(2)} ${(bot + ry * 0.8).toFixed(2)} ${(x + w / 2).toFixed(2)} ${(bot + ry * 0.8).toFixed(2)} ${(x + w / 2).toFixed(2)} ${(bot - ry).toFixed(2)} L ${(x + w / 2).toFixed(2)} ${(top + ry).toFixed(2)} C ${(x + w / 2).toFixed(2)} ${(top - ry * 0.8).toFixed(2)} ${(x - w / 2).toFixed(2)} ${(top - ry * 0.8).toFixed(2)} ${(x - w / 2).toFixed(2)} ${(top + ry).toFixed(2)} Z`;
-      parts.push(`<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/>`);
+      parts.push(`<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
       parts.push(`<ellipse cx="${x}" cy="${(top + ry).toFixed(2)}" rx="${(w / 2).toFixed(2)}" ry="${ry.toFixed(2)}" fill="none" stroke="${stroke}" stroke-width="2.5"/>`);
-      parts.push(svgLabelLines(n, theme, 17, y + 6));
+      parts.push(svgLabelLines(n, theme, 17, y + 6, globalFont));
       break;
     }
+
     case "text":
-      parts.push(svgLabelLines(n, theme, 22, n.y));
+      parts.push(svgLabelLines(n, theme, 22, n.y, globalFont));
       break;
+
+    case "anim": {
+      // El GIF se anima por fotograma en el lienzo; en un SVG estático va su vista
+      // previa, exactamente como hace el exportador de la app.
+      const src = n.anim ? animDataUri(n.anim) : "";
+      const s = Math.max(10, Math.min(n.w, n.h - (n.label ? 26 : 8)));
+      if (src) {
+        const ix = n.x - s / 2;
+        const iy = n.y - (n.label ? 8 : 0) - s / 2;
+        parts.push(`<image x="${ix.toFixed(2)}" y="${iy.toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}" href="${src}" preserveAspectRatio="xMidYMid meet"/>`);
+      }
+      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 - 8, globalFont));
+      break;
+    }
+
     case "icon": {
       const src = n.icon ? iconDataUri(n.icon) : "";
       const s = Math.min(n.w, n.h - 26) * 0.78;
       if (src) parts.push(`<image x="${(n.x - s / 2).toFixed(2)}" y="${(n.y - n.h / 2 + 4).toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}" href="${src}" preserveAspectRatio="xMidYMid meet"/>`);
-      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 - 10));
+      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 - 10, globalFont));
       break;
     }
+
     case "image":
-      if (n.img) parts.push(`<image x="${(n.x - n.w / 2).toFixed(2)}" y="${(n.y - n.h / 2).toFixed(2)}" width="${n.w}" height="${n.h}" href="${n.img}" preserveAspectRatio="xMidYMid meet"/>`);
-      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 + 14));
+      if (n.img) parts.push(`<image x="${(n.x - n.w / 2).toFixed(2)}" y="${(n.y - n.h / 2).toFixed(2)}" width="${n.w}" height="${n.h}" href="${escapeXML(n.img)}" preserveAspectRatio="xMidYMid meet"/>`);
+      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 + 14, globalFont));
       break;
+
     default:
-      parts.push(`<rect x="${(n.x - n.w / 2).toFixed(2)}" y="${(n.y - n.h / 2).toFixed(2)}" width="${n.w}" height="${n.h}" rx="10" ry="10" fill="${fill}" stroke="${stroke}" stroke-width="2.5"/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y));
+      parts.push(`<rect x="${(n.x - n.w / 2).toFixed(2)}" y="${(n.y - n.h / 2).toFixed(2)}" width="${n.w}" height="${n.h}" rx="10" ry="10" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
+      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
   }
+
   parts.push("</g>");
   return parts.filter(Boolean).join("\n");
 }
 
-function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>): string {
+/* ===================== Aristas ===================== */
+
+function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, globalFont: string): string {
   const A = nodeById.get(e.from), B = nodeById.get(e.to);
   if (!A || !B) return "";
   const pts = edgePoints(e, nodeById);
   if (pts.length < 2) return "";
   const T = THEMES[theme];
-  const lineCol = e.lineColor || T.edge;
+  const lineCol = escapeXML(e.lineColor || T.edge);
   const dash = e.dashed ? ' stroke-dasharray="8 7"' : "";
   let markers = "";
   if (e.endArrow !== false) markers += ' marker-end="url(#fluyo-arrow-end)"';
   if (e.startArrow) markers += ' marker-start="url(#fluyo-arrow-start)"';
   const ptsStr = pts.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
   const parts = [`<polyline points="${ptsStr}" fill="none" stroke="${lineCol}" stroke-width="2" stroke-linejoin="round"${dash}${markers}/>`];
+
   if (e.label) {
     const m = pointAtMid(pts);
     const efs = e.fs || 13;
-    const tw = approxTextWidth(e.label, efs);
+    const family = e.font || globalFont || DEFAULT_FONT;
+    const bold = !!e.bold;
+    const tw = approxTextWidth(e.label, efs, bold);
     const rx = (m.x - tw / 2 - 6).toFixed(2), ry = (m.y - efs * 0.85).toFixed(2);
-    parts.push(`<rect x="${rx}" y="${ry}" width="${(tw + 12).toFixed(2)}" height="${(efs * 1.7).toFixed(2)}" fill="${T.lblBg}"/>`);
-    parts.push(`<text x="${m.x.toFixed(2)}" y="${m.y.toFixed(2)}" font-family="Georgia, serif" font-size="${efs}" fill="${T.edgeLbl}" text-anchor="middle" dominant-baseline="middle">${escapeXML(e.label)}</text>`);
+    const weight = bold ? ' font-weight="bold"' : "";
+    parts.push(`<rect x="${rx}" y="${ry}" width="${(tw + 12).toFixed(2)}" height="${(efs * 1.7).toFixed(2)}" fill="${escapeXML(T.lblBg)}"/>`);
+    parts.push(`<text x="${m.x.toFixed(2)}" y="${m.y.toFixed(2)}" font-family="${escapeXML(family)}" font-size="${efs}"${weight} fill="${escapeXML(T.edgeLbl)}" text-anchor="middle" dominant-baseline="middle">${escapeXML(e.label)}</text>`);
   }
   return parts.join("\n");
 }
@@ -245,6 +337,7 @@ function buildDefs(): string {
 </defs>`;
 }
 
+/** Caja que envuelve el contenido, con 40 px de aire. Port de `getBounds()`. */
 function pageBounds(page: FluyoPage, nodeById: Map<number, FluyoNode>) {
   if (!page.nodes.length) return { x: 0, y: 0, w: CANVAS.W, h: CANVAS.H };
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -255,25 +348,57 @@ function pageBounds(page: FluyoPage, nodeById: Map<number, FluyoNode>) {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
+export interface PageToSVGOptions {
+  /** Multiplica width/height del SVG resultante. El viewBox no cambia. */
+  scale?: number;
+  /** Tipografía global del documento (`settings.font`); los nodos con `font` propio la ignoran. */
+  globalFont?: string | null;
+  /**
+   * Recorta el lienzo al contenido en vez de emitir los 2560×1440 completos.
+   * NO es lo que hace "Exportar → SVG" en la app: por defecto va desactivado para
+   * que los dos exportadores produzcan el mismo archivo. Útil para incrustar el
+   * diagrama en un documento sin márgenes enormes.
+   */
+  crop?: boolean;
+}
+
 /**
- * Genera el SVG de una página Fluyo, replicando exactamente lo que produce
- * "Exportar -> SVG" dentro de la app (mismos colores, formas, íconos y estilos
- * de arista). El resultado es estático: no incluye los puntos animados ni el
- * "build" escalonado, igual que el exportador original.
+ * Genera el SVG de una página Fluyo replicando lo que produce "Exportar → SVG"
+ * dentro de la app (fluyo/js/export.js): mismo viewBox del lienzo completo, mismo
+ * fondo transparente, mismas formas, estilos de borde, rellenos, tipografías y
+ * posiciones de etiqueta.
+ *
+ * Diferencia conocida: la medición de texto es una heurística, no `getBBox()`.
+ * Ver el bloque de LIMITACIÓN CONOCIDA más arriba.
+ *
+ * Como el exportador de la app, el resultado es estático: sin puntos animados ni
+ * aparición escalonada.
  */
-export function pageToSVG(page: FluyoPage, theme: ThemeName, scale = 1): string {
+export function pageToSVG(
+  page: FluyoPage,
+  theme: ThemeName,
+  options: PageToSVGOptions = {}
+): string {
+  const { scale = 1, globalFont = null, crop = false } = options;
   const nodeById = new Map(page.nodes.map(n => [n.id, n] as const));
-  const bounds = pageBounds(page, nodeById);
-  const width = Math.round(bounds.w * scale);
-  const height = Math.round(bounds.h * scale);
+  const font = globalFont || DEFAULT_FONT;
+
+  const box = crop
+    ? pageBounds(page, nodeById)
+    : { x: 0, y: 0, w: CANVAS.W, h: CANVAS.H };
+
+  const width = Math.round(box.w * scale);
+  const height = Math.round(box.h * scale);
+  const viewBox = `${box.x.toFixed(2)} ${box.y.toFixed(2)} ${box.w.toFixed(2)} ${box.h.toFixed(2)}`;
+
   const parts = [
     '<?xml version="1.0" encoding="UTF-8"?>',
-    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="${bounds.x.toFixed(2)} ${bounds.y.toFixed(2)} ${bounds.w.toFixed(2)} ${bounds.h.toFixed(2)}">`,
-    `<rect x="${bounds.x.toFixed(2)}" y="${bounds.y.toFixed(2)}" width="${bounds.w.toFixed(2)}" height="${bounds.h.toFixed(2)}" fill="${THEMES[theme].bg}"/>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="${viewBox}">`,
     buildDefs(),
   ];
-  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById));
-  for (const n of page.nodes) parts.push(renderNodeToSVG(n, theme));
+  // Sin rectángulo de fondo: el SVG que exporta la app es transparente.
+  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, font));
+  for (const n of page.nodes) parts.push(renderNodeToSVG(n, theme, font));
   parts.push("</svg>");
   return parts.join("\n");
 }

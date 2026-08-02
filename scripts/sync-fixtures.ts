@@ -28,37 +28,54 @@ function packageRoot(): string {
 
 const ROOT = packageRoot();
 const FLUYO_PATH = resolve(ROOT, process.env.FLUYO_PATH ?? join("..", "fluyo"));
-const SRC_DIR = join(FLUYO_PATH, "ejemplos", "data");
-const DST_DIR = join(ROOT, "test", "fixtures");
 
-if (!existsSync(SRC_DIR)) {
-  console.error(
-    `✖  No se encontraron los ejemplos en ${SRC_DIR}.\n` +
-      `   Clona itsnect/fluyo junto a este repo, o define FLUYO_PATH.`
-  );
-  process.exit(1);
-}
+/** Los documentos alimentan el test de contrato; los previews son los SVG que
+ *  generó el exportador de la propia app y sirven de referencia al renderer. */
+const CONJUNTOS: Array<{ etiqueta: string; src: string; dst: string; ext: string }> = [
+  {
+    etiqueta: "documentos",
+    src: join(FLUYO_PATH, "ejemplos", "data"),
+    dst: join(ROOT, "test", "fixtures"),
+    ext: ".fluyo.json",
+  },
+  {
+    etiqueta: "previews SVG",
+    src: join(FLUYO_PATH, "ejemplos", "previews"),
+    dst: join(ROOT, "test", "fixtures", "previews"),
+    ext: ".svg",
+  },
+];
 
-const files = readdirSync(SRC_DIR).filter(f => f.endsWith(".fluyo.json")).sort();
-if (!files.length) {
-  console.error(`✖  ${SRC_DIR} no contiene ningún .fluyo.json.`);
-  process.exit(1);
-}
-
-mkdirSync(DST_DIR, { recursive: true });
+let total = 0;
 let cambiados = 0;
-for (const f of files) {
-  const src = join(SRC_DIR, f);
-  const dst = join(DST_DIR, f);
-  const antes = existsSync(dst) ? readFileSync(dst, "utf8") : null;
-  copyFileSync(src, dst);
-  const despues = readFileSync(dst, "utf8");
-  const estado = antes === null ? "nuevo" : antes === despues ? "sin cambios" : "actualizado";
-  if (estado !== "sin cambios") cambiados++;
-  console.log(`  ${estado.padEnd(12)} ${f}`);
+
+for (const { etiqueta, src, dst, ext } of CONJUNTOS) {
+  if (!existsSync(src)) {
+    console.error(
+      `✖  No se encontró ${src}.\n   Clona itsnect/fluyo junto a este repo, o define FLUYO_PATH.`
+    );
+    process.exit(1);
+  }
+  const files = readdirSync(src).filter(f => f.endsWith(ext)).sort();
+  if (!files.length) {
+    console.error(`✖  ${src} no contiene ningún ${ext}.`);
+    process.exit(1);
+  }
+
+  console.log(`\n${etiqueta} (${src}):`);
+  mkdirSync(dst, { recursive: true });
+  for (const f of files) {
+    const antes = existsSync(join(dst, f)) ? readFileSync(join(dst, f), "utf8") : null;
+    copyFileSync(join(src, f), join(dst, f));
+    const despues = readFileSync(join(dst, f), "utf8");
+    const estado = antes === null ? "nuevo" : antes === despues ? "sin cambios" : "actualizado";
+    if (estado !== "sin cambios") cambiados++;
+    total++;
+    console.log(`  ${estado.padEnd(12)} ${f}`);
+  }
 }
 
 console.log(
-  `\n✔  ${files.length} fixture(s) sincronizadas desde ${SRC_DIR}` +
+  `\n✔  ${total} fixture(s) sincronizadas` +
     (cambiados ? `, ${cambiados} con cambios. Ejecuta \`npm test\`.` : ".")
 );

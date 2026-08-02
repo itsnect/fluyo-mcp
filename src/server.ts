@@ -84,23 +84,36 @@ server.registerTool(
   {
     title: "Exportar diagrama Fluyo a SVG",
     description:
-      "Renderiza una página de un documento Fluyo a SVG estático (mismos colores, formas e íconos que 'Exportar' dentro de la app). " +
+      "Renderiza una página de un documento Fluyo a SVG estático, con las mismas formas, colores, íconos, " +
+      "rellenos, bordes y tipografías que produce 'Exportar → SVG' dentro de la app. " +
       "Útil para pegar el diagrama en Notion/Confluence/Markdown o previsualizarlo sin abrir Fluyo. " +
-      "No incluye animación (puntos de flujo ni aparición escalonada), igual que el SVG que exporta la app.",
+      "No incluye animación (puntos de flujo ni aparición escalonada), igual que el SVG que exporta la app; " +
+      "para el GIF animado hay que abrir el documento en Fluyo. PNG y GIF no están disponibles aquí: " +
+      "necesitan un renderer de canvas.",
     inputSchema: {
       document: DocumentInputSchema,
       pageIndex: z.number().optional().describe("Índice de página a exportar (por defecto, la página actual)."),
-      format: z.enum(["svg"]).default("svg").describe("Formato de salida. Por ahora solo 'svg' (PNG/GIF requieren un renderer de canvas y están en el roadmap)."),
       scale: z.number().min(0.25).max(4).default(1).describe("Escala de las dimensiones width/height del SVG resultante."),
+      crop: z
+        .boolean()
+        .default(false)
+        .describe(
+          "Si es true, recorta el lienzo al contenido en vez de emitir los 2560×1440 completos. " +
+            "Por defecto false, que es lo que hace la app: así el SVG de aquí y el de 'Exportar' son idénticos."
+        ),
     },
   },
-  async ({ document, pageIndex, scale }) => {
+  async ({ document, pageIndex, scale, crop }) => {
     try {
       const project = parseDocument(document);
       const idx = pageIndex ?? project.doc.cur ?? 0;
       const page = project.doc.pages[idx];
       if (!page) throw new Error(`pageIndex ${idx} fuera de rango (el documento tiene ${project.doc.pages.length} página(s)).`);
-      const svg = pageToSVG(page, project.doc.theme, scale);
+      const svg = pageToSVG(page, project.doc.theme, {
+        scale,
+        globalFont: project.settings.font ?? null,
+        crop,
+      });
       return ok(`SVG de "${page.name}" (${page.nodes.length} nodos, ${page.edges.length} aristas).`, svg);
     } catch (err) {
       return fail(err);

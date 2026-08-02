@@ -45,7 +45,12 @@ import { ANIMS, ICONS, PALETTE } from "./generated/config.js";
 /** Igual que hace la app: el SVG del ícono se sirve como data URI inline. */
 export function iconDataUri(key: string): string {
   const def = ICONS[key];
-  if (!def) throw new Error(`Ícono desconocido: "${key}". Usa list_icons para ver los válidos.`);
+  if (!def) {
+    throw new Error(
+      `Ícono desconocido: "${key}". Usa list_icons para ver los válidos. ` +
+        "Si el diagrama viene de Fluyo, el ícono existe en la app y falta aquí: actualiza fluyo-mcp."
+    );
+  }
   return "data:image/svg+xml;utf8," + encodeURIComponent(def.svg);
 }
 
@@ -54,7 +59,12 @@ export function iconDataUri(key: string): string {
  *  exactamente lo que hace el exportador de la app. */
 export function animDataUri(key: string): string {
   const def = ANIMS[key];
-  if (!def) throw new Error(`GIF animado desconocido: "${key}". Usa list_anims para ver los válidos.`);
+  if (!def) {
+    throw new Error(
+      `GIF animado desconocido: "${key}". Usa list_anims para ver los válidos. ` +
+        "Si el diagrama viene de Fluyo, actualiza fluyo-mcp."
+    );
+  }
   return "data:image/svg+xml;utf8," + encodeURIComponent(def.svg);
 }
 
