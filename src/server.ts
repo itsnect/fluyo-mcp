@@ -5,7 +5,7 @@ import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICONS, PALETTE } from "./schema.js"
 import { CreateDiagramInputShape, DocumentInputSchema, OperationSchema, ThemeSchema } from "./model.js";
 import { createDiagram, editDiagram, parseDocument } from "./diagram.js";
 import { pageToSVG } from "./svg.js";
-import { TEMPLATES, getTemplate } from "./templates.js";
+import { TEMPLATES, assertOverridableKeys, getTemplate } from "./templates.js";
 
 /**
  * Las nueve tools de este servidor son funciones puras: reciben JSON, devuelven
@@ -256,6 +256,7 @@ server.registerTool(
   async ({ templateId, pageName, theme, labelOverrides }) => {
     try {
       const tpl = getTemplate(templateId);
+      assertOverridableKeys(tpl, labelOverrides);
       const { nodes, edges, suggestedTheme, suggestedPageName } = tpl.build(labelOverrides);
       const project = createDiagram({
         pageName: pageName ?? suggestedPageName,
@@ -263,6 +264,10 @@ server.registerTool(
         grid: true,
         build: false,
         autoLayout: true,
+        speed: 0.5,
+        dots: 3,
+        stagger: 0.45,
+        single: false,
         nodes,
         edges,
       });

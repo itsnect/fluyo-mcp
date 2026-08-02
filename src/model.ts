@@ -262,6 +262,12 @@ export const CreateDiagramInputShape = {
   grid: z.boolean().default(true),
   build: z.boolean().default(false).describe("Si es true, los nodos aparecen escalonados según 'order' al reproducir la animación."),
   autoLayout: z.boolean().default(true).describe("Si es true, calcula x/y de los nodos que no las traigan explícitas, en capas de izquierda a derecha según el grafo de aristas."),
+  speed: z.number().min(0.05).max(5).default(0.5).describe("Velocidad del flujo animado."),
+  dots: z.number().int().min(1).max(6).default(3).describe("Cuántos puntos recorren cada arista."),
+  stagger: z.number().min(0).max(5).default(0.45).describe("Segundos entre la aparición de un nodo y el siguiente cuando build=true."),
+  single: z.boolean().default(false).describe("Modo 'pelota única por ruta': en vez de puntos por flecha, una sola pelota recorre el diagrama y se parte en cada bifurcación."),
+  font: z.string().optional().describe("Tipografía global del diagrama. Usa list_fonts; si se omite, Georgia."),
+  customBg: z.string().optional().describe("Color de fondo (hex) que sobrescribe el del tema."),
   nodes: z.array(NodeSpecSchema).min(1),
   edges: z.array(EdgeSpecSchema).default([]),
 };

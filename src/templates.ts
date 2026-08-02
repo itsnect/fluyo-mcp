@@ -126,3 +126,19 @@ export function getTemplate(id: string): TemplateDef {
   if (!t) throw new Error(`Template desconocido: "${id}". Usa list_templates para ver los disponibles.`);
   return t;
 }
+
+/**
+ * Una clave mal escrita en `labelOverrides` se ignoraba en silencio: el modelo
+ * creía haber personalizado el diagrama y devolvía los labels por defecto. Como
+ * `overridableKeys` ya existe, no hay excusa para no comprobarlo.
+ */
+export function assertOverridableKeys(tpl: TemplateDef, labelOverrides: Record<string, string>): void {
+  const desconocidas = Object.keys(labelOverrides).filter(k => !tpl.overridableKeys.includes(k));
+  if (!desconocidas.length) return;
+  const plural = desconocidas.length > 1;
+  throw new Error(
+    `${plural ? "Las claves" : "La clave"} ${desconocidas.map(k => `"${k}"`).join(", ")} de labelOverrides ` +
+      `no ${plural ? "existen" : "existe"} en el template "${tpl.id}". ` +
+      `Claves personalizables: ${tpl.overridableKeys.join(", ")}.`
+  );
+}

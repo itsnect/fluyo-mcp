@@ -187,6 +187,37 @@ describe("create_diagram", () => {
     assert.ok(nodes[2].x > nodes[0].x, "capas sucesivas deben avanzar en X");
   });
 
+  it("los ajustes de animación son configurables, no cableados", async () => {
+    const r = await h.client.callTool({
+      name: "create_diagram",
+      arguments: {
+        ...args,
+        speed: 1.5, dots: 5, stagger: 0.2, build: true, single: true,
+        font: "Arial, Helvetica, sans-serif", customBg: "#0a0a0a",
+      },
+    });
+    assert.ok(!isToolError(r), textOf(r));
+    const doc = documentOf(r);
+    assert.equal(doc.settings.speed, 1.5);
+    assert.equal(doc.settings.dots, 5);
+    assert.equal(doc.settings.stagger, 0.2);
+    assert.equal(doc.settings.build, true);
+    assert.equal(doc.settings.single, true);
+    assert.equal(doc.settings.font, "Arial, Helvetica, sans-serif");
+    assert.equal(doc.doc.customBg, "#0a0a0a");
+  });
+
+  it("sin ajustes explícitos produce la misma forma que guarda la app", async () => {
+    const r = await h.client.callTool({ name: "create_diagram", arguments: args });
+    const doc = documentOf(r);
+    assert.deepEqual(
+      Object.keys(doc.settings).sort(),
+      ["build", "dots", "font", "grid", "single", "snap", "speed", "stagger"],
+      "settings debe traer las mismas claves que escribe serializeProject() en la app"
+    );
+    assert.equal(typeof doc.doc.customBg, "string");
+  });
+
   it("el documento que produce vuelve a entrar sin pérdida", async () => {
     const r = await h.client.callTool({ name: "create_diagram", arguments: args });
     const created = documentOf(r);
@@ -299,6 +330,18 @@ describe("create_from_template", () => {
     assert.ok(!isToolError(r), textOf(r));
     const llm = documentOf(r).doc.pages[0].nodes.find((n: any) => n.icon === "ai");
     assert.equal(llm.label, "Gemini / Vertex AI");
+  });
+
+  /** Antes una clave mal escrita se ignoraba y el modelo creía haber
+   *  personalizado el diagrama cuando no había cambiado nada. */
+  it("una clave de labelOverrides que no existe da error en vez de ignorarse", async () => {
+    const r = await h.client.callTool({
+      name: "create_from_template",
+      arguments: { templateId: "rag_chatbot", labelOverrides: { lmm: "typo" } },
+    });
+    assert.ok(isToolError(r), "una clave desconocida no puede pasar en silencio");
+    assert.match(textOf(r), /lmm/, "debe nombrar la clave mala");
+    assert.match(textOf(r), /user|api|vectordb|llm/, "debe listar las claves válidas");
   });
 
   it("un templateId inexistente da error accionable", async () => {

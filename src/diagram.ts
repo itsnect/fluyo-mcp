@@ -1,4 +1,4 @@
-import { ANIMS, CANVAS, DEFAULT_SIZES, ICONS, resolveColor } from "./schema.js";
+import { ANIMS, CANVAS, DEFAULT_FONT, DEFAULT_SIZES, ICONS, resolveColor } from "./schema.js";
 import { describeDocumentIssues, describeInternalIssues } from "./errors.js";
 import { layeredLayout } from "./layout.js";
 import {
@@ -11,6 +11,7 @@ import {
   NodeBuildSpec,
   EdgeSpec,
   Operation,
+  ThemeName,
 } from "./model.js";
 
 /* ===================== Validación del documento ===================== */
@@ -140,10 +141,16 @@ function boundingBox(nodes: FluyoNode[]) {
 
 export interface CreateDiagramInput {
   pageName: string;
-  theme: "dark" | "crema" | "claro";
+  theme: ThemeName;
   grid: boolean;
   build: boolean;
   autoLayout: boolean;
+  speed: number;
+  dots: number;
+  stagger: number;
+  single: boolean;
+  font?: string;
+  customBg?: string;
   nodes: NodeSpec[];
   edges: EdgeSpec[];
 }
@@ -198,11 +205,28 @@ export function createDiagram(input: CreateDiagramInput): FluyoProject {
 
   const page: FluyoPage = { name: input.pageName, nodes, edges, nextId };
 
+  // Se escriben todas las claves de settings, incluidas las que aquí no se
+  // configuran (snap), para que un documento creado por el MCP tenga la misma
+  // forma que uno guardado por la app y el round-trip entre ambos sea simétrico.
   const project: FluyoProject = {
     version: 3,
     app: "fluyo",
-    doc: { theme: input.theme, pages: [page], cur: 0 },
-    settings: { speed: 0.5, dots: 3, build: input.build, stagger: 0.45, grid: input.grid },
+    doc: {
+      theme: input.theme,
+      pages: [page],
+      cur: 0,
+      customBg: input.customBg ?? "",
+    },
+    settings: {
+      speed: input.speed,
+      dots: input.dots,
+      build: input.build,
+      stagger: input.stagger,
+      grid: input.grid,
+      snap: false,
+      font: input.font ?? DEFAULT_FONT,
+      single: input.single,
+    },
   };
 
   return parseOwnOutput(project);
