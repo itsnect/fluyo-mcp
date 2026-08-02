@@ -23,7 +23,7 @@ function summarize(project: ReturnType<typeof createDiagram>): string {
 
 /** Registra las herramientas de Fluyo sobre una instancia nueva de McpServer. Separado de
  *  index.ts para poder conectarlo tanto a stdio (uso real) como a un InMemoryTransport
- *  (scripts/smoke-test.ts) sin duplicar las definiciones de herramientas. */
+ *  (los tests de test/) sin duplicar las definiciones de herramientas. */
 export function buildServer(): McpServer {
   const server = new McpServer({ name: "fluyo-mcp", version: "0.1.0" });
 
