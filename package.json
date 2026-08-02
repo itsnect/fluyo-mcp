@@ -12,6 +12,9 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "dev": "tsc -p tsconfig.json --watch",
+    "sync:config": "node scripts/sync-config.ts",
+    "check:config": "node scripts/sync-config.ts --check",
+    "sync:fixtures": "node scripts/sync-fixtures.ts",
     "build:test": "tsc -p tsconfig.test.json",
     "test": "npm run build:test && node --test \"dist-test/test/**/*.test.js\""
   },
