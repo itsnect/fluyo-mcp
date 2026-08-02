@@ -2,8 +2,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { PALETTE, ICONS, CANVAS } from "./schema.js";
-import { CreateDiagramInputShape, OperationSchema, ThemeSchema, FluyoProjectSchema } from "./model.js";
-import { createDiagram, editDiagram } from "./diagram.js";
+import { CreateDiagramInputShape, DocumentInputSchema, OperationSchema, ThemeSchema } from "./model.js";
+import { createDiagram, editDiagram, parseDocument } from "./diagram.js";
 import { pageToSVG } from "./svg.js";
 import { TEMPLATES, getTemplate } from "./templates.js";
 
@@ -62,7 +62,7 @@ server.registerTool(
       "Las operaciones se aplican en orden; add_node puede definir un 'key' temporal que add_edge referencia en la misma llamada. " +
       "Para editar nodos/aristas ya existentes en el documento, usa su 'id' numérico (visible en el JSON del documento).",
     inputSchema: {
-      document: z.any().describe("El documento Fluyo completo (objeto JSON, tal como lo devuelve create_diagram o export/abre la app)."),
+      document: DocumentInputSchema,
       pageIndex: z.number().optional().describe("Índice de página a editar (por defecto, la página actual del documento)."),
       operations: z.array(OperationSchema).min(1),
     },
@@ -88,7 +88,7 @@ server.registerTool(
       "Útil para pegar el diagrama en Notion/Confluence/Markdown o previsualizarlo sin abrir Fluyo. " +
       "No incluye animación (puntos de flujo ni aparición escalonada), igual que el SVG que exporta la app.",
     inputSchema: {
-      document: z.any().describe("El documento Fluyo completo a exportar."),
+      document: DocumentInputSchema,
       pageIndex: z.number().optional().describe("Índice de página a exportar (por defecto, la página actual)."),
       format: z.enum(["svg"]).default("svg").describe("Formato de salida. Por ahora solo 'svg' (PNG/GIF requieren un renderer de canvas y están en el roadmap)."),
       scale: z.number().min(0.25).max(4).default(1).describe("Escala de las dimensiones width/height del SVG resultante."),
@@ -96,7 +96,7 @@ server.registerTool(
   },
   async ({ document, pageIndex, scale }) => {
     try {
-      const project = FluyoProjectSchema.parse(document);
+      const project = parseDocument(document);
       const idx = pageIndex ?? project.doc.cur ?? 0;
       const page = project.doc.pages[idx];
       if (!page) throw new Error(`pageIndex ${idx} fuera de rango (el documento tiene ${project.doc.pages.length} página(s)).`);

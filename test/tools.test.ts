@@ -270,6 +270,63 @@ describe("errores accionables", () => {
   });
 });
 
+/* ===================== Documentos que el servidor no puede procesar ===================== */
+
+describe("un documento inválido se explica en prosa, no con un volcado de Zod", () => {
+  /** Simula lo que pasará el día que Fluyo estrene una forma y este servidor no la
+   *  conozca todavía: el usuario tiene que entender que actualice el servidor. */
+  it("una forma desconocida dice cuál es y que hay que actualizar el servidor", async () => {
+    const doc: any = loadFixture("kafka-event-pipeline.fluyo.json");
+    doc.doc.pages[0].nodes[0].shape = "holograma";
+
+    const r = await h.client.callTool({ name: "export_diagram", arguments: { document: doc } });
+    assert.ok(isToolError(r));
+    const text = textOf(r);
+    assert.match(text, /holograma/, "debe nombrar la forma que no reconoce");
+    assert.match(text, /actualiza/i, "debe decir que la salida es actualizar el servidor");
+    assert.doesNotMatch(text, /"code":|invalid_value/, "no debe filtrar el JSON de issues de Zod");
+  });
+
+  it("un documento en formato v1 explica cómo migrarlo", async () => {
+    const r = await h.client.callTool({
+      name: "export_diagram",
+      arguments: { document: { state: { nodes: [], edges: [], theme: "dark" } } },
+    });
+    assert.ok(isToolError(r));
+    assert.match(textOf(r), /v1/, "debe identificar el formato antiguo");
+    assert.match(textOf(r), /guard/i, "debe decir que se reabra y se vuelva a guardar");
+  });
+
+  it("un objeto que no es un diagrama dice qué falta", async () => {
+    const r = await h.client.callTool({ name: "export_diagram", arguments: { document: { cualquiera: 1 } } });
+    assert.ok(isToolError(r));
+    assert.match(textOf(r), /'doc'|\bdoc\b/, "debe decir que falta la clave doc");
+    assert.doesNotMatch(textOf(r), /"code":/, "no debe filtrar el JSON de issues de Zod");
+  });
+
+  /** La frontera declarada en DocumentInputSchema: un no-objeto lo rechaza el SDK
+   *  antes del handler. El mensaje es suyo y es aceptable; se fija aquí para que el
+   *  día que cambie se vea en el diff en vez de descubrirse en producción. */
+  it("un document que no es objeto lo rechaza el SDK con un mensaje claro", async () => {
+    const r = await h.client.callTool({ name: "export_diagram", arguments: { document: "no soy un objeto" } });
+    assert.ok(isToolError(r));
+    assert.match(textOf(r), /expected object/i);
+  });
+
+  it("edit_diagram sobre un documento roto tampoco filtra Zod", async () => {
+    const doc: any = loadFixture("kafka-event-pipeline.fluyo.json");
+    doc.doc.pages[0].nodes[0].x = "no soy un número";
+
+    const r = await h.client.callTool({
+      name: "edit_diagram",
+      arguments: { document: doc, operations: [{ op: "rename_page", name: "x" }] },
+    });
+    assert.ok(isToolError(r));
+    assert.match(textOf(r), /doc\.pages\[0\]\.nodes\[0\]\.x/, "debe señalar la ruta del campo malo");
+    assert.doesNotMatch(textOf(r), /"code":/, "no debe filtrar el JSON de issues de Zod");
+  });
+});
+
 /* ===================== El caso que el smoke test antiguo no cubría ===================== */
 
 describe("un documento guardado por la app sobrevive a edit_diagram", () => {

@@ -1,4 +1,5 @@
 import { ANIMS, CANVAS, DEFAULT_SIZES, ICONS, resolveColor } from "./schema.js";
+import { describeDocumentIssues, describeInternalIssues } from "./errors.js";
 import { layeredLayout } from "./layout.js";
 import {
   FluyoNode,
@@ -11,6 +12,24 @@ import {
   EdgeSpec,
   Operation,
 } from "./model.js";
+
+/* ===================== Validación del documento ===================== */
+
+/** Valida un documento que llega de fuera. Nunca deja escapar un ZodError crudo:
+ *  el modelo tiene que poder leer qué pasó y qué hacer. */
+export function parseDocument(document: unknown): FluyoProject {
+  const res = FluyoProjectSchema.safeParse(document);
+  if (!res.success) throw new Error(describeDocumentIssues(document, res.error.issues));
+  return res.data;
+}
+
+/** Revalida lo que produce el propio servidor antes de devolverlo. Un fallo aquí es
+ *  un bug de fluyo-mcp, y el mensaje lo dice en vez de culpar al usuario. */
+function parseOwnOutput(project: unknown): FluyoProject {
+  const res = FluyoProjectSchema.safeParse(project);
+  if (!res.success) throw new Error(describeInternalIssues(res.error.issues));
+  return res.data;
+}
 
 /* ===================== Utilidades comunes ===================== */
 
@@ -186,7 +205,7 @@ export function createDiagram(input: CreateDiagramInput): FluyoProject {
     settings: { speed: 0.5, dots: 3, build: input.build, stagger: 0.45, grid: input.grid },
   };
 
-  return FluyoProjectSchema.parse(project);
+  return parseOwnOutput(project);
 }
 
 /* ===================== edit_diagram ===================== */
@@ -198,7 +217,7 @@ export interface EditDiagramInput {
 }
 
 export function editDiagram(input: EditDiagramInput): FluyoProject {
-  const project = FluyoProjectSchema.parse(input.document);
+  const project = parseDocument(input.document);
   const pageIndex = input.pageIndex ?? project.doc.cur ?? 0;
   const page = project.doc.pages[pageIndex];
   if (!page) throw new Error(`pageIndex ${pageIndex} fuera de rango (el documento tiene ${project.doc.pages.length} página(s)).`);
@@ -312,5 +331,5 @@ export function editDiagram(input: EditDiagramInput): FluyoProject {
   }
 
   page.nextId = nextId;
-  return FluyoProjectSchema.parse(project);
+  return parseOwnOutput(project);
 }

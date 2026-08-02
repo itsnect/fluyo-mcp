@@ -146,6 +146,46 @@ export const FluyoProjectSchema = z
   })
   .passthrough();
 
+/**
+ * Envoltorio del documento para la ENTRADA de las tools.
+ *
+ * Documenta la forma sin publicar el schema entero, por dos razones:
+ *
+ *  · El JSON Schema completo del documento son cientos de líneas que viajarían en
+ *    cada `tools/list`, y el modelo nunca escribe este objeto a mano: lo reenvía
+ *    tal cual lo recibió.
+ *  · Si la validación profunda la hiciera el SDK, un documento inválido se
+ *    rechazaría con el volcado JSON de issues de Zod, que es justo el mensaje
+ *    ilegible que este servidor quiere dejar de producir.
+ *
+ * Así que aquí solo se comprueba que sea un objeto, y la validación de verdad la
+ * hace el handler con `FluyoProjectSchema`, que sí puede explicarse (ver errors.ts).
+ *
+ * Dónde queda la frontera: si `document` no es un objeto (un texto, una lista), lo
+ * rechaza el SDK antes de llegar al handler y el mensaje es el suyo, no el nuestro.
+ * Se acepta: "expected object, received string" ya es claro, y el caso solo aparece
+ * si alguien pasa el JSON sin parsear. Todo input que SEA un objeto —que es donde
+ * están los fallos interesantes— llega al handler y se explica en prosa.
+ */
+export const DocumentInputSchema = z
+  .looseObject({
+    app: z.literal("fluyo").optional(),
+    version: z.number().optional(),
+    doc: z
+      .looseObject({
+        theme: z.string().optional(),
+        pages: z.array(z.unknown()).optional(),
+        cur: z.number().optional(),
+        customBg: z.string().optional(),
+      })
+      .optional(),
+    settings: z.looseObject({}).optional(),
+  })
+  .describe(
+    "El documento Fluyo completo (.fluyo.json): el objeto que devuelve create_diagram / edit_diagram, " +
+      "o el contenido de un archivo guardado con Ctrl+S en la app."
+  );
+
 export type Shape = z.infer<typeof ShapeSchema>;
 export type CreatableShape = z.infer<typeof CreatableShapeSchema>;
 export type ThemeName = z.infer<typeof ThemeSchema>;
