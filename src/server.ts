@@ -1,11 +1,28 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { PALETTE, ICONS, CANVAS } from "./schema.js";
+import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICONS, PALETTE } from "./schema.js";
 import { CreateDiagramInputShape, DocumentInputSchema, OperationSchema, ThemeSchema } from "./model.js";
 import { createDiagram, editDiagram, parseDocument } from "./diagram.js";
 import { pageToSVG } from "./svg.js";
 import { TEMPLATES, getTemplate } from "./templates.js";
+
+/**
+ * Las nueve tools de este servidor son funciones puras: reciben JSON, devuelven
+ * JSON, y no tocan disco, red ni ningún estado fuera de su propia respuesta. No
+ * hay nada que un cliente deba confirmar antes de llamarlas.
+ *
+ * Matiz sobre `destructiveHint`: la operación `relayout` de edit_diagram sí es
+ * destructiva respecto al CONTENIDO (borra los waypoints manuales, y así lo dice
+ * su descripción), pero no respecto al entorno — devuelve un documento nuevo sin
+ * pisar nada. Estas anotaciones hablan del entorno, así que `false` es correcto.
+ */
+const TOOL_PURA = {
+  readOnlyHint: true,
+  destructiveHint: false,
+  idempotentHint: true,
+  openWorldHint: false,
+} as const;
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
 
@@ -33,6 +50,7 @@ server.registerTool(
   "create_diagram",
   {
     title: "Crear diagrama Fluyo",
+    annotations: TOOL_PURA,
     description:
       "Crea un diagrama de arquitectura completo (formato .fluyo.json) a partir de una lista de nodos y aristas. " +
       "Si un nodo no trae x/y, se posiciona automáticamente en capas de izquierda a derecha según las aristas (auto-layout). " +
@@ -56,6 +74,7 @@ server.registerTool(
   "edit_diagram",
   {
     title: "Editar diagrama Fluyo",
+    annotations: TOOL_PURA,
     description:
       "Aplica una lista de operaciones (add_node, update_node, remove_node, add_edge, update_edge, remove_edge, set_theme, rename_page, relayout) " +
       "sobre un documento Fluyo existente (el JSON completo devuelto por create_diagram o cargado desde un .fluyo.json). " +
@@ -83,6 +102,7 @@ server.registerTool(
   "export_diagram",
   {
     title: "Exportar diagrama Fluyo a SVG",
+    annotations: TOOL_PURA,
     description:
       "Renderiza una página de un documento Fluyo a SVG estático, con las mismas formas, colores, íconos, " +
       "rellenos, bordes y tipografías que produce 'Exportar → SVG' dentro de la app. " +
@@ -127,7 +147,10 @@ server.registerTool(
   "list_icons",
   {
     title: "Listar íconos disponibles",
-    description: "Devuelve las claves de ícono válidas para nodos shape='icon', agrupadas por proveedor (General, GCP, AWS, Azure).",
+    annotations: TOOL_PURA,
+    description:
+      "Devuelve las claves de ícono válidas para nodos shape='icon', agrupadas (General, GCP, AWS, Azure, Estados, Varios). " +
+      "Son los mismos íconos que ofrece el cajón de la aplicación.",
     inputSchema: {},
   },
   async () => {
@@ -146,11 +169,53 @@ server.registerTool(
   "list_colors",
   {
     title: "Listar colores semánticos",
+    annotations: TOOL_PURA,
     description: "Devuelve los nombres de color semántico aceptados en 'color', 'lineColor' y 'dotColor' (también se acepta cualquier hex #rrggbb).",
     inputSchema: {},
   },
   async () => {
     const text = PALETTE.map(p => `${p.name} -> ${p.hex}`).join("\n");
+    return ok(text);
+  }
+);
+
+/* ===================== list_anims / list_fonts ===================== */
+
+server.registerTool(
+  "list_anims",
+  {
+    title: "Listar GIFs animados",
+    annotations: TOOL_PURA,
+    description:
+      "Devuelve las claves válidas para nodos shape='anim'. Son pequeñas animaciones que Fluyo dibuja " +
+      "fotograma a fotograma en el lienzo y en el GIF exportado (un spinner girando, una barra de progreso " +
+      "avanzando, un tick que se traza). En un SVG estático se ve su fotograma de referencia. " +
+      "Sirven para señalar estados —cargando, procesando, error— dentro de un diagrama.",
+    inputSchema: {},
+  },
+  async () => {
+    const text = Object.entries(ANIMS)
+      .map(([key, def]) => `${key} (${def.label})`)
+      .join("\n");
+    return ok(text);
+  }
+);
+
+server.registerTool(
+  "list_fonts",
+  {
+    title: "Listar tipografías",
+    annotations: TOOL_PURA,
+    description:
+      "Devuelve las familias tipográficas que ofrece Fluyo, para el campo 'font' de nodos y aristas. " +
+      "El valor que se guarda en el documento es la familia CSS completa, no el nombre corto. " +
+      "Un nodo sin 'font' hereda la tipografía global del documento.",
+    inputSchema: {},
+  },
+  async () => {
+    const text = FONTS.map(
+      f => `${f.name} -> ${f.family}${f.family === DEFAULT_FONT ? "   (global por defecto)" : ""}`
+    ).join("\n");
     return ok(text);
   }
 );
@@ -161,6 +226,7 @@ server.registerTool(
   "list_templates",
   {
     title: "Listar templates de diagramas",
+    annotations: TOOL_PURA,
     description: "Devuelve los patrones de arquitectura predefinidos disponibles para instanciar con create_from_template.",
     inputSchema: {},
   },
@@ -176,6 +242,7 @@ server.registerTool(
   "create_from_template",
   {
     title: "Crear diagrama desde un template",
+    annotations: TOOL_PURA,
     description:
       "Instancia uno de los templates de list_templates como un documento Fluyo completo, con auto-layout aplicado. " +
       "Se pueden personalizar los labels de los nodos vía 'labelOverrides' (mapa key -> nuevo texto).",

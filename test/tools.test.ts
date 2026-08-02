@@ -29,6 +29,56 @@ let h: Harness;
 before(async () => { h = await startHarness(); });
 after(async () => { await h?.close(); });
 
+/* ===================== Superficie publicada ===================== */
+
+const TOOLS_ESPERADAS = [
+  "create_diagram",
+  "edit_diagram",
+  "export_diagram",
+  "list_icons",
+  "list_colors",
+  "list_anims",
+  "list_fonts",
+  "list_templates",
+  "create_from_template",
+];
+
+describe("lo que ve un cliente en tools/list", () => {
+  it("están las nueve tools", async () => {
+    const { tools } = await h.client.listTools();
+    assert.deepEqual(tools.map(t => t.name).sort(), [...TOOLS_ESPERADAS].sort());
+  });
+
+  it("todas tienen title legible y descripción", async () => {
+    const { tools } = await h.client.listTools();
+    for (const t of tools) {
+      assert.ok(t.title, `${t.name} no tiene title`);
+      assert.ok((t.description ?? "").length > 30, `${t.name} no tiene una descripción útil`);
+    }
+  });
+
+  /** Los directorios usan las annotations para decidir qué avisar al usuario.
+   *  Las nueve son funciones puras, así que el juego es uniforme. */
+  it("todas declaran annotations de función pura", async () => {
+    const { tools } = await h.client.listTools();
+    for (const t of tools) {
+      assert.ok(t.annotations, `${t.name} no declara annotations`);
+      assert.equal(t.annotations?.readOnlyHint, true, `${t.name}: readOnlyHint`);
+      assert.equal(t.annotations?.destructiveHint, false, `${t.name}: destructiveHint`);
+      assert.equal(t.annotations?.idempotentHint, true, `${t.name}: idempotentHint`);
+      assert.equal(t.annotations?.openWorldHint, false, `${t.name}: openWorldHint`);
+    }
+  });
+
+  /** El JSON Schema de tools/list viaja en cada conexión. Si alguien publica
+   *  FluyoProjectSchema entero aquí, esto lo caza antes que la factura de tokens. */
+  it("el schema publicado no arrastra el documento entero", async () => {
+    const { tools } = await h.client.listTools();
+    const bytes = JSON.stringify(tools).length;
+    assert.ok(bytes < 30_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
+  });
+});
+
 /* ===================== Catálogos ===================== */
 
 describe("catálogos", () => {
@@ -46,6 +96,42 @@ describe("catálogos", () => {
     const r = await h.client.callTool({ name: "list_colors", arguments: {} });
     assert.ok(!isToolError(r), textOf(r));
     assert.match(textOf(r), /Eventos \/ Kafka/);
+  });
+
+  it("list_icons incluye los grupos que faltaban (Estados y Varios)", async () => {
+    const r = await h.client.callTool({ name: "list_icons", arguments: {} });
+    const text = textOf(r);
+    for (const group of ["Estados", "Varios"]) {
+      assert.match(text, new RegExp(`^${group}:`, "m"), `falta el grupo ${group}`);
+    }
+    for (const key of ["bell", "cache", "cdn", "file", "graph", "warn"]) {
+      assert.match(text, new RegExp(`\\b${key}\\b`), `falta el ícono ${key}`);
+    }
+  });
+
+  it("list_colors trae los 14 colores, no los 7 de antes", async () => {
+    const r = await h.client.callTool({ name: "list_colors", arguments: {} });
+    const text = textOf(r);
+    for (const name of ["Cache", "Cola", "Red", "Almacén", "Éxito", "Error", "Info"]) {
+      assert.match(text, new RegExp(name), `falta el color ${name}`);
+    }
+  });
+
+  it("list_anims trae los 8 GIFs", async () => {
+    const r = await h.client.callTool({ name: "list_anims", arguments: {} });
+    assert.ok(!isToolError(r), textOf(r));
+    const text = textOf(r);
+    for (const key of ["spinner", "progress", "ticket", "errmove", "check", "typing", "upload", "pulse"]) {
+      assert.match(text, new RegExp(`^${key}\\b`, "m"), `falta el GIF ${key}`);
+    }
+  });
+
+  it("list_fonts trae las 11 tipografías y marca la global", async () => {
+    const r = await h.client.callTool({ name: "list_fonts", arguments: {} });
+    assert.ok(!isToolError(r), textOf(r));
+    const text = textOf(r);
+    assert.equal(text.trim().split("\n").length, 11);
+    assert.match(text, /Georgia.*global por defecto/);
   });
 
   it("list_templates incluye los tres patrones", async () => {
