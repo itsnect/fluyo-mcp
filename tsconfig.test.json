@@ -11,5 +11,5 @@
     "declaration": false,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["src", "scripts"]
+  "include": ["src", "scripts", "test"]
 }
