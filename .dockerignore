@@ -1,0 +1,34 @@
+# Lo que NO entra en el contexto de build.
+#
+# El Dockerfile copia explícitamente lo que necesita (package*.json, tsconfig,
+# src/), así que esto es sobre todo para que el contexto no arrastre cientos de
+# megas a la máquina de build. node_modules es el caso grande: se reinstala
+# dentro con `npm ci`, y copiarlo desde el host además rompería los binarios
+# nativos cuando el host no es Linux.
+
+node_modules/
+dist/
+dist-test/
+
+.git/
+.gitignore
+.gitattributes
+.github/
+
+test/
+tsconfig.test.json
+docs/
+scripts/
+
+README.md
+CONTRIBUTING.md
+LICENSE
+
+Dockerfile
+.dockerignore
+
+*.log
+*.md
+.DS_Store
+.env
+.env.*

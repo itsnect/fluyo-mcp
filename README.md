@@ -180,25 +180,29 @@ Que siga siendo cierto no depende de la disciplina de quien edite el código: el
 
 Detalle honesto sobre las IPs: el limitador de caudal guarda en memoria la IP del cliente y las marcas de tiempo de sus últimas peticiones, durante la ventana de un minuto. Nunca se escribe a disco ni al log, y desaparece al reciclarse la instancia.
 
-Fuera de este proceso, Vercel mantiene sus propios logs de plataforma (IP, ruta, código de estado, user-agent) con la retención de la cuenta. Eso no lo controla este código y conviene decirlo en la política.
+Fuera de este proceso, **Cloud Run escribe automáticamente sus propios request logs** (IP del cliente, ruta, código de estado, latencia, user-agent) en Cloud Logging. Eso no lo controla este código: lo genera la plataforma antes de que la petición llegue al contenedor. La retención está fijada a **7 días** en el bucket `_Default` — ver [Retención de logs](#retención-de-logs), donde está el comando que lo fija, para que el número de la política de privacidad sea reproducible y no una promesa.
 
 ---
 
-## Desplegar en Vercel
+## Desplegar en Cloud Run
 
-El repositorio está configurado como **proyecto de Vercel independiente** apuntando a `mcp.fluyo.space` — no como parte del deployment de `fluyo/`, que es estático a propósito y publica «no hay backend» como argumento de privacidad. Ver DRIFT.md §6.
+El servidor se despliega como **servicio propio de Cloud Run** en `mcp.fluyo.space` — no dentro del deployment de `fluyo/`, que es estático a propósito y publica «no hay backend» como argumento de privacidad. Ver DRIFT.md §6.
+
+> **Por qué Cloud Run y no Vercel.** El plan Hobby de Vercel restringe el uso a personal no comercial y, al exceder los límites, **pausa el servicio 30 días**. Para un servidor listado en un directorio público eso es inaceptable: el modo de fallo es quedarse caído un mes sin recurso. Cloud Run no tiene esa restricción y su modo de fallo es facturar, que sí se puede acotar — de ahí los topes de la sección siguiente.
 
 ### Piezas
 
 | Archivo | Papel |
 |---|---|
-| `vercel.json` | `buildCommand`, la función y el rewrite de todo el tráfico a `api/index.js` |
-| `api/index.js` | Entry point serverless. Importa `dist/http.js`, que produce `npm run build` |
-| `public/robots.txt` | Único archivo estático. Existe también para que `outputDirectory` no caiga al raíz del repo |
+| `Dockerfile` | Multi-stage: compila con todas las dependencias, y la imagen final solo lleva `dist/` y las de producción. Corre como usuario no-root |
+| `.dockerignore` | Mantiene el contexto de build pequeño; `node_modules` se reinstala dentro con `npm ci` |
+| `scripts/verify-deploy.sh` | 21 comprobaciones contra el despliegue ya en marcha |
+
+No hay archivos estáticos. En Vercel `robots.txt` lo servía la plataforma desde `public/`; aquí el contenedor es lo único que contesta, así que la ruta `/robots.txt` la sirve `src/http.ts` como cualquier otra.
 
 ### Variables de entorno
 
-Se configuran en **Project → Settings → Environment Variables**. Ninguna es un secreto; ninguna es obligatoria salvo la del challenge, y esa solo hace falta mientras dure la verificación de OpenAI.
+Se fijan **por revisión**: cambiar una crea una revisión nueva, y hasta que esa revisión reciba tráfico el cambio no surte efecto. Ninguna es un secreto; ninguna es obligatoria salvo la del challenge, y esa solo mientras dure la verificación de OpenAI.
 
 | Variable | Por defecto | Para qué |
 |---|---|---|
@@ -210,70 +214,157 @@ Se configuran en **Project → Settings → Environment Variables**. Ninguna es 
 | `MAX_TOOL_RESULT_BYTES` | `204800` (200 KB) | Tope del resultado de una tool. Por encima se sustituye por un error que explica cómo reducir el diagrama. |
 | `FLUYO_MCP_LOG` | activado | `off` para silenciar el registro por completo. |
 
-`PORT` solo se usa en local (`npm run start:http`); en Vercel la pone la plataforma.
+**`PORT` no se configura.** La inyecta Cloud Run y el contenedor la lee; fijarla a mano rompe el despliegue. En local sí se usa (`PORT=3000 npm run start:http`).
+
+### Topes de coste
+
+Estos valores **no son negociables** y son la razón por la que este servicio no puede sorprender con una factura:
+
+```bash
+--max-instances=2       # techo de cómputo. Ver la aritmética de abajo
+--concurrency=80        # peticiones simultáneas por instancia
+--timeout=30s
+--min-instances=0       # sin tráfico, no se paga nada
+--cpu=1 --memory=512Mi
+--cpu-boost             # arranque en frío más rápido
+```
+
+**La aritmética del techo.** Con `max-instances=2`, `cpu=1` y `memory=512Mi`, el peor caso es que las dos instancias estén saturadas las 24 horas:
+
+```
+2 instancias × 86.400 s          = 172.800 instancia-segundos/día
+CPU:    172.800 × 1    × $0,000024 = $4,15/día
+Memoria:172.800 × 0,5  × $0,0000025 = $0,22/día
+                                    ─────────
+                                     ≈ $4,4/día  ← el máximo posible
+```
+
+En operación normal la cifra real es una fracción de eso, porque con `min-instances=0` no se factura nada mientras no hay tráfico.
+
+> **`--concurrency=80` no se toca.** Es contraintuitivo: **bajarlo multiplica el coste**. Cada instancia atiende hasta 80 peticiones a la vez; con `concurrency=10` harían falta ocho veces más instancias para el mismo tráfico, se toparía antes en `max-instances=2` y los usuarios recibirían 429 de la plataforma antes que del rate limiter. Las nueve tools son funciones puras que no comparten estado, así que 80 simultáneas por instancia no tienen ningún inconveniente.
 
 ### Primer despliegue
 
 ```bash
-# 1. Importa el repo en Vercel (Add New → Project → Import Git Repository).
-#    Framework Preset: Other. No hace falta tocar nada más: vercel.json manda.
+PROJECT=tu-proyecto-gcp
+REGION=us-central1
 
-# 2. Añade las variables de entorno de la tabla de arriba.
+gcloud config set project "$PROJECT"
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregistry.googleapis.com
 
-# 3. Deploy. Comprueba las cuatro rutas:
-curl -i https://mcp.fluyo.space/health
-curl -i https://mcp.fluyo.space/
-curl -i https://mcp.fluyo.space/.well-known/openai-apps-challenge
-curl -i -X POST https://mcp.fluyo.space/mcp \
-  -H 'Content-Type: application/json' \
-  -H 'Accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+# Construye desde el Dockerfile y despliega en un solo paso.
+gcloud run deploy fluyo-mcp \
+  --source . \
+  --region "$REGION" \
+  --platform managed \
+  --allow-unauthenticated \
+  --max-instances=2 \
+  --concurrency=80 \
+  --timeout=30s \
+  --min-instances=0 \
+  --cpu=1 --memory=512Mi --cpu-boost \
+  --set-env-vars "OPENAI_APPS_CHALLENGE=el-valor-que-te-dio-openai"
 ```
 
-### DNS de `mcp.fluyo.space`
+`--allow-unauthenticated` es deliberado: es un servidor MCP público sin credenciales. Lo que lo protege del abuso es el rate limiter y `max-instances`, no IAM.
 
-En el DNS de `fluyo.space`, un registro para el subdominio:
+Después, verifica el despliegue entero de una vez:
+
+```bash
+./scripts/verify-deploy.sh https://mcp.fluyo.space
+```
+
+Son 21 comprobaciones con ✓/✗ y código de salida distinto de cero si algo falla. Cubre lo que los tests no pueden ver, porque corren contra un handler en memoria: redirecciones, cabeceras que añada la plataforma y el mapeo de dominio.
+
+### Dominio `mcp.fluyo.space`
+
+```bash
+gcloud beta run domain-mappings create \
+  --service fluyo-mcp \
+  --domain mcp.fluyo.space \
+  --region "$REGION"
+```
+
+El comando imprime el registro DNS que hay que crear en la zona de `fluyo.space`:
 
 ```text
-CNAME   mcp   cname.vercel-dns.com.
+CNAME   mcp   ghs.googlehosted.com.
 ```
 
-Y en Vercel, **Project → Settings → Domains → Add** `mcp.fluyo.space`. El certificado lo emite Vercel solo. Si el DNS de `fluyo.space` ya está delegado en Vercel, basta con añadir el dominio en el panel y el registro se crea automáticamente.
+El certificado lo emite Google automáticamente una vez propagado el DNS; suele tardar entre unos minutos y un par de horas. Mientras tanto el servicio ya responde en su URL `*.run.app`.
 
-> `mcp.fluyo.space` tiene que apuntar a **este** proyecto, no al de `fluyo/`. Son dos proyectos en la misma cuenta compartiendo dominio raíz.
+> Si tu región no ofrece domain mappings, la alternativa es un balanceador de carga HTTP(S) global con un backend serverless NEG apuntando al servicio. Cuesta más y añade una pieza; el mapeo directo basta para este caso.
+
+### Retención de logs
+
+Cloud Run escribe request logs automáticamente. La política de privacidad publica una retención de **7 días**, y esto es lo que la hace cierta:
+
+```bash
+gcloud logging buckets update _Default \
+  --location=global \
+  --retention-days=7 \
+  --project="$PROJECT"
+
+# Comprobarlo:
+gcloud logging buckets describe _Default --location=global --format='value(retentionDays)'
+```
+
+El valor por defecto de `_Default` son 30 días. **Si no se ejecuta ese comando, la política dice 7 y la realidad son 30**, que es exactamente el tipo de desajuste que hace falsa una declaración de privacidad. Va aquí, y no solo en un runbook, para que sea reproducible.
+
+Esto es independiente del logger de la aplicación: `src/http-logging.ts` no escribe ningún dato de usuario, y eso sigue siendo cierto pase lo que pase con la retención de la plataforma.
 
 ### La ruta del challenge de OpenAI
 
-Es el punto que más fácil se rompe, así que conviene entenderlo antes de tocar `vercel.json`:
+Es el punto que más fácil se rompe, así que conviene entenderlo antes de poner nada delante del servicio:
 
 **El verificador de OpenAI elimina el subpath.** Da igual que el MCP esté montado en `/mcp`: siempre pide `https://mcp.fluyo.space/.well-known/openai-apps-challenge`, en la raíz del host. Y tiene que contestar **200 directo con `text/plain`**. Una redirección hacia la ruta «correcta», aunque acabe en el sitio adecuado, cuenta como fallo.
 
 Lo que garantiza que eso se cumpla:
 
-- El `rewrite` de `vercel.json` es **interno**, no una redirección: el cliente ve el 200 de la función en la URL que pidió. Ese rewrite es lo que hace que la ruta llegue al handler; no hay que quitarlo.
-- La ruta se atiende **antes que nada** en `route()` de `src/http.ts` — antes del rate limit y antes de la comprobación de `Origin`. El verificador nunca puede recibir un 429 ni un 403.
-- `"cleanUrls": false` y `"trailingSlash": false` están explícitos en `vercel.json` para que Vercel no invente redirecciones. **No los cambies**: `trailingSlash: true` haría que `/mcp` redirigiese a `/mcp/`, que también rompe a los clientes MCP.
-- Hay un test (`test/http.test.ts`) que pide la ruta con `redirect: "manual"` y exige exactamente 200 y `text/plain`.
+- **El contenedor no redirige nunca.** `normalizePath()` en `src/http.ts` quita la query string y la barra final sobrante sin emitir un 301. Si aparece una redirección, viene de delante: del mapeo de dominio o de un balanceador.
+- La ruta se atiende **antes que nada** en `route()` — antes del rate limit y antes de la comprobación de `Origin`. El verificador nunca puede recibir un 429 ni un 403.
+- Cloud Run reenvía la petición tal cual al contenedor, sin reescribir rutas ni añadir barras. No hay equivalente de `cleanUrls`/`trailingSlash` que pueda estropearlo por defecto.
+- Hay un test (`test/http.test.ts`) que pide la ruta con `redirect: "manual"` y exige exactamente 200 y `text/plain`, y `verify-deploy.sh` repite la comprobación contra el despliegue real.
 
 **Rotar el challenge:**
 
-1. Cambia `OPENAI_APPS_CHALLENGE` en Vercel (Settings → Environment Variables → Edit).
-2. **Redespliega.** En Vercel las variables se inyectan en el build, así que un cambio no surte efecto hasta el siguiente deploy: Deployments → el último → ⋯ → Redeploy.
-3. Verifica: `curl https://mcp.fluyo.space/.well-known/openai-apps-challenge` debe devolver el valor nuevo.
+```bash
+gcloud run services update fluyo-mcp \
+  --region "$REGION" \
+  --update-env-vars "OPENAI_APPS_CHALLENGE=el-valor-nuevo"
+```
 
-### Verificar el build en local antes de subir
+Eso **crea una revisión nueva** y le manda el tráfico. Las variables de entorno de Cloud Run pertenecen a la revisión, no al servicio: hasta que la revisión nueva esté sirviendo, la ruta sigue devolviendo el valor viejo. Verifica con:
+
+```bash
+curl -i https://mcp.fluyo.space/.well-known/openai-apps-challenge
+gcloud run services describe fluyo-mcp --region "$REGION" \
+  --format='value(spec.template.spec.containers[0].env)'
+```
+
+### Probar la imagen en local antes de subir
 
 ```bash
 npm run build
-npm run start:http          # http://localhost:3000/mcp
-OPENAI_APPS_CHALLENGE=prueba npm run start:http
+npm run start:http          # sin contenedor: http://localhost:3000/mcp
+
+# Con el contenedor real, que es lo que corre en Cloud Run:
+docker build -t fluyo-mcp .
+docker run --rm -p 8080:8080 \
+  -e PORT=8080 \
+  -e OPENAI_APPS_CHALLENGE=prueba \
+  fluyo-mcp
+
+./scripts/verify-deploy.sh http://localhost:8080
 ```
 
-Y con el CLI de Vercel, que reproduce el pipeline entero incluido el rewrite:
+El script pasa igual contra el contenedor local que contra producción, salvo la comprobación del challenge si no le pasas la variable.
 
-```bash
-npx vercel build && npx vercel dev
-```
+### Cómo se comporta el rate limit aquí
+
+`src/http-security.ts` lee la IP del cliente de `x-forwarded-for`, y **Cloud Run la rellena con el mismo formato que cualquier proxy**: el primer valor es el cliente y el resto la cadena de saltos (`203.0.113.45, 130.211.0.1`). El código toma el primero, así que dos clientes detrás del mismo front-end de Google no comparten cubo. Es la misma lectura que se hacía en Vercel; no hubo que cambiar nada.
+
+Un matiz que conviene tener presente: el estado del limitador vive en la memoria de cada instancia. Con `max-instances=2`, el límite efectivo puede llegar a ser el doble del configurado. Es una barrera contra el abuso accidental y los bucles de reintentos, no una cuota exacta — para eso haría falta un almacén compartido, y almacenar algo es justo lo que este servicio evita.
 
 ---
 
@@ -296,14 +387,13 @@ src/
   http-security.ts  # Origin, rate limit, tope de cuerpo, gzip
   http-logging.ts   # Qué se registra, y sobre todo qué no
 
-api/
-  index.js          # Entry point de Vercel; importa dist/http.js
-vercel.json         # Build, función y rewrites
-public/robots.txt   # Único archivo estático
+Dockerfile          # Imagen de Cloud Run: multi-stage, no-root, lee PORT
+.dockerignore       # Contexto de build mínimo
 
 scripts/
   sync-config.ts    # Genera src/generated/config.ts desde fluyo/
   sync-fixtures.ts  # Refresca test/fixtures/ desde los ejemplos de fluyo/
+  verify-deploy.sh  # 21 comprobaciones contra un despliegue en marcha
 
 test/
   contract.test.ts  # Los 5 ejemplos reales: se aceptan, round-trip sin pérdida, exportan

@@ -322,6 +322,23 @@ function landingPage(): string {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
+   robots.txt
+
+   En Vercel esto era un archivo estático de `public/`, servido por la plataforma
+   antes de llegar a la función. En Cloud Run no hay plataforma que sirva nada:
+   el contenedor es el único que contesta, así que si no está aquí es un 404.
+   Va inline, como la página de inicio, para que el contenedor no dependa de
+   copiar un directorio de assets ni de resolver rutas en tiempo de ejecución.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const ROBOTS_TXT = `# mcp.fluyo.space — endpoint MCP de Fluyo.
+# La documentación está en /; el endpoint MCP no tiene nada que indexar.
+User-agent: *
+Allow: /$
+Disallow: /mcp
+`;
+
+/* ═══════════════════════════════════════════════════════════════════════════
    El manejador
    ═══════════════════════════════════════════════════════════════════════════ */
 
@@ -467,6 +484,21 @@ async function route(
       }),
       { "Cache-Control": "no-store" }
     );
+    return;
+  }
+
+  if (path === "/robots.txt") {
+    if (method !== "GET" && method !== "HEAD") {
+      note({ outcome: "method_not_allowed" });
+      sendText(res, 405, "Method Not Allowed\n", { Allow: "GET, HEAD" });
+      return;
+    }
+    res.writeHead(200, {
+      "Content-Type": "text/plain; charset=utf-8",
+      "Content-Length": String(Buffer.byteLength(ROBOTS_TXT)),
+      "Cache-Control": "public, max-age=86400",
+    });
+    res.end(method === "HEAD" ? undefined : ROBOTS_TXT);
     return;
   }
 

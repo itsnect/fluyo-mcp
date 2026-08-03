@@ -105,11 +105,11 @@ case "$code" in
   301|302|303|307|308)
     loc=$(grep -i '^location:' "$TMP/ch.head" | head -1 | tr -d '\r' | sed 's/^[Ll]ocation: *//')
     fail "GET challenge → 200 sin redirección" \
-         "HTTP $code redirigiendo a '${loc:-?}'. El verificador de OpenAI trata esto como FALLO. Revisa cleanUrls/trailingSlash en vercel.json."
+         "HTTP $code redirigiendo a '${loc:-?}'. El verificador de OpenAI trata esto como FALLO. El contenedor no redirige nunca, así que esto viene de delante: revisa el mapeo de dominio de Cloud Run o el balanceador y las reglas de reescritura de URL que tenga configuradas."
     ;;
   404)
     fail "GET challenge → 200 sin redirección" \
-         "HTTP 404: OPENAI_APPS_CHALLENGE no está configurada en este despliegue, o no se ha redesplegado tras añadirla (Vercel inyecta las variables en el build)."
+         "HTTP 404: OPENAI_APPS_CHALLENGE no está en la revisión que está sirviendo. Las variables de entorno de Cloud Run se fijan POR REVISIÓN: si la añadiste después del último deploy, hay que crear una revisión nueva (gcloud run services update fluyo-mcp --update-env-vars OPENAI_APPS_CHALLENGE=...). Comprueba con: gcloud run services describe fluyo-mcp --format='value(spec.template.spec.containers[0].env)'"
     ;;
   *)
     fail "GET challenge → 200 sin redirección" "recibido HTTP $code"
