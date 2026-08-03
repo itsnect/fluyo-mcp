@@ -1,0 +1,14 @@
+# Normalización de finales de línea.
+#
+# Los scripts de shell tienen que quedarse en LF SIEMPRE, también al clonar en
+# Windows: con core.autocrlf=true el checkout los convertiría a CRLF y el
+# shebang pasaría a ser "/usr/bin/env bash\r", que falla con un
+# "bad interpreter" difícil de relacionar con su causa.
+*.sh text eol=lf
+
+# Por coherencia con el resto de la caja de herramientas del repo.
+*.ts   text eol=lf
+*.js   text eol=lf
+*.json text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
