@@ -1,0 +1,5 @@
+# mcp.fluyo.space — endpoint MCP de Fluyo.
+# Se sirve como archivo estático; todo lo demás lo atiende la función de api/index.js.
+User-agent: *
+Allow: /$
+Disallow: /mcp
