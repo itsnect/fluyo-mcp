@@ -57,7 +57,7 @@ const eventDrivenPipeline: TemplateDef = {
 const ragChatbot: TemplateDef = {
   id: "rag_chatbot",
   name: "Chatbot RAG",
-  description: "Usuario -> API -> retrieval sobre una base vectorial -> LLM -> respuesta. El patrón estándar de RAG.",
+  description: "Usuario -> API -> retrieval sobre una base vectorial -> LLM -> respuesta. El patrón estándar de RAG (Retrieval-Augmented Generation): el orquestador recupera los fragmentos relevantes de la base vectorial y se los pasa al modelo como contexto de la pregunta.",
   overridableKeys: ["user", "api", "vectordb", "llm"],
   build(overrides) {
     const d: Record<string, string> = {
