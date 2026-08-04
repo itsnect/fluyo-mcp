@@ -5,7 +5,25 @@ import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
 
 interface Pt { x: number; y: number; }
 
-function sidePoint(n: FluyoNode, s: "n" | "s" | "e" | "w"): Pt {
+/* ===================== Caja de anclaje =====================
+   Port de `anchorBox()` de fluyo/js/geometry.js. La caja a la que se enganchan
+   las flechas no siempre es w×h: en shape:"icon" el glifo se dibuja con
+   s = min(w, h-26)*0.78 —51px sobre una caja de 120— y el resto del ancho es
+   aire, así que anclar en el borde lógico dejaba la punta de flecha flotando a
+   34px del icono.
+
+   La altura se conserva: arriba el glifo, abajo la etiqueta. Y se usa el ancho
+   del glifo, no el del texto del pie, porque medir texto se hace distinto en
+   cada renderer y meter esa medida en la geometría haría que calculasen rutas
+   distintas. La geometría sale del documento y de nada más. */
+export function anchorBox(n: FluyoNode): FluyoNode {
+  if (n.shape !== "icon") return n;
+  const s = Math.min(n.w, n.h - 26) * 0.78;
+  return { ...n, w: Math.min(n.w, Math.max(1, s)) };
+}
+
+function sidePoint(n0: FluyoNode, s: "n" | "s" | "e" | "w"): Pt {
+  const n = anchorBox(n0);
   switch (s) {
     case "n": return { x: n.x, y: n.y - n.h / 2 };
     case "s": return { x: n.x, y: n.y + n.h / 2 };
@@ -14,7 +32,8 @@ function sidePoint(n: FluyoNode, s: "n" | "s" | "e" | "w"): Pt {
   }
 }
 
-function autoAnchor(n: FluyoNode, tx: number, ty: number): Pt {
+function autoAnchor(n0: FluyoNode, tx: number, ty: number): Pt {
+  const n = anchorBox(n0);
   const dx = tx - n.x, dy = ty - n.y;
   if (dx === 0 && dy === 0) return { x: n.x, y: n.y };
   if (n.shape === "circle") {
@@ -35,7 +54,8 @@ function anchorPt(n: FluyoNode, side: "n" | "s" | "e" | "w" | null | undefined, 
   return side ? sidePoint(n, side) : autoAnchor(n, tx, ty);
 }
 
-function inferSide(n: FluyoNode, p: Pt): "n" | "s" | "e" | "w" {
+function inferSide(n0: FluyoNode, p: Pt): "n" | "s" | "e" | "w" {
+  const n = anchorBox(n0);
   const dx = (p.x - n.x) / (n.w / 2 || 1), dy = (p.y - n.y) / (n.h / 2 || 1);
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "e" : "w") : dy > 0 ? "s" : "n";
 }
@@ -82,8 +102,9 @@ const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
  *  El ancla base se mete primero hacia dentro lo justo para que quepa el abanico
  *  entero. Sin ese paso, un ancla que autoAnchor dejó pegada a una esquina no
  *  tiene hueco para apartarse y el clamp se come el desplazamiento. */
-function slideAnchor(n: FluyoNode, side: "n" | "s" | "e" | "w", p: Pt, off: number, half: number): Pt {
+function slideAnchor(n0: FluyoNode, side: "n" | "s" | "e" | "w", p: Pt, off: number, half: number): Pt {
   if (!off) return p;
+  const n = anchorBox(n0);
   const inset = 10;
   const horiz = side === "n" || side === "s";
   const c = horiz ? n.x : n.y;
