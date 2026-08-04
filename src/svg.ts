@@ -5,7 +5,25 @@ import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
 
 interface Pt { x: number; y: number; }
 
-function sidePoint(n: FluyoNode, s: "n" | "s" | "e" | "w"): Pt {
+/* ===================== Caja de anclaje =====================
+   Port de `anchorBox()` de fluyo/js/geometry.js. La caja a la que se enganchan
+   las flechas no siempre es w×h: en shape:"icon" el glifo se dibuja con
+   s = min(w, h-26)*0.78 —51px sobre una caja de 120— y el resto del ancho es
+   aire, así que anclar en el borde lógico dejaba la punta de flecha flotando a
+   34px del icono.
+
+   La altura se conserva: arriba el glifo, abajo la etiqueta. Y se usa el ancho
+   del glifo, no el del texto del pie, porque medir texto se hace distinto en
+   cada renderer y meter esa medida en la geometría haría que calculasen rutas
+   distintas. La geometría sale del documento y de nada más. */
+export function anchorBox(n: FluyoNode): FluyoNode {
+  if (n.shape !== "icon") return n;
+  const s = Math.min(n.w, n.h - 26) * 0.78;
+  return { ...n, w: Math.min(n.w, Math.max(1, s)) };
+}
+
+function sidePoint(n0: FluyoNode, s: "n" | "s" | "e" | "w"): Pt {
+  const n = anchorBox(n0);
   switch (s) {
     case "n": return { x: n.x, y: n.y - n.h / 2 };
     case "s": return { x: n.x, y: n.y + n.h / 2 };
@@ -14,7 +32,8 @@ function sidePoint(n: FluyoNode, s: "n" | "s" | "e" | "w"): Pt {
   }
 }
 
-function autoAnchor(n: FluyoNode, tx: number, ty: number): Pt {
+function autoAnchor(n0: FluyoNode, tx: number, ty: number): Pt {
+  const n = anchorBox(n0);
   const dx = tx - n.x, dy = ty - n.y;
   if (dx === 0 && dy === 0) return { x: n.x, y: n.y };
   if (n.shape === "circle") {
@@ -35,7 +54,8 @@ function anchorPt(n: FluyoNode, side: "n" | "s" | "e" | "w" | null | undefined, 
   return side ? sidePoint(n, side) : autoAnchor(n, tx, ty);
 }
 
-function inferSide(n: FluyoNode, p: Pt): "n" | "s" | "e" | "w" {
+function inferSide(n0: FluyoNode, p: Pt): "n" | "s" | "e" | "w" {
+  const n = anchorBox(n0);
   const dx = (p.x - n.x) / (n.w / 2 || 1), dy = (p.y - n.y) / (n.h / 2 || 1);
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "e" : "w") : dy > 0 ? "s" : "n";
 }
@@ -44,13 +64,144 @@ const DIR = {
   n: { x: 0, y: -1 }, s: { x: 0, y: 1 }, e: { x: 1, y: 0 }, w: { x: -1, y: 0 },
 } as const;
 
-function orthoRoute(p1: Pt, d1: { x: number; y: number }, p2: Pt, d2: { x: number; y: number }): Pt[] {
+/* ===================== Aristas paralelas =====================
+   Port de `parallelOffset()`/`slideAnchor()` de fluyo/js/geometry.js. Dos aristas
+   entre el mismo par de nodos daban exactamente la misma ruta —autoAnchor y
+   orthoRoute son simétricos—, así que un par bidireccional salía con una flecha
+   encima de la otra y las dos etiquetas en el mismo punto.
+
+   El signo se decide en un marco canónico (el par ordenado por id, no el sentido
+   de la flecha) para que las dos mitades de un par bidireccional no reciban
+   desplazamientos que se anulen. Con una sola arista el desplazamiento es 0 y la
+   geometría queda intacta. */
+const PARALLEL_SEP = 28;
+
+function parallelKey(e: FluyoEdge): string {
+  return e.from < e.to ? `${e.from}-${e.to}` : `${e.to}-${e.from}`;
+}
+
+/** El carril de esta arista: `off` es su desplazamiento y `half` el semiancho del
+ *  abanico completo del grupo, que hace falta para reservarle sitio en el lado
+ *  del nodo antes de mover nada. */
+function parallelLane(e: FluyoEdge, edges: readonly FluyoEdge[]): { off: number; half: number } {
+  const none = { off: 0, half: 0 };
+  if ((e.waypoints || []).length) return none;
+  const key = parallelKey(e);
+  const sib = edges.filter(o => !(o.waypoints || []).length && parallelKey(o) === key);
+  if (sib.length < 2) return none;
+  const i = sib.findIndex(o => o.id === e.id);
+  if (i < 0) return none;
+  return { off: (i - (sib.length - 1) / 2) * PARALLEL_SEP, half: ((sib.length - 1) / 2) * PARALLEL_SEP };
+}
+
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
+
+/* ===================== Puertos compartidos =====================
+   Port de `portLane()` de fluyo/js/geometry.js. Cuando dos aristas fijan el mismo
+   lado de un nodo con fromSide/toSide, sidePoint les da EL MISMO PUNTO; si una
+   entra y la otra sale, el flujo parece darse la vuelta sobre la misma línea.
+
+   Tres condiciones: anclas coincidentes (si autoAnchor ya las separó no hay nada
+   que arreglar), tráfico en los dos sentidos (un abanico que sale del mismo punto
+   se lee como un bus y separarlo solo añade ruido), y no ser un par paralelo, que
+   ya tiene su propio reparto. Sobre el corpus reparte exactamente un grupo. */
+interface BaseAnchors { p1: Pt; p2: Pt; s1: "n" | "s" | "e" | "w"; s2: "n" | "s" | "e" | "w"; }
+
+function baseAnchors(e: FluyoEdge, nodeById: Map<number, FluyoNode>): BaseAnchors | null {
+  const A = nodeById.get(e.from), B = nodeById.get(e.to);
+  if (!A || !B) return null;
+  const wps = e.waypoints || [];
+  const tA = wps[0] || { x: B.x, y: B.y };
+  const tB = wps[wps.length - 1] || { x: A.x, y: A.y };
+  const p1 = anchorPt(A, e.fromSide, tA.x, tA.y);
+  const p2 = anchorPt(B, e.toSide, tB.x, tB.y);
+  return { p1, p2, s1: e.fromSide || inferSide(A, p1), s2: e.toSide || inferSide(B, p2) };
+}
+
+function portKey(nodeId: number, side: string, p: Pt): string {
+  return `${nodeId}:${side}:${Math.round(p.x)},${Math.round(p.y)}`;
+}
+
+/** Cuántas aristas unen el mismo par que `e`. Comparación de enteros y sin
+ *  construir claves: esto corre dentro del bucle de render de la app. */
+function siblingCount(e: FluyoEdge, edges: readonly FluyoEdge[]): number {
+  let n = 0;
+  for (const o of edges) {
+    if ((o.waypoints || []).length) continue;
+    if ((o.from === e.from && o.to === e.to) || (o.from === e.to && o.to === e.from)) n++;
+  }
+  return n;
+}
+
+/** El reparto es por extremo, no por arista: una arista puede compartir puerto en
+ *  un lado y no en el otro.
+ *
+ *  El orden de los filtros importa para el coste: primero se descarta con
+ *  comparaciones de enteros —solo las aristas que TOCAN este nodo pueden
+ *  compartir puerto— y la geometría, que es lo caro, se calcula solo para esas.
+ *  Sin ese orden, una página de 90 aristas se comía el 75 % del fotograma. */
+function portLane(
+  e: FluyoEdge, which: "from" | "to",
+  edges: readonly FluyoEdge[], nodeById: Map<number, FluyoNode>
+): { off: number; half: number } {
+  const none = { off: 0, half: 0 };
+  if ((e.waypoints || []).length) return none;
+  const nodeId = which === "from" ? e.from : e.to;
+  const vecinas: FluyoEdge[] = [];
+  for (const o of edges) {
+    if (o.from !== nodeId && o.to !== nodeId) continue;
+    if ((o.waypoints || []).length) continue;
+    vecinas.push(o);
+  }
+  if (vecinas.length < 2) return none;
+  if (siblingCount(e, edges) > 1) return none;
+  const me = baseAnchors(e, nodeById);
+  if (!me) return none;
+  const key = portKey(nodeId, which === "from" ? me.s1 : me.s2, which === "from" ? me.p1 : me.p2);
+  const grupo: Array<{ id: number; sent: "entra" | "sale" }> = [];
+  for (const o of vecinas) {
+    if (siblingCount(o, edges) > 1) continue;
+    const b = baseAnchors(o, nodeById);
+    if (!b) continue;
+    if (o.from === nodeId && portKey(nodeId, b.s1, b.p1) === key) grupo.push({ id: o.id, sent: "sale" });
+    if (o.to === nodeId && portKey(nodeId, b.s2, b.p2) === key) grupo.push({ id: o.id, sent: "entra" });
+  }
+  if (grupo.length < 2) return none;
+  if (!(grupo.some(x => x.sent === "entra") && grupo.some(x => x.sent === "sale"))) return none;
+  const yo = which === "from" ? "sale" : "entra";
+  const i = grupo.findIndex(x => x.id === e.id && x.sent === yo);
+  if (i < 0) return none;
+  return { off: (i - (grupo.length - 1) / 2) * PARALLEL_SEP, half: ((grupo.length - 1) / 2) * PARALLEL_SEP };
+}
+
+/** Corre el ancla a lo largo de su lado sin salirse de él: el extremo tiene que
+ *  seguir tocando el borde del nodo.
+ *
+ *  El ancla base se mete primero hacia dentro lo justo para que quepa el abanico
+ *  entero. Sin ese paso, un ancla que autoAnchor dejó pegada a una esquina no
+ *  tiene hueco para apartarse y el clamp se come el desplazamiento. */
+function slideAnchor(n0: FluyoNode, side: "n" | "s" | "e" | "w", p: Pt, off: number, half: number): Pt {
+  if (!off) return p;
+  const n = anchorBox(n0);
+  const inset = 10;
+  const horiz = side === "n" || side === "s";
+  const c = horiz ? n.x : n.y;
+  const lim = Math.max(0, (horiz ? n.w / 2 : n.h / 2) - inset);
+  const room = Math.max(0, lim - half);
+  const base = clamp(horiz ? p.x : p.y, c - room, c + room);
+  const v = clamp(base + off, c - lim, c + lim);
+  return horiz ? { x: v, y: p.y } : { x: p.x, y: v };
+}
+
+function orthoRoute(p1: Pt, d1: { x: number; y: number }, p2: Pt, d2: { x: number; y: number }, off = 0): Pt[] {
   const pad = 28;
   const s = { x: p1.x + d1.x * pad, y: p1.y + d1.y * pad };
   const t = { x: p2.x + d2.x * pad, y: p2.y + d2.y * pad };
   let mids: Pt[];
-  if (d1.x !== 0 && d2.x !== 0) { const mx = (s.x + t.x) / 2; mids = [{ x: mx, y: s.y }, { x: mx, y: t.y }]; }
-  else if (d1.y !== 0 && d2.y !== 0) { const my = (s.y + t.y) / 2; mids = [{ x: s.x, y: my }, { x: t.x, y: my }]; }
+  // El tramo central también se aparta: separar solo las anclas dejaría las dos
+  // rutas compartiendo el canal largo del medio, que es donde va la etiqueta.
+  if (d1.x !== 0 && d2.x !== 0) { const mx = (s.x + t.x) / 2 + off; mids = [{ x: mx, y: s.y }, { x: mx, y: t.y }]; }
+  else if (d1.y !== 0 && d2.y !== 0) { const my = (s.y + t.y) / 2 + off; mids = [{ x: s.x, y: my }, { x: t.x, y: my }]; }
   else if (d1.x !== 0) { mids = [{ x: t.x, y: s.y }]; }
   else { mids = [{ x: s.x, y: t.y }]; }
   const raw = [p1, s, ...mids, t, p2];
@@ -62,26 +213,46 @@ function orthoRoute(p1: Pt, d1: { x: number; y: number }, p2: Pt, d2: { x: numbe
   return out;
 }
 
-function edgePoints(e: FluyoEdge, nodeById: Map<number, FluyoNode>): Pt[] {
+function edgePoints(e: FluyoEdge, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[]): Pt[] {
   const A = nodeById.get(e.from), B = nodeById.get(e.to);
   if (!A || !B) return [];
   const wps = e.waypoints || [];
   const tA = wps[0] || { x: B.x, y: B.y };
   const tB = wps[wps.length - 1] || { x: A.x, y: A.y };
-  const p1 = anchorPt(A, e.fromSide, tA.x, tA.y);
-  const p2 = anchorPt(B, e.toSide, tB.x, tB.y);
+  let p1 = anchorPt(A, e.fromSide, tA.x, tA.y);
+  let p2 = anchorPt(B, e.toSide, tB.x, tB.y);
+  // Los lados se deciden con las anclas SIN correr: apartarse para no solaparse
+  // no debe cambiar por qué cara sale la flecha.
+  const s1 = e.fromSide || inferSide(A, p1);
+  const s2 = e.toSide || inferSide(B, p2);
+  const { off, half } = parallelLane(e, edges);
+  if (off) { p1 = slideAnchor(A, s1, p1, off, half); p2 = slideAnchor(B, s2, p2, off, half); }
+  else {
+    // El reparto por puerto es por extremo y no toca el canal central: en el caso
+    // ortogonal el canal ya sale de las anclas, así que se mueve solo.
+    const o1 = portLane(e, "from", edges, nodeById), o2 = portLane(e, "to", edges, nodeById);
+    if (o1.off) p1 = slideAnchor(A, s1, p1, o1.off, o1.half);
+    if (o2.off) p2 = slideAnchor(B, s2, p2, o2.off, o2.half);
+  }
   if (e.route === "ortho" && wps.length === 0) {
-    const d1 = DIR[e.fromSide || inferSide(A, p1)];
-    const d2 = DIR[e.toSide || inferSide(B, p2)];
-    return orthoRoute(p1, d1, p2, d2);
+    return orthoRoute(p1, DIR[s1], p2, DIR[s2], off);
   }
   return [p1, ...wps, p2];
 }
 
-function pointAtMid(pts: Pt[]): Pt {
+/** Seam de pruebas: la geometría resuelta de una página, que es lo que miden el
+ *  test de regresión visual y el diagnóstico. Se exporta para que ninguno de los
+ *  dos tenga que reimplementar el ruteo — reimplementarlo sería garantizar que
+ *  midan algo distinto de lo que se dibuja. */
+export function pageEdgeGeometry(page: FluyoPage): Map<number, { x: number; y: number }[]> {
+  const nodeById = new Map(page.nodes.map(n => [n.id, n] as const));
+  return new Map(page.edges.map(e => [e.id, edgePoints(e, nodeById, page.edges)] as const));
+}
+
+function pointAt(pts: Pt[], f: number): Pt {
   let L = 0;
   for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-  let target = L / 2;
+  let target = f * L;
   for (let i = 1; i < pts.length; i++) {
     const seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
     if (target <= seg || i === pts.length - 1) {
@@ -91,6 +262,58 @@ function pointAtMid(pts: Pt[]): Pt {
     target -= seg;
   }
   return pts[pts.length - 1];
+}
+
+/* ===================== Colocación de etiquetas =====================
+   Port de `placeEdgeLabels()` de fluyo/js/geometry.js. La etiqueta iba siempre al
+   punto medio exacto de la ruta, sin mirar qué había debajo, así que en cuanto el
+   diagrama se aprieta cae encima de un nodo o de otra etiqueta.
+
+   Se prueban posiciones a lo largo de la arista, del medio hacia fuera, y se coge
+   la primera libre; si ninguna lo está, la que menos solape. El orden de
+   colocación es el de la página y cada etiqueta solo esquiva a las anteriores:
+   eso es lo que hace el resultado único y reproducible entre los dos renderers. */
+const LBL_FRACS: number[] = (() => { const o = [0.5]; for (let d = 0.04; d <= 0.36 + 1e-9; d += 0.04) o.push(0.5 - d, 0.5 + d); return o; })();
+
+interface Rect { x: number; y: number; w: number; h: number; }
+
+function rectOverlapArea(a: Rect, b: Rect): number {
+  const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return ox > 0 && oy > 0 ? ox * oy : 0;
+}
+
+function labelRectAt(pts: Pt[], f: number, w: number, h: number) {
+  const p = pointAt(pts, f);
+  return { x: p.x - w / 2 - 6, y: p.y - h / 2, w: w + 12, h, cx: p.x, cy: p.y };
+}
+
+/** Dónde va la etiqueta de cada arista de la página. */
+export function placeEdgeLabels(page: FluyoPage): Map<number, Pt> {
+  const geom = pageEdgeGeometry(page);
+  const out = new Map<number, Pt>();
+  const placed: Rect[] = [];
+  const nodeBoxes: Rect[] = page.nodes.map(n => ({ x: n.x - n.w / 2, y: n.y - n.h / 2, w: n.w, h: n.h }));
+  for (const e of page.edges) {
+    if (!e.label) continue;
+    const pts = geom.get(e.id);
+    if (!pts || pts.length < 2) continue;
+    const efs = e.fs || 13;
+    const w = approxTextWidth(e.label, efs, !!e.bold), h = efs * 1.7;
+    if (!(w > 0)) continue;
+    let best: ReturnType<typeof labelRectAt> | null = null;
+    let bestCost = Infinity;
+    for (const f of LBL_FRACS) {
+      const r = labelRectAt(pts, f, w, h);
+      let cost = 0;
+      for (const b of nodeBoxes) cost += rectOverlapArea(r, b);
+      for (const b of placed) cost += rectOverlapArea(r, b);
+      if (cost === 0) { best = r; bestCost = 0; break; }
+      if (cost < bestCost) { best = r; bestCost = cost; }
+    }
+    if (best) { out.set(e.id, { x: best.cx, y: best.cy }); placed.push(best); }
+  }
+  return out;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -215,6 +438,56 @@ function svgLabelLines(n: FluyoNode, theme: ThemeName, baseFs: number, cy: numbe
   return parts.join("\n");
 }
 
+/**
+ * La caja que el nodo OCUPA EN PANTALLA, que no es ni `w×h` ni `anchorBox`.
+ *
+ * En un `icon` lo que se pinta son dos cosas separadas: el glifo, cuadrado y
+ * estrecho, pegado arriba; y el pie de texto, más ancho y bajo. Su unión deja
+ * fuera los ~34px de aire a cada lado del glifo, que es donde aterrizaban las
+ * flechas antes de `anchorBox`.
+ *
+ * Existe para que el test de regresión pueda comprobar que todo extremo aterriza
+ * sobre algo dibujado. Se calcula aquí, junto al código que dibuja, y no en el
+ * test: una copia en el test se desincronizaría en cuanto cambiara el render, y
+ * entonces estaría midiendo un nodo que ya no existe.
+ *
+ * Es la unión de dos rectángulos, así que sobreestima: incluye las esquinas
+ * vacías entre glifo y pie. Para comprobar «aterriza sobre el nodo» sobra.
+ */
+export function drawnContentBox(n: FluyoNode, globalFont = DEFAULT_FONT): { x: number; y: number; w: number; h: number } {
+  const nodeRect = { x: n.x - n.w / 2, y: n.y - n.h / 2, w: n.w, h: n.h };
+  if (n.shape !== "icon") return nodeRect;
+
+  const s = Math.min(n.w, n.h - 26) * 0.78;
+  const glifo = { x: n.x - s / 2, y: n.y - n.h / 2 + 4, w: s, h: s };
+  if (!n.label) return glifo;
+  // Un pie descolocado con lblPos sale de este cálculo; en ese caso se devuelve
+  // la caja entera, que es conservador y nunca da un falso positivo.
+  if (n.lblPos && n.lblPos !== "center") return nodeRect;
+
+  // Mismos números que svgLabelLines() para el caso `icon`: baseFs 14, cy en
+  // n.y + n.h/2 - 10, dominant-baseline middle.
+  const lines = String(n.label).split("\n");
+  const bold = !!n.bold;
+  const fs = fitFontSize(lines, 14, n.w - 18, n.fs, bold);
+  const lh = fs * 1.25;
+  const baseY = n.y + n.h / 2 - 10 - ((lines.length - 1) * lh) / 2;
+  const anchoTexto = Math.max(...lines.map(l => approxTextWidth(l, fs, bold)), 1);
+  const pie = {
+    x: n.x - anchoTexto / 2,
+    y: baseY - fs * 0.625,
+    w: anchoTexto,
+    h: (lines.length - 1) * lh + fs * 1.25,
+  };
+
+  const x = Math.min(glifo.x, pie.x), y = Math.min(glifo.y, pie.y);
+  return {
+    x, y,
+    w: Math.max(glifo.x + glifo.w, pie.x + pie.w) - x,
+    h: Math.max(glifo.y + glifo.h, pie.y + pie.h) - y,
+  };
+}
+
 function hexPointsSVG(n: FluyoNode): string {
   const { x, y, w, h } = n, i = Math.min(24, w * 0.18);
   return [
@@ -298,10 +571,10 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
 
 /* ===================== Aristas ===================== */
 
-function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, globalFont: string): string {
+function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[], globalFont: string, labelPos: Map<number, Pt>): string {
   const A = nodeById.get(e.from), B = nodeById.get(e.to);
   if (!A || !B) return "";
-  const pts = edgePoints(e, nodeById);
+  const pts = edgePoints(e, nodeById, edges);
   if (pts.length < 2) return "";
   const T = THEMES[theme];
   const lineCol = escapeXML(e.lineColor || T.edge);
@@ -313,7 +586,7 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
   const parts = [`<polyline points="${ptsStr}" fill="none" stroke="${lineCol}" stroke-width="2" stroke-linejoin="round"${dash}${markers}/>`];
 
   if (e.label) {
-    const m = pointAtMid(pts);
+    const m = labelPos.get(e.id) ?? pointAt(pts, 0.5);
     const efs = e.fs || 13;
     const family = e.font || globalFont || DEFAULT_FONT;
     const bold = !!e.bold;
@@ -343,7 +616,7 @@ function pageBounds(page: FluyoPage, nodeById: Map<number, FluyoNode>) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const add = (x: number, y: number) => { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; };
   for (const n of page.nodes) { add(n.x - n.w / 2, n.y - n.h / 2); add(n.x + n.w / 2, n.y + n.h / 2); }
-  for (const e of page.edges) for (const p of edgePoints(e, nodeById)) add(p.x, p.y);
+  for (const e of page.edges) for (const p of edgePoints(e, nodeById, page.edges)) add(p.x, p.y);
   minX -= 40; minY -= 40; maxX += 40; maxY += 40;
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
@@ -397,7 +670,8 @@ export function pageToSVG(
     buildDefs(),
   ];
   // Sin rectángulo de fondo: el SVG que exporta la app es transparente.
-  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, font));
+  const labelPos = placeEdgeLabels(page);
+  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos));
   for (const n of page.nodes) parts.push(renderNodeToSVG(n, theme, font));
   parts.push("</svg>");
   return parts.join("\n");

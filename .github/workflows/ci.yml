@@ -85,6 +85,12 @@ jobs:
           fi
           echo "OK: las fixtures están al día."
 
-      - name: El contrato se cumple contra los ejemplos recién sincronizados
+      # REQUIRE_FLUYO=1 convierte en fallo duro que la suite de paridad no
+      # encuentre fluyo/. Esa suite carga js/geometry.js de la app y compara su
+      # geometría con la de src/svg.ts: es lo único que impide que los dos ports
+      # se separen. Si se saltara en silencio aquí, no protegería nada.
+      - name: El contrato y la paridad de renderers se cumplen
         working-directory: fluyo-mcp
+        env:
+          REQUIRE_FLUYO: "1"
         run: npm test

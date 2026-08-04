@@ -290,7 +290,7 @@ describe("rate limit por IP", () => {
     assert.equal(limiter.check("2.2.2.2").allowed, true);
   });
 
-  /** En Vercel `socket.remoteAddress` es siempre el proxy: sin esto el límite
+  /** En Cloud Run `socket.remoteAddress` es siempre el proxy: sin esto el límite
    *  sería un único cubo compartido por todo el mundo. */
   it("clientIp prefiere x-forwarded-for sobre la IP del socket", () => {
     const fake = (headers: Record<string, string>, remote = "10.0.0.1") =>
