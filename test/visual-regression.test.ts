@@ -30,7 +30,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
-import { anchorBox, approxTextWidth, pageEdgeGeometry, placeEdgeLabels } from "../src/svg.js";
+import { anchorBox, approxTextWidth, drawnContentBox, pageEdgeGeometry, placeEdgeLabels } from "../src/svg.js";
 import { FluyoEdge, FluyoNode, FluyoPage } from "../src/model.js";
 import { layeredLayout } from "../src/layout.js";
 import { FIXTURES_DIR, packageRoot } from "./helpers.js";
@@ -101,6 +101,24 @@ function onRectBorder(p: { x: number; y: number }, r: Rect): boolean {
     Math.abs(p.y - r.y), Math.abs(p.y - (r.y + r.h))
   );
   return d <= BORDE_TOL;
+}
+
+/** Tolerancia al comprobar que un extremo cae sobre lo dibujado.
+ *
+ *  Es holgada a propósito, y absorbe dos cosas legítimas: los 4px de aire que el
+ *  render deja sobre el glifo de un icono (`n.y - n.h/2 + 4`), y el juego entre
+ *  el alto real del pie de texto y el que se estima aquí con la heurística de
+ *  anchos.
+ *
+ *  Lo que este chequeo persigue no son esos píxeles, sino que la punta acabe a
+ *  decenas de píxeles de cualquier cosa dibujada — que es lo que pasaba cuando se
+ *  anclaba a la caja lógica: 34px de aire a cada lado del glifo. */
+const DIBUJO_TOL = 5;
+
+function dentroDeLoDibujado(p: { x: number; y: number }, n: FluyoNode): boolean {
+  const b = drawnContentBox(n);
+  return p.x >= b.x - DIBUJO_TOL && p.x <= b.x + b.w + DIBUJO_TOL
+    && p.y >= b.y - DIBUJO_TOL && p.y <= b.y + b.h + DIBUJO_TOL;
 }
 
 function insideRect(p: { x: number; y: number }, r: Rect): boolean {
@@ -174,6 +192,13 @@ function findings(page: FluyoPage): string[] {
       // caja: para ellos basta con exigir que el punto no se salga.
       const ok = (n.shape === "circle" || n.shape === "diamond") ? insideRect(pt, b) : onRectBorder(pt, b);
       if (!ok) out.push(`D: ${punta} de e${e.id} "${e.label}" no toca el nodo "${nombre(n)}"`);
+
+      // D-bis) y además tiene que caer sobre algo DIBUJADO, no sobre la caja
+      // lógica. Es la comprobación que habría cazado que las flechas aterrizaran
+      // a 34px del glifo de un icono: la caja lógica las daba por buenas.
+      if (!dentroDeLoDibujado(pt, n)) {
+        out.push(`D: ${punta} de e${e.id} "${e.label}" cae fuera del dibujo del nodo "${nombre(n)}"`);
+      }
     }
   }
 

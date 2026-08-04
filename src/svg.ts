@@ -353,6 +353,56 @@ function svgLabelLines(n: FluyoNode, theme: ThemeName, baseFs: number, cy: numbe
   return parts.join("\n");
 }
 
+/**
+ * La caja que el nodo OCUPA EN PANTALLA, que no es ni `w×h` ni `anchorBox`.
+ *
+ * En un `icon` lo que se pinta son dos cosas separadas: el glifo, cuadrado y
+ * estrecho, pegado arriba; y el pie de texto, más ancho y bajo. Su unión deja
+ * fuera los ~34px de aire a cada lado del glifo, que es donde aterrizaban las
+ * flechas antes de `anchorBox`.
+ *
+ * Existe para que el test de regresión pueda comprobar que todo extremo aterriza
+ * sobre algo dibujado. Se calcula aquí, junto al código que dibuja, y no en el
+ * test: una copia en el test se desincronizaría en cuanto cambiara el render, y
+ * entonces estaría midiendo un nodo que ya no existe.
+ *
+ * Es la unión de dos rectángulos, así que sobreestima: incluye las esquinas
+ * vacías entre glifo y pie. Para comprobar «aterriza sobre el nodo» sobra.
+ */
+export function drawnContentBox(n: FluyoNode, globalFont = DEFAULT_FONT): { x: number; y: number; w: number; h: number } {
+  const nodeRect = { x: n.x - n.w / 2, y: n.y - n.h / 2, w: n.w, h: n.h };
+  if (n.shape !== "icon") return nodeRect;
+
+  const s = Math.min(n.w, n.h - 26) * 0.78;
+  const glifo = { x: n.x - s / 2, y: n.y - n.h / 2 + 4, w: s, h: s };
+  if (!n.label) return glifo;
+  // Un pie descolocado con lblPos sale de este cálculo; en ese caso se devuelve
+  // la caja entera, que es conservador y nunca da un falso positivo.
+  if (n.lblPos && n.lblPos !== "center") return nodeRect;
+
+  // Mismos números que svgLabelLines() para el caso `icon`: baseFs 14, cy en
+  // n.y + n.h/2 - 10, dominant-baseline middle.
+  const lines = String(n.label).split("\n");
+  const bold = !!n.bold;
+  const fs = fitFontSize(lines, 14, n.w - 18, n.fs, bold);
+  const lh = fs * 1.25;
+  const baseY = n.y + n.h / 2 - 10 - ((lines.length - 1) * lh) / 2;
+  const anchoTexto = Math.max(...lines.map(l => approxTextWidth(l, fs, bold)), 1);
+  const pie = {
+    x: n.x - anchoTexto / 2,
+    y: baseY - fs * 0.625,
+    w: anchoTexto,
+    h: (lines.length - 1) * lh + fs * 1.25,
+  };
+
+  const x = Math.min(glifo.x, pie.x), y = Math.min(glifo.y, pie.y);
+  return {
+    x, y,
+    w: Math.max(glifo.x + glifo.w, pie.x + pie.w) - x,
+    h: Math.max(glifo.y + glifo.h, pie.y + pie.h) - y,
+  };
+}
+
 function hexPointsSVG(n: FluyoNode): string {
   const { x, y, w, h } = n, i = Math.min(24, w * 0.18);
   return [
