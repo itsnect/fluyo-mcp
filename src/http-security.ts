@@ -70,13 +70,13 @@ export function checkOrigin(origin: string | undefined, allowed: readonly string
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /**
- * Detrás de un proxy —y en Vercel siempre lo hay— `socket.remoteAddress` es la IP
+ * Detrás de un proxy —y en Cloud Run siempre lo hay— `socket.remoteAddress` es la IP
  * del propio proxy, idéntica para todo el mundo: limitar por ella sería un único
  * cubo global. La IP real llega en `x-forwarded-for`, cuyo primer valor es el
  * cliente y el resto la cadena de proxies.
  *
  * Confiar en una cabecera que el cliente puede falsificar solo es aceptable porque
- * en Vercel la reescribe la plataforma, y porque lo peor que consigue quien la
+ * el front-end de Cloud Run la reescribe, y porque lo peor que consigue quien la
  * falsifique es saltarse su propio límite de caudal. No se usa para nada más: no
  * se registra, no se persiste y no decide permisos.
  */
@@ -104,7 +104,7 @@ export interface RateLimitDecision {
  * tramos, pero no deja pasar una ráfaga doble en el cambio de tramo, y con 30
  * marcas por IP el coste es irrelevante.
  *
- * El estado vive en memoria del proceso. En Vercel eso significa POR INSTANCIA:
+ * El estado vive en memoria del proceso. En Cloud Run eso significa POR INSTANCIA:
  * con varias instancias activas el límite efectivo es mayor que el configurado.
  * Es una barrera contra el abuso accidental y los bucles de reintentos, no una
  * cuota exacta; para eso haría falta un almacén compartido, y almacenar algo es

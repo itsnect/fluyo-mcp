@@ -17,7 +17,8 @@
  * en máquinas distintas.
  *
  * Se usa `enableJsonResponse: true` por el mismo motivo: un stream SSE de larga
- * duración no sobrevive al modelo de ejecución de Vercel, y la especificación de
+ * duración no sobrevive al modelo de ejecución de Cloud Run —que puede retirar una
+ * instancia inactiva y corta la petición al llegar al timeout—, y la especificación de
  * Streamable HTTP permite responder con `application/json` de un solo disparo.
  */
 
@@ -717,11 +718,14 @@ function corsHeaders(origin: string | undefined, verdict: ReturnType<typeof chec
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   Arranque local
+   Arranque del servidor
 
-   En Vercel no se usa: allí `api/index.js` importa `createRequestHandler` y la
-   plataforma pone el servidor. Esto es para `npm run start:http` y para probar
-   el endpoint en local antes de desplegar.
+   Es el arranque de producción: el `CMD` del Dockerfile es
+   `node dist/http.js`, así que en Cloud Run este bloque es el que levanta el
+   servidor. Sirve igual para `npm run start:http` en local.
+
+   (Con Vercel no se usaba: allí `api/index.js` importaba `createRequestHandler`
+   y la plataforma ponía el servidor. Ese archivo ya no existe.)
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /**
