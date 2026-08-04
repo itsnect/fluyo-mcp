@@ -96,6 +96,84 @@ function parallelLane(e: FluyoEdge, edges: readonly FluyoEdge[]): { off: number;
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
+/* ===================== Puertos compartidos =====================
+   Port de `portLane()` de fluyo/js/geometry.js. Cuando dos aristas fijan el mismo
+   lado de un nodo con fromSide/toSide, sidePoint les da EL MISMO PUNTO; si una
+   entra y la otra sale, el flujo parece darse la vuelta sobre la misma línea.
+
+   Tres condiciones: anclas coincidentes (si autoAnchor ya las separó no hay nada
+   que arreglar), tráfico en los dos sentidos (un abanico que sale del mismo punto
+   se lee como un bus y separarlo solo añade ruido), y no ser un par paralelo, que
+   ya tiene su propio reparto. Sobre el corpus reparte exactamente un grupo. */
+interface BaseAnchors { p1: Pt; p2: Pt; s1: "n" | "s" | "e" | "w"; s2: "n" | "s" | "e" | "w"; }
+
+function baseAnchors(e: FluyoEdge, nodeById: Map<number, FluyoNode>): BaseAnchors | null {
+  const A = nodeById.get(e.from), B = nodeById.get(e.to);
+  if (!A || !B) return null;
+  const wps = e.waypoints || [];
+  const tA = wps[0] || { x: B.x, y: B.y };
+  const tB = wps[wps.length - 1] || { x: A.x, y: A.y };
+  const p1 = anchorPt(A, e.fromSide, tA.x, tA.y);
+  const p2 = anchorPt(B, e.toSide, tB.x, tB.y);
+  return { p1, p2, s1: e.fromSide || inferSide(A, p1), s2: e.toSide || inferSide(B, p2) };
+}
+
+function portKey(nodeId: number, side: string, p: Pt): string {
+  return `${nodeId}:${side}:${Math.round(p.x)},${Math.round(p.y)}`;
+}
+
+/** Cuántas aristas unen el mismo par que `e`. Comparación de enteros y sin
+ *  construir claves: esto corre dentro del bucle de render de la app. */
+function siblingCount(e: FluyoEdge, edges: readonly FluyoEdge[]): number {
+  let n = 0;
+  for (const o of edges) {
+    if ((o.waypoints || []).length) continue;
+    if ((o.from === e.from && o.to === e.to) || (o.from === e.to && o.to === e.from)) n++;
+  }
+  return n;
+}
+
+/** El reparto es por extremo, no por arista: una arista puede compartir puerto en
+ *  un lado y no en el otro.
+ *
+ *  El orden de los filtros importa para el coste: primero se descarta con
+ *  comparaciones de enteros —solo las aristas que TOCAN este nodo pueden
+ *  compartir puerto— y la geometría, que es lo caro, se calcula solo para esas.
+ *  Sin ese orden, una página de 90 aristas se comía el 75 % del fotograma. */
+function portLane(
+  e: FluyoEdge, which: "from" | "to",
+  edges: readonly FluyoEdge[], nodeById: Map<number, FluyoNode>
+): { off: number; half: number } {
+  const none = { off: 0, half: 0 };
+  if ((e.waypoints || []).length) return none;
+  const nodeId = which === "from" ? e.from : e.to;
+  const vecinas: FluyoEdge[] = [];
+  for (const o of edges) {
+    if (o.from !== nodeId && o.to !== nodeId) continue;
+    if ((o.waypoints || []).length) continue;
+    vecinas.push(o);
+  }
+  if (vecinas.length < 2) return none;
+  if (siblingCount(e, edges) > 1) return none;
+  const me = baseAnchors(e, nodeById);
+  if (!me) return none;
+  const key = portKey(nodeId, which === "from" ? me.s1 : me.s2, which === "from" ? me.p1 : me.p2);
+  const grupo: Array<{ id: number; sent: "entra" | "sale" }> = [];
+  for (const o of vecinas) {
+    if (siblingCount(o, edges) > 1) continue;
+    const b = baseAnchors(o, nodeById);
+    if (!b) continue;
+    if (o.from === nodeId && portKey(nodeId, b.s1, b.p1) === key) grupo.push({ id: o.id, sent: "sale" });
+    if (o.to === nodeId && portKey(nodeId, b.s2, b.p2) === key) grupo.push({ id: o.id, sent: "entra" });
+  }
+  if (grupo.length < 2) return none;
+  if (!(grupo.some(x => x.sent === "entra") && grupo.some(x => x.sent === "sale"))) return none;
+  const yo = which === "from" ? "sale" : "entra";
+  const i = grupo.findIndex(x => x.id === e.id && x.sent === yo);
+  if (i < 0) return none;
+  return { off: (i - (grupo.length - 1) / 2) * PARALLEL_SEP, half: ((grupo.length - 1) / 2) * PARALLEL_SEP };
+}
+
 /** Corre el ancla a lo largo de su lado sin salirse de él: el extremo tiene que
  *  seguir tocando el borde del nodo.
  *
@@ -149,6 +227,13 @@ function edgePoints(e: FluyoEdge, nodeById: Map<number, FluyoNode>, edges: reado
   const s2 = e.toSide || inferSide(B, p2);
   const { off, half } = parallelLane(e, edges);
   if (off) { p1 = slideAnchor(A, s1, p1, off, half); p2 = slideAnchor(B, s2, p2, off, half); }
+  else {
+    // El reparto por puerto es por extremo y no toca el canal central: en el caso
+    // ortogonal el canal ya sale de las anclas, así que se mueve solo.
+    const o1 = portLane(e, "from", edges, nodeById), o2 = portLane(e, "to", edges, nodeById);
+    if (o1.off) p1 = slideAnchor(A, s1, p1, o1.off, o1.half);
+    if (o2.off) p2 = slideAnchor(B, s2, p2, o2.off, o2.half);
+  }
   if (e.route === "ortho" && wps.length === 0) {
     return orthoRoute(p1, DIR[s1], p2, DIR[s2], off);
   }
