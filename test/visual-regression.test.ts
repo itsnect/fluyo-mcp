@@ -126,6 +126,30 @@ function insideRect(p: { x: number; y: number }, r: Rect): boolean {
     && p.y >= r.y - BORDE_TOL && p.y <= r.y + r.h + BORDE_TOL;
 }
 
+const SOLAPE_MIN = 40;  // px de trazo compartido para considerarlo un problema
+
+/** Longitud de trazo que dos polilíneas comparten recorriéndolo en sentidos
+ *  contrarios. Colineal y a menos de COLINEAL_TOL de distancia. */
+const COLINEAL_TOL = 1.5;
+function solapeOpuesto(A: { x: number; y: number }[], B: { x: number; y: number }[]): number {
+  let total = 0;
+  for (let a = 1; a < A.length; a++) for (let b = 1; b < B.length; b++) {
+    const a1 = A[a - 1], a2 = A[a], b1 = B[b - 1], b2 = B[b];
+    const va = { x: a2.x - a1.x, y: a2.y - a1.y }, vb = { x: b2.x - b1.x, y: b2.y - b1.y };
+    const La = Math.hypot(va.x, va.y), Lb = Math.hypot(vb.x, vb.y);
+    if (La < 1 || Lb < 1) continue;
+    const ua = { x: va.x / La, y: va.y / La };
+    if (Math.abs(ua.x * vb.y - ua.y * vb.x) / Lb > 0.02) continue;                 // no paralelos
+    if (Math.abs((b1.x - a1.x) * -ua.y + (b1.y - a1.y) * ua.x) > COLINEAL_TOL) continue; // paralelos pero separados
+    if (ua.x * vb.x + ua.y * vb.y > 0) continue;                                   // mismo sentido: es un tronco, no un defecto
+    const proy = (q: { x: number; y: number }) => (q.x - a1.x) * ua.x + (q.y - a1.y) * ua.y;
+    const lo = Math.max(0, Math.min(proy(b1), proy(b2)));
+    const hi = Math.min(La, Math.max(proy(b1), proy(b2)));
+    if (hi > lo) total += hi - lo;
+  }
+  return total;
+}
+
 /* ===================== Los cuatro chequeos ===================== */
 
 function findings(page: FluyoPage): string[] {
@@ -180,6 +204,22 @@ function findings(page: FluyoPage): string[] {
     }
   }
 
+  // E) tramos largos compartidos por aristas de pares DISTINTOS, recorridos en
+  //    sentido opuesto. Compartir tramo no es malo por sí solo: un abanico que
+  //    sale de un nodo comparte tronco y se lee como un bus (medido: 11 pares en
+  //    el corpus, hasta 264px, todos en diagramas que se ven bien). Lo que
+  //    confunde es que el flujo vuelva sobre sus pasos por la misma línea, con
+  //    dos puntas de flecha sobre un único trazo.
+  const pares2 = page.edges;
+  for (let i = 0; i < pares2.length; i++) for (let j = i + 1; j < pares2.length; j++) {
+    const a = pares2[i], b = pares2[j];
+    const ka = a.from < a.to ? `${a.from}-${a.to}` : `${a.to}-${a.from}`;
+    const kb = b.from < b.to ? `${b.from}-${b.to}` : `${b.to}-${b.from}`;
+    if (ka === kb) continue;   // mismo par: lo cubre A
+    const op = solapeOpuesto(geom.get(a.id) ?? [], geom.get(b.id) ?? []);
+    if (op >= SOLAPE_MIN) out.push(`E: e${a.id} "${a.label}" y e${b.id} "${b.label}" comparten ${Math.round(op)}px de trazo en sentido opuesto`);
+  }
+
   // D) extremos que no aterrizan en el nodo
   for (const e of page.edges) {
     const p = geom.get(e.id) ?? [];
@@ -219,8 +259,17 @@ function findings(page: FluyoPage): string[] {
  * tienen que desaparecer y el test avisará si se olvidan.
  */
 const BASELINE: Record<string, string[]> = {
-  "arquitectura-serverless-aws": ['C: e16 "encola" atraviesa el nodo "Lambda: worker"'],
-  "microservicios-api-gateway": ['C: e21 "consume" atraviesa el nodo "Pedidos"'],
+  "arquitectura-serverless-aws": [
+    'C: e16 "encola" atraviesa el nodo "Lambda: worker"',
+    /* Ver TRAZOS COMPARTIDOS más abajo: «encola» baja por la columna x=1460 y
+       «dispara» sube por ella. No comparten ancla —los nodos están alineados en
+       esa columna— así que el reparto por puerto no lo toca. */
+    'E: e16 "encola" y e17 "dispara" comparten 108px de trazo en sentido opuesto',
+  ],
+  "microservicios-api-gateway": [
+    'C: e21 "consume" atraviesa el nodo "Pedidos"',
+    'E: e20 "publica" y e21 "consume" comparten 154px de trazo en sentido opuesto',
+  ],
   "oauth2-flujo-autenticacion": ['C: e12 "4. code → token" atraviesa el nodo "API protegida"'],
   "pipeline-etl-datos": ['C: e16 "sí" atraviesa el nodo "Cuarentena"'],
 
@@ -251,8 +300,98 @@ const BASELINE: Record<string, string[]> = {
  * alcance de esta tanda; queda anotado aquí para que no se pierda.
  */
 const BASELINE_LAYOUT: Record<string, string[]> = {
-  "microservicios-api-gateway": ['C: e15 "/users" atraviesa el nodo "orders-db"'],
+  "microservicios-api-gateway": [
+    'C: e15 "/users" atraviesa el nodo "orders-db"',
+    'E: e20 "publica" y e21 "consume" comparten 56px de trazo en sentido opuesto',
+  ],
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   TRABAJO PENDIENTE, MEDIDO Y CERRADO EN FALSO A PROPÓSITO
+
+   Dos defectos conocidos que NO son fallos del test: son decisiones tomadas con
+   números delante. Están aquí para que quien los retome no repita el
+   experimento.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * (1) ANCLAJE VERTICAL EN NODOS `icon` — decidido: se deja como está.
+ *
+ * `anchorBox()` estrecha el ancho al del glifo pero CONSERVA la altura. En un
+ * icono de 120×92 el glifo mide 51.5px y va pegado ARRIBA (`n.y - h/2 + 4`), con
+ * el pie de texto abajo. Consecuencia: un ancla sur cae 36.5px por debajo del
+ * glifo, y un ancla lateral cuya y se vaya abajo puede caer hasta 36.5px por
+ * debajo. Aterrizan sobre el PIE, no sobre el icono.
+ *
+ * Extremos afectados hoy, por nombre, para que se vea el efecto de cualquier
+ * cambio futuro:
+ *
+ *   arquitectura-serverless-aws  e12 "estáticos"  inicio → "CloudFront"                36.5px
+ *                                e16 "encola"     inicio → "Lambda: API"               36.5px
+ *                                e17 "dispara"    fin    → "Lambda: worker"            36.5px
+ *   microservicios-api-gateway   e20 "publica"    inicio → "Pedidos"                   36.5px
+ *                                e21 "consume"    fin    → "Usuarios"                  36.5px
+ *   oauth2-flujo-autenticacion   e11 "3. login"   inicio → "Servidor de autorización"  36.5px
+ *                                e14 "6. 200 OK"  inicio → "API protegida"             36.5px
+ *   pipeline-etl-datos           e16 "sí"         fin    → "Data warehouse"            36.5px
+ *   ingesta-v2                   e7  "publish"    inicio → "API Gateway"               36.5px
+ *                                e8  "consume"    inicio → "Kafka"                     36.5px
+ *                                e12 "hit"        fin    → "API Gateway"               26.5px (lateral)
+ *   rag-chatbot                  e5  "pregunta"   inicio → "Usuario"                   36.5px
+ *
+ * Doce extremos, en los 7 documentos. Dos de ellos están en microservicios y
+ * pipeline, que se ven bien: la punta cae justo debajo del pie de texto, así que
+ * el efecto pasa desapercibido salvo que se mire de cerca. Eso es parte del
+ * argumento para no correrlo a ciegas.
+ *
+ * NO es una regresión: se midió contra el árbol anterior a los arreglos de
+ * anclaje y estos extremos salen idénticos. `anchorBox` arregló el eje
+ * horizontal —de 34.3px a 0.0px en todos los laterales— y el vertical nunca se
+ * abordó.
+ *
+ * Por qué no se arregla con lo obvio: anclar al glifo también en vertical
+ * (`h = s`) hace que 13 aristas del corpus salgan por debajo del icono y
+ * ATRAVIESEN su propio pie de texto, que no tiene fondo. Medido:
+ *
+ *   arquitectura-serverless-aws 4 · microservicios-api-gateway 3 ·
+ *   oauth2-flujo-autenticacion 2 · pipeline-etl-datos 1 · ingesta-v2 2 ·
+ *   rag-chatbot 1
+ *
+ * Dos de esos diagramas —microservicios y pipeline— estaban impecables antes.
+ * Se cambia un defecto por otro peor.
+ *
+ * El arreglo bueno es anclar a la SILUETA REAL: dos rectángulos, glifo arriba y
+ * pie abajo, y que `autoAnchor` intersecte con el que corresponda a esa
+ * dirección. Resuelve los dos ejes sin cruzar texto. Coste: cambia la matemática
+ * de anclaje (~40 líneas × 2 renderers) y vuelve a mover TODAS las aristas que
+ * tocan un icono, un segundo cambio de radio completo sobre los 5 ejemplos
+ * publicados. Merece su propia tanda con su medición antes/después, no un
+ * apéndice de otra.
+ */
+
+/**
+ * (2) TRAZOS COMPARTIDOS EN SENTIDO OPUESTO — quedan 2 de 3.
+ *
+ * Compartir tramo no es un defecto por sí solo. Medido sobre los 7 documentos:
+ * 14 pares de aristas de pares distintos comparten ≥8px, y el reparto es limpio
+ * —`mismo` y `opuesto` nunca son ambos distintos de cero—:
+ *
+ *   · 11 pares lo recorren en el MISMO sentido, hasta 264px. Son abanicos de
+ *     entrada y de salida: se leen como un bus que se bifurca, y separarlos solo
+ *     añadiría ruido. Están todos en diagramas que se ven bien.
+ *   · 3 pares lo recorren en sentido OPUESTO. Esos sí confunden: una sola línea
+ *     con dos puntas de flecha.
+ *
+ * De los 3, `portLane()` arregla uno —oauth2 e12/e13, que compartían el ancla
+ * exacta (1560,508) en el lado sur del hex— y los otros dos no, porque no
+ * comparten ancla: sus tramos largos coinciden porque los nodos están alineados
+ * en la misma columna (x=1460 en serverless, x=1200 en microservicios). Ahí la x
+ * del tramo la fija el ancla del destino y moverla desconecta el extremo.
+ *
+ * Salida: mover el tramo largo a un canal libre, o sea ruteo con evasión de
+ * obstáculos — el mismo algoritmo que reclaman los 4 cruces del tipo C. Cuando
+ * se implemente, estas entradas del BASELINE deben desaparecer solas.
+ */
 
 /* ===================== Suites ===================== */
 
