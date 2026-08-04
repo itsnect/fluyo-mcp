@@ -88,6 +88,10 @@ export function buildNode(
     ...(spec.lblPos !== undefined ? { lblPos: spec.lblPos } : {}),
     ...(spec.textBg !== undefined ? { textBg: resolveColor(spec.textBg) } : {}),
     ...(spec.textColor !== undefined ? { textColor: resolveColor(spec.textColor) } : {}),
+    ...(spec.lang !== undefined ? { lang: spec.lang } : {}),
+    ...(spec.keywords !== undefined ? { keywords: spec.keywords } : {}),
+    ...(spec.kwBg !== undefined ? { kwBg: resolveColor(spec.kwBg) } : {}),
+    ...(spec.kwColor !== undefined ? { kwColor: resolveColor(spec.kwColor) } : {}),
     ...(spec.font !== undefined ? { font: spec.font } : {}),
     ...(spec.bold !== undefined ? { bold: spec.bold } : {}),
   };

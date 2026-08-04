@@ -13,6 +13,8 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+
+import { FONTS } from "../src/generated/config.js";
 import { join } from "node:path";
 
 import {
@@ -139,11 +141,15 @@ describe("catálogos", () => {
     }
   });
 
-  it("list_fonts trae las 11 tipografías y marca la global", async () => {
+  /* Contra FONTS.length y no contra un número escrito a mano: el catálogo lo
+     genera el codegen desde js/config.js, así que fijar la cifra aquí obliga a
+     tocar el test cada vez que Fluyo añade una fuente — y ese acoplamiento es el
+     que hizo fallar esta suite al añadir `Mono`. */
+  it("list_fonts trae todas las tipografías del catálogo y marca la global", async () => {
     const r = await h.client.callTool({ name: "list_fonts", arguments: {} });
     assert.ok(!isToolError(r), textOf(r));
     const text = textOf(r);
-    assert.equal(text.trim().split("\n").length, 11);
+    assert.equal(text.trim().split("\n").length, FONTS.length);
     assert.match(text, /Georgia.*global por defecto/);
   });
 
@@ -493,5 +499,89 @@ describe("un documento guardado por la app sobrevive a edit_diagram", () => {
       0,
       `edit_diagram alteró el documento más allá de lo pedido — ${diffs.length} diferencia(s):\n${summarizeDiffs(diffs)}\n`
     );
+  });
+
+  /* La fixture de `code` vive fuera del directorio que mira el test de contrato
+     —ese es un espejo exacto de los ejemplos publicados—, así que sus campos
+     nuevos necesitan su propia comprobación de round-trip. */
+  it("preserva lang, keywords, kwBg y kwColor de los nodos code", async () => {
+    const original: any = loadFixture(join("regresion-visual", "bloque-codigo.fluyo.json"));
+    const nombreOriginal = original.doc.pages[0].name;
+
+    const r = await h.client.callTool({
+      name: "edit_diagram",
+      arguments: { document: original, operations: [{ op: "rename_page", name: "Renombrada" }] },
+    });
+    assert.ok(!isToolError(r), textOf(r));
+
+    const salida = documentOf(r);
+    salida.doc.pages[0].name = nombreOriginal;
+    const diffs = collectDiffs(original, salida);
+    assert.equal(
+      diffs.length, 0,
+      `el round-trip perdió o cambió campos de code — ${diffs.length} diferencia(s):\n${summarizeDiffs(diffs)}\n`
+    );
+
+    // Y que los valores concretos siguen ahí, no solo que no hay diffs.
+    const nodos = salida.doc.pages[0].nodes;
+    assert.equal(nodos[0].lang, "sql");
+    assert.deepEqual(nodos[2].keywords, ["cat", "grep", "sort"]);
+    assert.equal(nodos[1].kwBg, "#c9b458");
+    assert.equal(nodos[1].kwColor, "#161410");
+    assert.equal(nodos[3].lang, "none");
+  });
+
+  /* Los campos de `code` viven en DOS objetos de schema distintos —
+     `commonNodeFields` para create_diagram y `editNodeFields` para add_node y
+     update_node—, y añadirlos solo al primero dejaba crear un nodo de código
+     pero no editarlo. Esto lo fija por los dos caminos. */
+  it("add_node y update_node aceptan los campos de code", async () => {
+    const creado = await h.client.callTool({
+      name: "create_diagram",
+      arguments: {
+        pageName: "code", theme: "dark",
+        nodes: [{ key: "q", shape: "code", label: "SELECT 1", lang: "none", kwBg: "#ffffff", kwColor: "#000000" }],
+        edges: [],
+      },
+    });
+    assert.ok(!isToolError(creado), textOf(creado));
+    const doc1 = documentOf(creado);
+    assert.equal(doc1.doc.pages[0].nodes[0].lang, "none");
+    assert.equal(doc1.doc.pages[0].nodes[0].kwBg, "#ffffff");
+
+    const editado = await h.client.callTool({
+      name: "edit_diagram",
+      arguments: {
+        document: doc1,
+        operations: [
+          { op: "add_node", key: "b", shape: "code", label: "CREATE STREAM s", keywords: ["CREATE", "STREAM"], kwBg: "#a8b34a" },
+          { op: "update_node", id: doc1.doc.pages[0].nodes[0].id, lang: "sql", kwColor: "#111111" },
+        ],
+      },
+    });
+    assert.ok(!isToolError(editado), textOf(editado));
+    const nodos = documentOf(editado).doc.pages[0].nodes;
+    assert.equal(nodos[0].lang, "sql", "update_node debe poder cambiar lang");
+    assert.equal(nodos[0].kwColor, "#111111", "update_node debe poder cambiar kwColor");
+    assert.deepEqual(nodos[1].keywords, ["CREATE", "STREAM"], "add_node debe poder poner keywords");
+    assert.equal(nodos[1].kwBg, "#a8b34a");
+  });
+
+  /* El caso que más importa para no romper nada: un documento anterior a esta
+     forma no tiene ninguno de los campos nuevos y no debe salir con ellos
+     inventados. Los 5 ejemplos oficiales lo cubren en el contrato; esto lo fija
+     de forma explícita para que se lea al revisar. */
+  it("un documento sin campos de code no los gana en el round-trip", async () => {
+    const original: any = loadFixture("microservicios-api-gateway.fluyo.json");
+    const r = await h.client.callTool({
+      name: "edit_diagram",
+      arguments: { document: original, operations: [{ op: "rename_page", name: "x" }] },
+    });
+    const salida = documentOf(r);
+    for (const n of salida.doc.pages[0].nodes) {
+      for (const campo of ["lang", "keywords", "kwBg", "kwColor"]) {
+        assert.ok(!(campo in n), `el nodo ${n.id} ganó '${campo}' sin que nadie lo pidiera`);
+      }
+    }
   });
 });

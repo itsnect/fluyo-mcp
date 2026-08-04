@@ -30,21 +30,22 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
-import { anchorBox, approxTextWidth, drawnContentBox, pageEdgeGeometry, placeEdgeLabels } from "../src/svg.js";
+import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, drawnContentBox, pageEdgeGeometry, placeEdgeLabels } from "../src/svg.js";
+import { CODE_ADV, CODE_LANGS, DEFAULT_LANG, FONTS, THEMES } from "../src/generated/config.js";
 import { FluyoEdge, FluyoNode, FluyoPage } from "../src/model.js";
 import { layeredLayout } from "../src/layout.js";
 import { FIXTURES_DIR, packageRoot } from "./helpers.js";
 
 /* ===================== Documentos bajo prueba ===================== */
 
-interface Doc { name: string; pages: FluyoPage[]; }
+interface Doc { name: string; pages: FluyoPage[]; theme: string; }
 
 function loadDocs(): Doc[] {
   const out: Doc[] = [];
   const add = (dir: string) => {
     for (const f of readdirSync(dir).filter(n => n.endsWith(".fluyo.json")).sort()) {
       const proj = JSON.parse(readFileSync(join(dir, f), "utf8"));
-      out.push({ name: f.replace(".fluyo.json", ""), pages: proj.doc.pages });
+      out.push({ name: f.replace(".fluyo.json", ""), pages: proj.doc.pages, theme: proj.doc.theme });
     }
   };
   add(FIXTURES_DIR);
@@ -396,8 +397,8 @@ const BASELINE_LAYOUT: Record<string, string[]> = {
 /* ===================== Suites ===================== */
 
 describe("regresión visual: los cuatro defectos de legibilidad", () => {
-  it("hay siete documentos cargados (5 ejemplos oficiales + 2 fixtures)", () => {
-    assert.equal(docs.length, 7, `documentos encontrados: ${docs.map(d => d.name).join(", ")}`);
+  it("están cargados los 5 ejemplos oficiales y las fixtures de regresión", () => {
+    assert.equal(docs.length, 8, `documentos encontrados: ${docs.map(d => d.name).join(", ")}`);
   });
 
   for (const doc of docs) {
@@ -484,7 +485,22 @@ describe("el auto-layout deja sitio suficiente para aristas y etiquetas", () => 
 interface AppGeometry {
   edgePoints: (e: FluyoEdge) => { x: number; y: number }[];
   placeEdgeLabels: (measure: (e: FluyoEdge) => { w: number; h: number }) => Map<number, { x: number; y: number }>;
+  codeBlockLayout: (n: FluyoNode) => unknown;
+  codeColors: (n: FluyoNode, theme: string) => unknown;
   setPage: (page: FluyoPage) => void;
+}
+
+/**
+ * `node:assert/strict` compara con deepStrictEqual, que **también compara el
+ * prototipo**. Los objetos que devuelve la app nacen dentro de un contexto `vm`,
+ * o sea en otro realm, así que su Object.prototype no es el de este módulo y la
+ * comparación falla aunque la estructura sea idéntica. El viaje por JSON los
+ * devuelve a objetos planos de este realm.
+ *
+ * No afecta a las comparaciones de aristas porque esas son escalares.
+ */
+function plano<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
 }
 
 function loadAppGeometry(fluyoPath: string): AppGeometry {
@@ -498,14 +514,20 @@ function loadAppGeometry(fluyoPath: string): AppGeometry {
     clamp: (v: number, a: number, b: number) => Math.min(b, Math.max(a, v)),
     P: () => doc.pages[doc.cur],
     nodeById: (id: number) => doc.pages[doc.cur].nodes.find(n => n.id === id),
+    /* Las constantes se le inyectan desde el codegen, que las extrae de
+       js/config.js. Así esta suite mide el ALGORITMO de maquetación y no si las
+       constantes están sincronizadas, que es trabajo de `check:config`. */
+    CODE_ADV, CODE_LANGS, DEFAULT_LANG, THEMES, FONTS,
   };
   const ctx = createContext(sandbox);
   // El valor de la última expresión es lo que devuelve runInContext: es la forma
   // de sacar del script unas funciones declaradas con `function`/`const`, que no
   // se cuelgan del objeto de contexto.
-  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels});", ctx) as {
+  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels, codeBlockLayout, codeColors});", ctx) as {
     edgePoints: AppGeometry["edgePoints"];
     placeEdgeLabels: AppGeometry["placeEdgeLabels"];
+    codeBlockLayout: AppGeometry["codeBlockLayout"];
+    codeColors: AppGeometry["codeColors"];
   };
   return {
     ...api,
@@ -542,6 +564,24 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
     it(`${d.name}: mismas rutas y mismas etiquetas`, { skip: hayApp ? false : "sin fluyo/ al lado" }, () => {
       for (const page of d.pages) {
         app.setPage(page);
+
+        /* Bloques de código. Aquí NO se inyecta ningún medidor, porque la
+           maquetación no mide texto: sale de índices de carácter sobre una
+           rejilla de ancho fijo. Eso permite comparar la estructura ENTERA
+           —tamaño de fuente, avance, caja del bloque y la x/ancho de cada
+           token— en vez de solo el algoritmo. Es una garantía más fuerte que la
+           que se puede dar para las etiquetas. */
+        for (const nodo of page.nodes) {
+          if (nodo.shape !== "code") continue;
+          assert.deepEqual(
+            plano(app.codeBlockLayout(nodo)), plano(codeBlockLayout(nodo)),
+            `maquetación del bloque de código del nodo ${nodo.id} en ${d.name}`
+          );
+          assert.deepEqual(
+            plano(app.codeColors(nodo, d.theme)), plano(codeColors(nodo, d.theme as never)),
+            `colores del bloque de código del nodo ${nodo.id} en ${d.name}`
+          );
+        }
 
         const mcpGeom = pageEdgeGeometry(page);
         for (const e of page.edges) {
