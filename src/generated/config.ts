@@ -9,7 +9,7 @@
    está mal, arréglalo en Fluyo o en scripts/sync-config.ts.
 
    `npm run check:config` falla si este archivo no coincide con Fluyo.
-   Sincronizado desde la revisión eb8a054 de fluyo/.
+   Sincronizado desde la revisión 052dd85 de fluyo/.
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ===================== Lienzo ===================== */
@@ -18,7 +18,7 @@ export const CANVAS = { W: 2560, H: 1440, GRID: 20 } as const;
 
 /* ===================== Formas ===================== */
 
-export const SHAPE_NAMES = ["rect", "cylinder", "diamond", "circle", "hex", "text", "icon", "image", "anim"] as const;
+export const SHAPE_NAMES = ["rect", "cylinder", "diamond", "circle", "hex", "text", "icon", "image", "anim", "code"] as const;
 export type Shape = (typeof SHAPE_NAMES)[number];
 
 /** Ancho y alto con los que Fluyo crea cada forma (js/state.js, newNode). */
@@ -32,6 +32,7 @@ export const DEFAULT_SIZES: Record<Shape, readonly [number, number]> = {
   icon: [120, 92],
   image: [220, 160],
   anim: [120, 100],
+  code: [300, 150],
 };
 
 /* ===================== Paleta semántica ===================== */
@@ -71,12 +72,16 @@ export interface ThemeDef {
   edge: string;
   edgeLbl: string;
   lblBg: string;
+  codeBg: string;
+  codeText: string;
+  codeKwBg: string;
+  codeKwText: string;
 }
 
 export const THEMES: Record<ThemeName, ThemeDef> = {
-  dark: { bg: "#161616", grid: "rgba(255,255,255,.045)", text: "#ededed", edge: "#777", edgeLbl: "#bdbdbd", lblBg: "#161616" },
-  crema: { bg: "#f4eee1", grid: "rgba(0,0,0,.06)", text: "#2b2620", edge: "#8a8275", edgeLbl: "#6b6457", lblBg: "#f4eee1" },
-  claro: { bg: "#ffffff", grid: "rgba(0,0,0,.05)", text: "#111111", edge: "#888888", edgeLbl: "#444444", lblBg: "#ffffff" },
+  dark: { bg: "#161616", grid: "rgba(255,255,255,.045)", text: "#ededed", edge: "#777", edgeLbl: "#bdbdbd", lblBg: "#161616", codeBg: "#101010", codeText: "#e8e8e8", codeKwBg: "#a8b34a", codeKwText: "#0c0a09" },
+  crema: { bg: "#f4eee1", grid: "rgba(0,0,0,.06)", text: "#2b2620", edge: "#8a8275", edgeLbl: "#6b6457", lblBg: "#f4eee1", codeBg: "#e7ddc9", codeText: "#1a1a1a", codeKwBg: "#a8b34a", codeKwText: "#0c0a09" },
+  claro: { bg: "#ffffff", grid: "rgba(0,0,0,.05)", text: "#111111", edge: "#888888", edgeLbl: "#444444", lblBg: "#ffffff", codeBg: "#101010", codeText: "#e8e8e8", codeKwBg: "#a8b34a", codeKwText: "#0c0a09" },
 };
 
 /* ===================== Anclas ===================== */
@@ -112,9 +117,25 @@ export const FONTS: readonly FontDef[] = [
   { name: "Courier", family: "'Courier New', Courier, monospace" },
   { name: "Impact", family: "Impact, Haettenschweiler, sans-serif" },
   { name: "Comic Sans", family: "'Comic Sans MS', 'Comic Sans', cursive" },
+  { name: "Mono", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace" },
 ];
 
 export const DEFAULT_FONT = "Georgia, serif";
+
+/* ===================== Bloques de código ===================== */
+
+/** Avance por carácter, en múltiplos del tamaño de fuente. NORMATIVO: el texto
+ *  se obliga a esta rejilla con `textLength`, no se estima a partir de ella. */
+export const CODE_ADV = 0.6;
+
+/** Presets de palabras clave. El nodo puede sustituirlos con `keywords`. */
+export const CODE_LANGS: Record<string, readonly string[]> = {
+  "sql": ["CREATE", "STREAM", "TABLE", "SELECT", "FROM", "WHERE", "EMIT", "CHANGES", "AS", "INSERT", "INTO", "JOIN", "LEFT", "RIGHT", "GROUP", "BY", "ORDER", "HAVING", "WITH", "WINDOW", "PARTITION", "KEY", "VALUES", "UPDATE", "SET", "DELETE", "AND", "OR", "ON"],
+  "none": [],
+};
+export type CodeLang = keyof typeof CODE_LANGS;
+export const DEFAULT_LANG = "sql";
+export const CODE_DEFAULT_LABEL = "CREATE STREAM x AS\nSELECT *\nFROM stream";
 
 /* ===================== Iconos ===================== */
 

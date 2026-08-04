@@ -1,4 +1,4 @@
-import { CANVAS, DEFAULT_FONT, THEMES, animDataUri, iconDataUri } from "./schema.js";
+import { CANVAS, CODE_ADV, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, THEMES, animDataUri, iconDataUri } from "./schema.js";
 import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
 
 /* ===================== Geometría de aristas (port de fluyo/js/geometry.js) ===================== */
@@ -488,6 +488,80 @@ export function drawnContentBox(n: FluyoNode, globalFont = DEFAULT_FONT): { x: n
   };
 }
 
+/* ===================== Bloques de código =====================
+   Port de `codeBlockLayout()` de fluyo/js/geometry.js, y el port tiene que ser
+   literal: el test de paridad compara esta estructura entera contra la que
+   produce la app.
+
+   Aquí NO se usa `approxTextWidth`. La posición y el ancho de cada token salen de
+   índices de carácter sobre una rejilla de ancho fijo, así que son exactos sin
+   medir nada — que es justo el caso donde una heurística sobra. La limitación
+   conocida de medición de texto no aplica a esta forma. */
+export interface CodeToken { t: string; k: number; kw: boolean; x: number; w: number; }
+export interface CodeRow { ly: number; tokens: CodeToken[]; }
+export interface CodeLayout {
+  lines: string[]; fs: number; adv: number; lh: number;
+  blockH: number; bx: number; by: number; bw: number; x0: number; rows: CodeRow[];
+}
+
+function codeKeywords(n: FluyoNode): readonly string[] {
+  if (Array.isArray(n.keywords) && n.keywords.length) return n.keywords;
+  return CODE_LANGS[n.lang || DEFAULT_LANG] || CODE_LANGS[DEFAULT_LANG];
+}
+
+/** Los espacios no se emiten: la rejilla ya los deja implícitos, y un <text> con
+ *  solo espacios se colapsa a ancho cero en SVG.
+ *
+ *  La división es por espacios, como en el fork: `.map(parse)` es UN token, así que
+ *  una palabra clave solo resalta cuando aparece suelta.
+ *
+ *  Tokens de UN carácter: `lengthAdjust="spacing"` reparte la diferencia ENTRE
+ *  caracteres y con uno solo no hay hueco, así que el glifo conserva su avance
+ *  natural (0.9px de menos con Consolas a 18px). No se acumula, porque la x de
+ *  cada token es absoluta. */
+function codeTokensOf(line: string): Array<{ t: string; k: number }> {
+  const out: Array<{ t: string; k: number }> = [];
+  let k = 0;
+  for (const t of line.split(/(\s+)/)) { if (t && t.trim()) out.push({ t, k }); k += t.length; }
+  return out;
+}
+
+export function codeBlockLayout(n: FluyoNode): CodeLayout {
+  const lines = String(n.label == null ? "" : n.label).split("\n");
+  const pad = 12, inset = 10;
+  const bw = Math.max(1, n.w - pad * 2);
+  const maxChars = Math.max(1, ...lines.map(l => l.length));
+  const porAlto = (n.h - pad * 2) / lines.length - 4;
+  const porAncho = (bw - inset * 2) / (maxChars * CODE_ADV);
+  const fs = n.fs || clamp(Math.min(porAlto, porAncho), 9, 18);
+  const adv = fs * CODE_ADV, lh = fs + 6;
+  const blockH = lines.length * lh + 8;
+  const bx = n.x - n.w / 2 + pad, by = n.y - n.h / 2 + (n.h - blockH) / 2, x0 = bx + inset;
+  const kws = new Set(codeKeywords(n).map(w => String(w).toUpperCase()));
+  const rows = lines.map((ln, i) => ({
+    ly: by + 8 + i * lh + lh / 2 - 3,
+    tokens: codeTokensOf(ln).map(({ t, k }) => ({
+      t, k, kw: kws.has(t.toUpperCase()), x: x0 + k * adv, w: t.length * adv,
+    })),
+  }));
+  return { lines, fs, adv, lh, blockH, bx, by, bw, x0, rows };
+}
+
+export function codeColors(n: FluyoNode, theme: ThemeName) {
+  const T = THEMES[theme];
+  return {
+    panel: n.fill && n.fill !== "none" ? n.fill : (T.lblBg || "#161616"),
+    paper: n.textBg || T.codeBg,
+    text: n.textColor || T.codeText,
+    kwBg: n.kwBg || T.codeKwBg,
+    kwText: n.kwColor || T.codeKwText,
+  };
+}
+
+function codeFont(n: FluyoNode): string {
+  return n.font || FONTS[FONTS.length - 1].family;
+}
+
 function hexPointsSVG(n: FluyoNode): string {
   const { x, y, w, h } = n, i = Math.min(24, w * 0.18);
   return [
@@ -526,6 +600,29 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
       parts.push(`<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
       parts.push(`<ellipse cx="${x}" cy="${(top + ry).toFixed(2)}" rx="${(w / 2).toFixed(2)}" ry="${ry.toFixed(2)}" fill="none" stroke="${stroke}" stroke-width="2.5"/>`);
       parts.push(svgLabelLines(n, theme, 17, y + 6, globalFont));
+      break;
+    }
+
+    case "code": {
+      /* `textLength` + `lengthAdjust="spacing"` es la pieza de la que depende
+         todo: el SVG lo pinta después otro motor con otra fuente. Verificado en
+         Chrome/Windows, donde `monospace` resuelve a Consolas: un token de 4
+         caracteres a 16px mide 35.19px natural y 38.40 exactos con textLength. */
+      const L = codeBlockLayout(n), col = codeColors(n, theme);
+      const x = n.x - n.w / 2, y = n.y - n.h / 2;
+      const fam = escapeXML(codeFont(n)), peso = n.bold === false ? "" : ' font-weight="700"';
+      const clip = `code-clip-${n.id}`;
+      parts.push(`<clipPath id="${clip}"><rect x="${(x + 2).toFixed(2)}" y="${(y + 2).toFixed(2)}" width="${(n.w - 4).toFixed(2)}" height="${(n.h - 4).toFixed(2)}" rx="9" ry="9"/></clipPath>`);
+      parts.push(`<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${n.w}" height="${n.h}" rx="10" ry="10" fill="${escapeXML(col.panel)}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
+      parts.push(`<g clip-path="url(#${clip})">`);
+      parts.push(`<rect x="${L.bx.toFixed(2)}" y="${L.by.toFixed(2)}" width="${L.bw.toFixed(2)}" height="${L.blockH.toFixed(2)}" rx="6" ry="6" fill="${escapeXML(col.paper)}"/>`);
+      for (const row of L.rows) {
+        for (const tk of row.tokens) {
+          if (tk.kw) parts.push(`<rect x="${(tk.x - 2).toFixed(2)}" y="${(row.ly - L.fs / 2 - 2).toFixed(2)}" width="${(tk.w + 4).toFixed(2)}" height="${(L.fs + 6).toFixed(2)}" fill="${escapeXML(col.kwBg)}"/>`);
+          parts.push(`<text x="${tk.x.toFixed(2)}" y="${row.ly.toFixed(2)}" font-family="${fam}" font-size="${L.fs.toFixed(2)}"${peso} fill="${escapeXML(tk.kw ? col.kwText : col.text)}" dominant-baseline="middle" textLength="${tk.w.toFixed(3)}" lengthAdjust="spacing">${escapeXML(tk.t)}</text>`);
+        }
+      }
+      parts.push("</g>");
       break;
     }
 

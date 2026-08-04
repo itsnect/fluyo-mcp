@@ -1,6 +1,10 @@
 import { z } from "zod";
 
-import { SHAPE_NAMES, SIDES, THEME_NAMES } from "./generated/config.js";
+import { CODE_LANGS, SHAPE_NAMES, SIDES, THEME_NAMES } from "./generated/config.js";
+
+/** Los presets de lenguaje salen del codegen, así que el enum publicado en
+ *  tools/list sigue a `js/config.js` sin que haya que tocar nada aquí. */
+const CODE_LANG_NAMES = Object.keys(CODE_LANGS) as [string, ...string[]];
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Documento Fluyo (formato .fluyo.json v3)
@@ -67,6 +71,13 @@ export const FluyoNodeSchema = z
     textColor: z.string().nullable().optional(),
     font: z.string().nullable().optional(),
     bold: z.boolean().optional(),
+
+    /* Solo en `shape:"code"`. Liberales igual que el resto del documento: si la
+       app estrena un preset de lenguaje, un diagrama real no debe rebotar. */
+    lang: z.string().nullable().optional(),
+    keywords: z.array(z.string()).nullable().optional(),
+    kwBg: z.string().nullable().optional(),
+    kwColor: z.string().nullable().optional(),
   })
   .passthrough();
 
@@ -223,6 +234,16 @@ const commonNodeFields = {
   textColor: z.string().optional().describe("Color del texto. Por defecto lo decide el tema."),
   font: z.string().optional().describe("Familia tipográfica. Usa list_fonts; si se omite, hereda la global."),
   bold: z.boolean().optional(),
+
+  /* Solo tienen efecto en shape:"code". */
+  lang: z.enum(CODE_LANG_NAMES).optional()
+    .describe("Solo en shape='code'. Preset de palabras clave a resaltar. 'sql' cubre SQL y ksqlDB; 'none' desactiva el resaltado. Por defecto 'sql'."),
+  keywords: z.array(z.string()).optional()
+    .describe("Solo en shape='code'. Lista propia de palabras clave; si se da y no está vacía, sustituye al preset de 'lang'."),
+  kwBg: z.string().optional()
+    .describe("Solo en shape='code'. Color de fondo del resaltado de las palabras clave. Por defecto lo pone el tema."),
+  kwColor: z.string().optional()
+    .describe("Solo en shape='code'. Color del texto de las palabras clave resaltadas. Por defecto lo pone el tema."),
 };
 
 export const NodeSpecSchema = z.object(commonNodeFields);
@@ -293,6 +314,20 @@ const editNodeFields = {
   textColor: z.string().optional(),
   font: z.string().optional(),
   bold: z.boolean().optional(),
+
+  /* Solo tienen efecto en shape:"code". Van también aquí y no solo en
+     `commonNodeFields`: si estuvieran solo allí, se podría crear un nodo de
+     código con create_diagram pero no tocar sus colores ni sus palabras clave
+     con edit_diagram, que es una asimetría que el usuario sufriría sin
+     entenderla. */
+  lang: z.enum(CODE_LANG_NAMES).optional()
+    .describe("Solo en shape='code'. Preset de palabras clave: 'sql' cubre SQL y ksqlDB, 'none' desactiva el resaltado."),
+  keywords: z.array(z.string()).optional()
+    .describe("Solo en shape='code'. Lista propia de palabras clave; si se da y no está vacía, sustituye al preset de 'lang'."),
+  kwBg: z.string().optional()
+    .describe("Solo en shape='code'. Fondo del resaltado de las palabras clave."),
+  kwColor: z.string().optional()
+    .describe("Solo en shape='code'. Color del texto de las palabras clave resaltadas."),
 };
 
 const editEdgeFields = {

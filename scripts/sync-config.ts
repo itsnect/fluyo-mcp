@@ -66,6 +66,10 @@ interface Extracted {
   DEFAULT_FONT: string;
   ICONS: Record<string, FluyoIconDef>;
   ANIMS: Record<string, FluyoAnimDef>;
+  CODE_ADV: number;
+  CODE_LANGS: Record<string, string[]>;
+  DEFAULT_LANG: string;
+  CODE_DEFAULT_LABEL: string;
 }
 
 /* ===================== Lectura ===================== */
@@ -75,7 +79,8 @@ interface Extracted {
 function readConfigJs(): Extracted {
   const source =
     readFileSync(CONFIG_JS, "utf8") +
-    "\n;globalThis.__fluyo = { W, H, GRID, PALETTE, THEMES, DIR, SIDES, FONTS, DEFAULT_FONT, ICONS, ANIMS };\n";
+    "\n;globalThis.__fluyo = { W, H, GRID, PALETTE, THEMES, DIR, SIDES, FONTS, DEFAULT_FONT, ICONS, ANIMS," +
+    " CODE_ADV, CODE_LANGS, DEFAULT_LANG, CODE_DEFAULT_LABEL };\n";
 
   const sandbox: Record<string, unknown> = {};
   vm.createContext(sandbox);
@@ -91,6 +96,8 @@ function readConfigJs(): Extracted {
   if (!Object.keys(out.ICONS).length) throw new Error("ICONS quedó vacío.");
   if (!Object.keys(out.ANIMS).length) throw new Error("ANIMS quedó vacío.");
   if (!out.FONTS.length) throw new Error("FONTS quedó vacía.");
+  if (!out.CODE_LANGS[out.DEFAULT_LANG]) throw new Error(`CODE_LANGS no define el preset por defecto '${out.DEFAULT_LANG}'.`);
+  if (!(out.CODE_ADV > 0)) throw new Error("CODE_ADV tiene que ser un número positivo.");
   return out;
 }
 
@@ -227,6 +234,22 @@ function emit(cfg: Extracted, sizes: Array<[string, [number, number]]>): string 
   w("];");
   w();
   w(`export const DEFAULT_FONT = ${q(cfg.DEFAULT_FONT)};`);
+  w();
+  w("/* ===================== Bloques de código ===================== */");
+  w();
+  w("/** Avance por carácter, en múltiplos del tamaño de fuente. NORMATIVO: el texto");
+  w(" *  se obliga a esta rejilla con `textLength`, no se estima a partir de ella. */");
+  w(`export const CODE_ADV = ${cfg.CODE_ADV};`);
+  w();
+  w("/** Presets de palabras clave. El nodo puede sustituirlos con `keywords`. */");
+  w("export const CODE_LANGS: Record<string, readonly string[]> = {");
+  for (const [k, v] of Object.entries(cfg.CODE_LANGS)) {
+    w(`  ${JSON.stringify(k)}: [${v.map(q).join(", ")}],`);
+  }
+  w("};");
+  w(`export type CodeLang = keyof typeof CODE_LANGS;`);
+  w(`export const DEFAULT_LANG = ${q(cfg.DEFAULT_LANG)};`);
+  w(`export const CODE_DEFAULT_LABEL = ${q(cfg.CODE_DEFAULT_LABEL)};`);
   w();
 
   w("/* ===================== Iconos ===================== */");
