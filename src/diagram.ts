@@ -176,7 +176,7 @@ export function createDiagram(input: CreateDiagramInput): FluyoProject {
       const [dw, dh] = DEFAULT_SIZES[n.shape];
       return { key: n.key, w: n.w ?? dw, h: n.h ?? dh };
     });
-    const layoutEdges = input.edges.map(e => ({ from: e.from, to: e.to }));
+    const layoutEdges = input.edges.map(e => ({ from: e.from, to: e.to, label: e.label, fs: e.fs, bold: e.bold }));
     if (input.autoLayout) {
       computedPositions = layeredLayout(layoutNodes, layoutEdges).positions;
     } else {
@@ -341,7 +341,7 @@ export function editDiagram(input: EditDiagramInput): FluyoProject {
       }
       case "relayout": {
         const layoutNodes = page.nodes.map(n => ({ key: n.id, w: n.w, h: n.h }));
-        const layoutEdges = page.edges.map(e => ({ from: e.from, to: e.to }));
+        const layoutEdges = page.edges.map(e => ({ from: e.from, to: e.to, label: e.label, fs: e.fs, bold: e.bold }));
         const { positions } = layeredLayout(layoutNodes, layoutEdges);
         page.nodes = page.nodes.map(n => {
           const p = positions.get(n.id);
