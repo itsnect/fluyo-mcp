@@ -143,10 +143,10 @@ export function pageEdgeGeometry(page: FluyoPage): Map<number, { x: number; y: n
   return new Map(page.edges.map(e => [e.id, edgePoints(e, nodeById, page.edges)] as const));
 }
 
-function pointAtMid(pts: Pt[]): Pt {
+function pointAt(pts: Pt[], f: number): Pt {
   let L = 0;
   for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
-  let target = L / 2;
+  let target = f * L;
   for (let i = 1; i < pts.length; i++) {
     const seg = Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
     if (target <= seg || i === pts.length - 1) {
@@ -156,6 +156,58 @@ function pointAtMid(pts: Pt[]): Pt {
     target -= seg;
   }
   return pts[pts.length - 1];
+}
+
+/* ===================== Colocación de etiquetas =====================
+   Port de `placeEdgeLabels()` de fluyo/js/geometry.js. La etiqueta iba siempre al
+   punto medio exacto de la ruta, sin mirar qué había debajo, así que en cuanto el
+   diagrama se aprieta cae encima de un nodo o de otra etiqueta.
+
+   Se prueban posiciones a lo largo de la arista, del medio hacia fuera, y se coge
+   la primera libre; si ninguna lo está, la que menos solape. El orden de
+   colocación es el de la página y cada etiqueta solo esquiva a las anteriores:
+   eso es lo que hace el resultado único y reproducible entre los dos renderers. */
+const LBL_FRACS: number[] = (() => { const o = [0.5]; for (let d = 0.04; d <= 0.36 + 1e-9; d += 0.04) o.push(0.5 - d, 0.5 + d); return o; })();
+
+interface Rect { x: number; y: number; w: number; h: number; }
+
+function rectOverlapArea(a: Rect, b: Rect): number {
+  const ox = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const oy = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return ox > 0 && oy > 0 ? ox * oy : 0;
+}
+
+function labelRectAt(pts: Pt[], f: number, w: number, h: number) {
+  const p = pointAt(pts, f);
+  return { x: p.x - w / 2 - 6, y: p.y - h / 2, w: w + 12, h, cx: p.x, cy: p.y };
+}
+
+/** Dónde va la etiqueta de cada arista de la página. */
+export function placeEdgeLabels(page: FluyoPage): Map<number, Pt> {
+  const geom = pageEdgeGeometry(page);
+  const out = new Map<number, Pt>();
+  const placed: Rect[] = [];
+  const nodeBoxes: Rect[] = page.nodes.map(n => ({ x: n.x - n.w / 2, y: n.y - n.h / 2, w: n.w, h: n.h }));
+  for (const e of page.edges) {
+    if (!e.label) continue;
+    const pts = geom.get(e.id);
+    if (!pts || pts.length < 2) continue;
+    const efs = e.fs || 13;
+    const w = approxTextWidth(e.label, efs, !!e.bold), h = efs * 1.7;
+    if (!(w > 0)) continue;
+    let best: ReturnType<typeof labelRectAt> | null = null;
+    let bestCost = Infinity;
+    for (const f of LBL_FRACS) {
+      const r = labelRectAt(pts, f, w, h);
+      let cost = 0;
+      for (const b of nodeBoxes) cost += rectOverlapArea(r, b);
+      for (const b of placed) cost += rectOverlapArea(r, b);
+      if (cost === 0) { best = r; bestCost = 0; break; }
+      if (cost < bestCost) { best = r; bestCost = cost; }
+    }
+    if (best) { out.set(e.id, { x: best.cx, y: best.cy }); placed.push(best); }
+  }
+  return out;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -363,7 +415,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
 
 /* ===================== Aristas ===================== */
 
-function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[], globalFont: string): string {
+function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[], globalFont: string, labelPos: Map<number, Pt>): string {
   const A = nodeById.get(e.from), B = nodeById.get(e.to);
   if (!A || !B) return "";
   const pts = edgePoints(e, nodeById, edges);
@@ -378,7 +430,7 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
   const parts = [`<polyline points="${ptsStr}" fill="none" stroke="${lineCol}" stroke-width="2" stroke-linejoin="round"${dash}${markers}/>`];
 
   if (e.label) {
-    const m = pointAtMid(pts);
+    const m = labelPos.get(e.id) ?? pointAt(pts, 0.5);
     const efs = e.fs || 13;
     const family = e.font || globalFont || DEFAULT_FONT;
     const bold = !!e.bold;
@@ -462,7 +514,8 @@ export function pageToSVG(
     buildDefs(),
   ];
   // Sin rectángulo de fondo: el SVG que exporta la app es transparente.
-  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, page.edges, font));
+  const labelPos = placeEdgeLabels(page);
+  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos));
   for (const n of page.nodes) parts.push(renderNodeToSVG(n, theme, font));
   parts.push("</svg>");
   return parts.join("\n");
