@@ -3,3 +3,12 @@ dist/
 dist-test/
 *.log
 .DS_Store
+
+# Material de proveedor con licencia indeterminada. Los sets oficiales de iconos
+# de AWS, Google Cloud y Azure se distribuyen como .zip y no traen licencia
+# dentro (INFORME-ICONOS-MARCA.md §7). Hasta que haya permiso por escrito no
+# entran en un repo público, ni siquiera en un commit que luego se revierta.
+*.zip
+*.pptx
+src/generated/icons-vendor/
+
