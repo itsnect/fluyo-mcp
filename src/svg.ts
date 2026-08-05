@@ -1,4 +1,4 @@
-import { CANVAS, CODE_ADV, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, THEMES, animDataUri, iconDataUri, nodeIconTint } from "./schema.js";
+import { CANVAS, CODE_ADV, DEFAULT_SIZES, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, THEMES, animDataUri, iconDataUri, nodeIconTint } from "./schema.js";
 import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
 
 /* ===================== Geometría de aristas (port de fluyo/js/geometry.js) ===================== */
@@ -298,7 +298,7 @@ export function placeEdgeLabels(page: FluyoPage): Map<number, Pt> {
     if (!e.label) continue;
     const pts = geom.get(e.id);
     if (!pts || pts.length < 2) continue;
-    const efs = e.fs || 13;
+    const efs = edgeLabelFs(e);
     const w = approxTextWidth(e.label, efs, !!e.bold), h = efs * 1.7;
     if (!(w > 0)) continue;
     let best: ReturnType<typeof labelRectAt> | null = null;
@@ -348,12 +348,118 @@ export function approxTextWidth(text: string, fontSize: number, bold = false): n
   return units * fontSize * (bold ? 1.06 : 1);
 }
 
-function fitFontSize(lines: string[], baseFs: number, maxWidth: number, explicitFs?: number | null, bold = false): number {
-  if (explicitFs) return explicitFs;
-  let fs = baseFs;
-  const maxW = Math.max(...lines.map(l => approxTextWidth(l, fs, bold)), 1);
-  if (maxW > maxWidth) fs = Math.max(10, (fs * maxWidth) / maxW);
-  return fs;
+/* ═══════════════════════════════════════════════════════════════════════════
+   ESCALADO Y MAQUETACIÓN DE LA ETIQUETA
+
+   Port de labelBaseFs / labelCenterY / labelBoxScale / labelBandH /
+   labelFontSize / labelLayout de fluyo/js/geometry.js. UNA regla, la misma que
+   ya usaba `code`: el tamaño de fuente sale de las DOS dimensiones de la caja.
+
+   Tres límites y manda el menor: la escala de caja —cuánto se ha redimensionado
+   el nodo respecto al tamaño con el que nace su forma—, el ancho disponible y el
+   alto de su franja. Que la escala sea RELATIVA al tamaño por defecto es lo que
+   la hace retrocompatible: un nodo sin redimensionar da factor 1 y sale igual.
+
+   Lo único que aquí difiere de la app es el MEDIDOR, que es la divergencia ya
+   conocida y documentada arriba: la app mide con getBBox(), esto estima por
+   anchos de carácter. Mueve el font-size en decimales, no la maquetación.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+const LABEL_LH = 1.25;
+const LABEL_PAD_X = 18;
+const LABEL_MIN_FS = 10;
+
+export function labelBaseFs(n: FluyoNode): number {
+  if (n.shape === "text") return 22;
+  if (n.shape === "icon" || n.shape === "anim" || n.shape === "image") return 14;
+  return 17;
+}
+
+export function labelCenterY(n: FluyoNode): number {
+  switch (n.shape) {
+    case "image": return n.y + n.h / 2 + 14;
+    case "icon": return n.y + n.h / 2 - 10;
+    case "anim": return n.y + n.h / 2 - 8;
+    case "cylinder": return n.y + 6;
+    default: return n.y;
+  }
+}
+
+function labelBoxScale(n: FluyoNode): number {
+  const d = (DEFAULT_SIZES as Record<string, readonly [number, number] | undefined>)[n.shape];
+  if (!d || !(d[0] > 0) || !(d[1] > 0)) return 1;
+  return Math.min(n.w / d[0], n.h / d[1]);
+}
+
+/** La etiqueta de un ícono vive FUERA del dibujo, en los mismos 26px que el
+ *  renderer le resta al glifo: dejarla crecer hasta el alto del nodo sería
+ *  dejar que se comiera el ícono. */
+function labelBandH(n: FluyoNode): number {
+  if (n.shape === "icon" || n.shape === "anim") return 26;
+  if (n.shape === "image") return 28;
+  return n.h;
+}
+
+export function labelFontSize(n: FluyoNode, measure: (fs: number) => number): number {
+  if (n.fs) return n.fs;
+  const nLines = String(n.label ?? "").split("\n").length;
+  let fs = labelBaseFs(n) * labelBoxScale(n);
+  const avail = n.w - LABEL_PAD_X;
+  if (avail > 0) {
+    const maxW = Math.max(measure(fs), 1);
+    if (maxW > avail) fs = (fs * avail) / maxW;
+  }
+  const porAlto = labelBandH(n) / (nLines * LABEL_LH);
+  if (fs > porAlto) fs = porAlto;
+  return Math.max(LABEL_MIN_FS, fs);
+}
+
+/** Medidor de este renderer: heurística por anchos de carácter. */
+export function measureNodeLabel(n: FluyoNode): (fs: number) => number {
+  const lines = String(n.label ?? "").split("\n");
+  const bold = !!n.bold;
+  return fs => Math.max(...lines.map(l => approxTextWidth(l, fs, bold)), 1);
+}
+
+export interface LabelLayout {
+  lines: string[];
+  fs: number;
+  lh: number;
+  tx: number;
+  align: "left" | "right" | "center";
+  baseY: number;
+  pos: string;
+  boxX: number;
+  boxY: number;
+  boxW: number;
+  boxH: number;
+}
+
+export function labelLayout(n: FluyoNode, measure: (fs: number) => number): LabelLayout {
+  const lines = String(n.label ?? "").split("\n");
+  const fs = labelFontSize(n, measure), lh = fs * LABEL_LH;
+  const pos = n.lblPos || "center";
+  const inset = Math.min(14, n.w * 0.12, n.h * 0.18);
+  let tx = n.x;
+  let align: "left" | "right" | "center" = "center";
+  if (pos === "left") { tx = n.x - n.w / 2 + inset; align = "left"; }
+  else if (pos === "right") { tx = n.x + n.w / 2 - inset; align = "right"; }
+  let baseY: number;
+  if (pos === "top") baseY = n.y - n.h / 2 + inset + fs * 0.7;
+  else if (pos === "bottom") baseY = n.y + n.h / 2 - inset - (lines.length - 1) * lh - fs * 0.1;
+  else baseY = labelCenterY(n) - ((lines.length - 1) * lh) / 2;
+  const boxW = Math.max(1, n.w - LABEL_PAD_X);
+  let boxX: number;
+  if (align === "left") boxX = tx;
+  else if (align === "right") boxX = tx - boxW;
+  else boxX = n.x - boxW / 2;
+  return { lines, fs, lh, tx, align, baseY, pos, boxX, boxY: baseY - lh / 2, boxW, boxH: lines.length * lh };
+}
+
+/** Las etiquetas de arista no tienen caja de la que derivar un tamaño: flotan
+ *  sobre la línea y no escalan. Port de `edgeLabelFs()`. */
+export function edgeLabelFs(e: { fs?: number | null }): number {
+  return e.fs || 13;
 }
 
 /* ===================== Utilidades ===================== */
@@ -391,26 +497,15 @@ function svgDash(n: FluyoNode): string {
 
 /** Port de `svgLabelLines()` de fluyo/js/export.js: respeta lblPos, textBg,
  *  textColor, font y bold. */
-function svgLabelLines(n: FluyoNode, theme: ThemeName, baseFs: number, cy: number, globalFont: string): string {
+const SVG_ANCHOR = { left: "start", right: "end", center: "middle" } as const;
+
+function svgLabelLines(n: FluyoNode, theme: ThemeName, globalFont: string): string {
   if (!n.label) return "";
   const T = THEMES[theme];
-  const lines = String(n.label).split("\n");
   const family = n.font || globalFont || DEFAULT_FONT;
   const bold = !!n.bold;
-  const fs = fitFontSize(lines, baseFs, n.w - 18, n.fs, bold);
-  const lh = fs * 1.25;
-  const pos = n.lblPos || "center";
-  const inset = Math.min(14, n.w * 0.12, n.h * 0.18);
-
-  let baseY: number;
-  if (pos === "top") baseY = n.y - n.h / 2 + inset + fs * 0.7;
-  else if (pos === "bottom") baseY = n.y + n.h / 2 - inset - (lines.length - 1) * lh - fs * 0.1;
-  else baseY = cy - ((lines.length - 1) * lh) / 2;
-
-  let anchor = "middle";
-  let tx = n.x;
-  if (pos === "left") { anchor = "start"; tx = n.x - n.w / 2 + inset; }
-  else if (pos === "right") { anchor = "end"; tx = n.x + n.w / 2 - inset; }
+  const { lines, fs, lh, tx, align, baseY } = labelLayout(n, measureNodeLabel(n));
+  const anchor = SVG_ANCHOR[align];
 
   // En un texto suelto o un GIF manda el color del nodo; dentro de una caja, el del tema.
   const fill = n.textColor || (n.shape === "text" || n.shape === "anim" ? n.color : T.text);
@@ -465,13 +560,10 @@ export function drawnContentBox(n: FluyoNode, globalFont = DEFAULT_FONT): { x: n
   // la caja entera, que es conservador y nunca da un falso positivo.
   if (n.lblPos && n.lblPos !== "center") return nodeRect;
 
-  // Mismos números que svgLabelLines() para el caso `icon`: baseFs 14, cy en
-  // n.y + n.h/2 - 10, dominant-baseline middle.
-  const lines = String(n.label).split("\n");
+  // Sale de la MISMA maquetación que dibuja el pie, no de una copia de sus
+  // números: si el escalado cambia, esta caja lo sigue sin que nadie la toque.
   const bold = !!n.bold;
-  const fs = fitFontSize(lines, 14, n.w - 18, n.fs, bold);
-  const lh = fs * 1.25;
-  const baseY = n.y + n.h / 2 - 10 - ((lines.length - 1) * lh) / 2;
+  const { lines, fs, lh, baseY } = labelLayout(n, measureNodeLabel(n));
   const anchoTexto = Math.max(...lines.map(l => approxTextWidth(l, fs, bold)), 1);
   const pie = {
     x: n.x - anchoTexto / 2,
@@ -581,17 +673,17 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
   switch (n.shape) {
     case "circle":
       parts.push(`<ellipse cx="${n.x}" cy="${n.y}" rx="${(n.w / 2).toFixed(2)}" ry="${(n.h / 2).toFixed(2)}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
 
     case "diamond":
       parts.push(`<polygon points="${n.x},${(n.y - n.h / 2).toFixed(2)} ${(n.x + n.w / 2).toFixed(2)},${n.y} ${n.x},${(n.y + n.h / 2).toFixed(2)} ${(n.x - n.w / 2).toFixed(2)},${n.y}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
 
     case "hex":
       parts.push(`<polygon points="${hexPointsSVG(n)}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
 
     case "cylinder": {
@@ -599,7 +691,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
       const d = `M ${(x - w / 2).toFixed(2)} ${(top + ry).toFixed(2)} L ${(x - w / 2).toFixed(2)} ${(bot - ry).toFixed(2)} C ${(x - w / 2).toFixed(2)} ${(bot + ry * 0.8).toFixed(2)} ${(x + w / 2).toFixed(2)} ${(bot + ry * 0.8).toFixed(2)} ${(x + w / 2).toFixed(2)} ${(bot - ry).toFixed(2)} L ${(x + w / 2).toFixed(2)} ${(top + ry).toFixed(2)} C ${(x + w / 2).toFixed(2)} ${(top - ry * 0.8).toFixed(2)} ${(x - w / 2).toFixed(2)} ${(top - ry * 0.8).toFixed(2)} ${(x - w / 2).toFixed(2)} ${(top + ry).toFixed(2)} Z`;
       parts.push(`<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
       parts.push(`<ellipse cx="${x}" cy="${(top + ry).toFixed(2)}" rx="${(w / 2).toFixed(2)}" ry="${ry.toFixed(2)}" fill="none" stroke="${stroke}" stroke-width="2.5"/>`);
-      parts.push(svgLabelLines(n, theme, 17, y + 6, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
     }
 
@@ -627,7 +719,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
     }
 
     case "text":
-      parts.push(svgLabelLines(n, theme, 22, n.y, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
 
     case "anim": {
@@ -640,7 +732,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
         const iy = n.y - (n.label ? 8 : 0) - s / 2;
         parts.push(`<image x="${ix.toFixed(2)}" y="${iy.toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}" href="${src}" preserveAspectRatio="xMidYMid meet"/>`);
       }
-      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 - 8, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
     }
 
@@ -648,18 +740,18 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
       const src = n.icon ? iconDataUri(n.icon, nodeIconTint(n)) : "";
       const s = Math.min(n.w, n.h - 26) * 0.78;
       if (src) parts.push(`<image x="${(n.x - s / 2).toFixed(2)}" y="${(n.y - n.h / 2 + 4).toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}" href="${src}" preserveAspectRatio="xMidYMid meet"/>`);
-      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 - 10, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
     }
 
     case "image":
       if (n.img) parts.push(`<image x="${(n.x - n.w / 2).toFixed(2)}" y="${(n.y - n.h / 2).toFixed(2)}" width="${n.w}" height="${n.h}" href="${escapeXML(n.img)}" preserveAspectRatio="xMidYMid meet"/>`);
-      parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 + 14, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
       break;
 
     default:
       parts.push(`<rect x="${(n.x - n.w / 2).toFixed(2)}" y="${(n.y - n.h / 2).toFixed(2)}" width="${n.w}" height="${n.h}" rx="10" ry="10" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
-      parts.push(svgLabelLines(n, theme, 17, n.y, globalFont));
+      parts.push(svgLabelLines(n, theme, globalFont));
   }
 
   parts.push("</g>");
@@ -684,7 +776,7 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
 
   if (e.label) {
     const m = labelPos.get(e.id) ?? pointAt(pts, 0.5);
-    const efs = e.fs || 13;
+    const efs = edgeLabelFs(e);
     const family = e.font || globalFont || DEFAULT_FONT;
     const bold = !!e.bold;
     const tw = approxTextWidth(e.label, efs, bold);

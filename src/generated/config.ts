@@ -2,14 +2,14 @@
    ARCHIVO GENERADO — NO EDITAR A MANO
 
    Lo produce `npm run sync:config` a partir del motor de Fluyo:
-     js/config.js  → paleta, temas, iconos, GIFs, tipografías, canvas, direcciones
-     js/state.js   → tamaños por defecto de cada forma (dentro de newNode)
+     js/config.js  → paleta, temas, iconos, GIFs, tipografías, canvas, tamaños, direcciones
+     js/state.js   → solo se comprueba que newNode() siga usando DEFAULT_SIZES
 
    Cualquier cambio que hagas aquí lo pisa la próxima sincronización. Si algo
    está mal, arréglalo en Fluyo o en scripts/sync-config.ts.
 
    `npm run check:config` falla si este archivo no coincide con Fluyo.
-   Sincronizado desde la revisión 89a119b de fluyo/.
+   Sincronizado desde la revisión 1bc0613 de fluyo/.
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ===================== Lienzo ===================== */

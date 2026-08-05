@@ -15,10 +15,11 @@
  * archivo no toca el DOM en su nivel superior, así que evaluarlo fuera del navegador
  * es seguro (`getImg` usa `Image`, pero solo se declara, no se llama).
  *
- * DEFAULT_SIZES es la excepción: no está en config.js sino dentro de `newNode()`, en
- * js/state.js, que sí toca el DOM al cargarse. De ahí se extrae con un patrón sobre
- * el texto. Si el patrón deja de encajar, el script falla en vez de emitir tamaños
- * incompletos: quedarse callado es justo el fallo que este script viene a evitar.
+ * DEFAULT_SIZES era la excepción: vivía dentro de `newNode()`, en js/state.js, que sí
+ * toca el DOM al cargarse, así que se extraía con un patrón sobre el texto. Era la
+ * única extracción frágil que quedaba. Ahora está en config.js —lo necesita también
+ * el escalado de la etiqueta— y se lee como todo lo demás, evaluando el archivo. De
+ * js/state.js solo se comprueba que newNode() lo siga usando.
  */
 
 import { execFileSync } from "node:child_process";
@@ -70,6 +71,7 @@ interface Extracted {
   CODE_LANGS: Record<string, string[]>;
   DEFAULT_LANG: string;
   CODE_DEFAULT_LABEL: string;
+  DEFAULT_SIZES: Record<string, [number, number]>;
 }
 
 /* ===================== Lectura ===================== */
@@ -80,7 +82,7 @@ function readConfigJs(): Extracted {
   const source =
     readFileSync(CONFIG_JS, "utf8") +
     "\n;globalThis.__fluyo = { W, H, GRID, PALETTE, THEMES, DIR, SIDES, FONTS, DEFAULT_FONT, ICONS, ANIMS," +
-    " CODE_ADV, CODE_LANGS, DEFAULT_LANG, CODE_DEFAULT_LABEL };\n";
+    " CODE_ADV, CODE_LANGS, DEFAULT_LANG, CODE_DEFAULT_LABEL, DEFAULT_SIZES };\n";
 
   const sandbox: Record<string, unknown> = {};
   vm.createContext(sandbox);
@@ -101,24 +103,26 @@ function readConfigJs(): Extracted {
   return out;
 }
 
-/** DEFAULT_SIZES vive dentro de newNode() en js/state.js, que no se puede evaluar
- *  fuera del navegador. Se extrae del texto, y si el patrón no encaja se falla. */
-function readDefaultSizes(): Array<[string, [number, number]]> {
-  const source = readFileSync(STATE_JS, "utf8");
-  const block = source.match(/const\s+sizes\s*=\s*\{([\s\S]*?)\}\s*;/);
-  if (!block) {
-    throw new Error(
-      `No se encontró el literal 'const sizes={...}' en ${STATE_JS}.\n` +
-        `newNode() habrá cambiado de forma. Revisa js/state.js y actualiza el patrón ` +
-        `de scripts/sync-config.ts — no se emiten tamaños a medias.`
-    );
-  }
-  const entries: Array<[string, [number, number]]> = [];
-  for (const m of block[1].matchAll(/(\w+)\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*\]/g)) {
-    entries.push([m[1], [Number(m[2]), Number(m[3])]]);
-  }
+/** DEFAULT_SIZES sale ya evaluado de config.js. Lo único que se lee de js/state.js
+ *  es una comprobación: que newNode() lo siga usando. Si alguien volviera a escribir
+ *  los tamaños a mano allí, este archivo generado dejaría de describir a la app sin
+ *  que nadie se enterase, que es justo el fallo que este script viene a evitar. */
+function readDefaultSizes(cfg: Extracted): Array<[string, [number, number]]> {
+  const entries = Object.entries(cfg.DEFAULT_SIZES) as Array<[string, [number, number]]>;
   if (entries.length < 5) {
-    throw new Error(`Solo se extrajeron ${entries.length} tamaños de ${STATE_JS}; se esperaban todas las formas.`);
+    throw new Error(`Solo se extrajeron ${entries.length} tamaños de ${CONFIG_JS}; se esperaban todas las formas.`);
+  }
+  for (const [k, v] of entries) {
+    if (!Array.isArray(v) || !(v[0] > 0) || !(v[1] > 0)) {
+      throw new Error(`DEFAULT_SIZES["${k}"] no es un par de números positivos.`);
+    }
+  }
+  if (!/DEFAULT_SIZES\s*\[\s*shape\s*\]/.test(readFileSync(STATE_JS, "utf8"))) {
+    throw new Error(
+      `newNode() en ${STATE_JS} ya no lee DEFAULT_SIZES.\n` +
+        `Los tamaños que se emitirían aquí dejarían de ser los que usa la app. ` +
+        `Revisa js/state.js antes de regenerar.`
+    );
   }
   return entries;
 }
@@ -153,8 +157,8 @@ function emit(cfg: Extracted, sizes: Array<[string, [number, number]]>): string 
   w("   ARCHIVO GENERADO — NO EDITAR A MANO");
   w("");
   w("   Lo produce `npm run sync:config` a partir del motor de Fluyo:");
-  w("     js/config.js  → paleta, temas, iconos, GIFs, tipografías, canvas, direcciones");
-  w("     js/state.js   → tamaños por defecto de cada forma (dentro de newNode)");
+  w("     js/config.js  → paleta, temas, iconos, GIFs, tipografías, canvas, tamaños, direcciones");
+  w("     js/state.js   → solo se comprueba que newNode() siga usando DEFAULT_SIZES");
   w("");
   w("   Cualquier cambio que hagas aquí lo pisa la próxima sincronización. Si algo");
   w("   está mal, arréglalo en Fluyo o en scripts/sync-config.ts.");
@@ -335,7 +339,7 @@ function main() {
   }
 
   const cfg = readConfigJs();
-  const sizes = readDefaultSizes();
+  const sizes = readDefaultSizes(cfg);
   const generated = emit(cfg, sizes);
 
   if (CHECK_MODE) {
