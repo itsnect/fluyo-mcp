@@ -81,6 +81,10 @@ export function buildNode(
     order: spec.order ?? fallbackOrder,
     icon: spec.shape === "icon" ? spec.icon : undefined,
     anim: spec.shape === "anim" ? spec.anim : undefined,
+    /* Igual que `newNode()` en la app: el interruptor solo existe donde significa
+       algo, y nace apagado para que un ícono creado por MCP y uno creado a mano
+       se vean igual. */
+    ...(spec.shape === "icon" ? { tint: spec.tint ?? false } : {}),
     fs: spec.fs ?? null,
     // 'none' es un valor legal de fill (forma hueca), no un color a resolver.
     ...(spec.fill !== undefined ? { fill: spec.fill === "none" ? "none" : resolveColor(spec.fill) } : {}),

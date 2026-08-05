@@ -1,4 +1,4 @@
-import { CANVAS, CODE_ADV, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, THEMES, animDataUri, iconDataUri } from "./schema.js";
+import { CANVAS, CODE_ADV, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, THEMES, animDataUri, iconDataUri, nodeIconTint } from "./schema.js";
 import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
 
 /* ===================== Geometría de aristas (port de fluyo/js/geometry.js) ===================== */
@@ -645,7 +645,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
     }
 
     case "icon": {
-      const src = n.icon ? iconDataUri(n.icon) : "";
+      const src = n.icon ? iconDataUri(n.icon, nodeIconTint(n)) : "";
       const s = Math.min(n.w, n.h - 26) * 0.78;
       if (src) parts.push(`<image x="${(n.x - s / 2).toFixed(2)}" y="${(n.y - n.h / 2 + 4).toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}" href="${src}" preserveAspectRatio="xMidYMid meet"/>`);
       parts.push(svgLabelLines(n, theme, 14, n.y + n.h / 2 - 10, globalFont));

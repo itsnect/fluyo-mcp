@@ -42,12 +42,17 @@ export type {
   ThemeName,
 } from "./generated/config.js";
 
-import { ANIMS, ICONS, PALETTE } from "./generated/config.js";
+import { ANIMS, composeIcon, ICONS, PALETTE } from "./generated/config.js";
 
 /* ===================== Data URIs ===================== */
 
-/** Igual que hace la app: el SVG del ícono se sirve como data URI inline. */
-export function iconDataUri(key: string): string {
+/** Igual que hace la app: el SVG del ícono se sirve como data URI inline.
+ *
+ *  `tint` repinta la pastilla con el color del nodo (`n.tint` + `n.color`). El
+ *  glifo no se toca: teñir las dos piezas dejaría el ícono en un color plano.
+ *  La composición vive en el archivo generado, junto a las piezas, para que la
+ *  app y el servidor no puedan divergir en cómo se monta. */
+export function iconDataUri(key: string, tint?: string | null): string {
   const def = ICONS[key];
   if (!def) {
     throw new Error(
@@ -55,7 +60,13 @@ export function iconDataUri(key: string): string {
         "Si el diagrama viene de Fluyo, el ícono existe en la app y falta aquí: actualiza fluyo-mcp."
     );
   }
-  return "data:image/svg+xml;utf8," + encodeURIComponent(def.svg);
+  return "data:image/svg+xml;utf8," + encodeURIComponent(composeIcon(def, tint));
+}
+
+/** Color con el que hay que pintar la pastilla de un nodo `icon`, o null si
+ *  conserva la suya. Port de `nodeIconTint()` de fluyo/js/config.js. */
+export function nodeIconTint(n: { tint?: boolean; color?: string }): string | null {
+  return n.tint && n.color ? n.color : null;
 }
 
 /** Vista previa estática de un GIF animado. En el lienzo la app lo dibuja por

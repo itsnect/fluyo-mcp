@@ -50,7 +50,7 @@ const OUT_FILE = join(ROOT, "src", "generated", "config.ts");
 /* ===================== Formas que toma Fluyo ===================== */
 
 interface FluyoPaletteEntry { c: string; n: string; }
-interface FluyoIconDef { g: string; n: string; svg: string; }
+interface FluyoIconDef { g: string; n: string; bg: string; inner: string; svg: string; }
 interface FluyoAnimDef { n: string; svg: string; }
 interface FluyoFontDef { n: string; f: string; }
 
@@ -260,15 +260,29 @@ function emit(cfg: Extracted, sizes: Array<[string, [number, number]]>): string 
   w("export interface IconDef {");
   w("  group: IconGroup;");
   w("  label: string;");
-  w("  /** SVG completo. Se sirve como data URI, igual que en la app. */");
+  w("  /** Color de la pastilla. Es lo que sustituye el teñido (`tint` del nodo). */");
+  w("  bg: string;");
+  w("  /** Glifo, sin la pastilla. `%bg%` significa «el color de la pastilla»: son");
+  w("   *  los huecos que dejan ver el fondo y tienen que seguirlo al teñir. */");
+  w("  inner: string;");
+  w("  /** SVG completo con el color original. Se sirve como data URI, igual que en la app. */");
   w("  svg: string;");
   w("}");
   w();
   w("export const ICONS: Record<string, IconDef> = {");
   for (const [key, def] of Object.entries(cfg.ICONS)) {
-    w(`  ${JSON.stringify(key)}: { group: ${q(def.g)}, label: ${q(def.n)}, svg: ${q(def.svg)} },`);
+    w(`  ${JSON.stringify(key)}: { group: ${q(def.g)}, label: ${q(def.n)}, bg: ${q(def.bg)}, inner: ${q(def.inner)}, svg: ${q(def.svg)} },`);
   }
   w("};");
+  w();
+  w("/** Compone el SVG de un icono con la pastilla teñida. Port de `badge()` +");
+  w(" *  `iconSVGFor()` de fluyo/js/config.js: la app y el servidor tienen que");
+  w(" *  producir el MISMO SVG para el mismo nodo. */");
+  w("export function composeIcon(def: IconDef, tint?: string | null): string {");
+  w("  if (!tint) return def.svg;");
+  w('  const inner = def.inner.replaceAll("%bg%", tint);');
+  w('  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="2" y="2" width="60" height="60" rx="14" fill="${tint}"/>${inner}</svg>`;');
+  w("}");
   w();
 
   w("/* ===================== GIFs animados ===================== */");
