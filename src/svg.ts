@@ -664,7 +664,56 @@ function hexPointsSVG(n: FluyoNode): string {
 
 /* ===================== Nodos ===================== */
 
-function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): string {
+/* ═══════════════════════════════════════════════════════════════════════════
+   SÍMBOLOS REUTILIZABLES
+
+   Port de `svgSymbols()` de fluyo/js/export.js. Un ícono se incrustaba como data
+   URI COMPLETO dentro de cada nodo que lo usaba, y en una arquitectura real eso
+   es lo normal: varios Cloud Run, varias Cloud SQL, tres colas.
+
+   Con los 72 íconos dibujados a mano de Fluyo (430 B de media) apenas se notaba.
+   Con los sets oficiales de proveedor, que son trazados reales de 1,5–4 KB, deja
+   de ser una optimización y pasa a ser un límite duro: medido sobre un diagrama
+   de 30 nodos con 10 íconos distintos a 4 KB, el SVG sale de 223 KB y supera el
+   tope de 200 KB de `DEFAULT_MAX_TOOL_RESULT_BYTES`, así que export_diagram
+   devolvería un error en vez del diagrama. Con <defs>/<use> son 79,5 KB.
+
+   Se agrupan íconos y GIFs, que son catálogo y siempre miden 64×64. Las imágenes
+   que pega el usuario no: no se conoce su tamaño intrínseco.
+
+   Por qué <symbol> y no un <image> con id: un <use> que apunta a un <image> no le
+   propaga width/height, y cada nodo dibuja el mismo ícono a un tamaño distinto.
+
+   Los ids se asignan por orden de primera aparición recorriendo la página, igual
+   que en la app, para que los dos renderers produzcan el mismo SVG.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+interface SvgSymbols {
+  use(src: string, x: number, y: number, s: number): string;
+  defs(): string;
+}
+
+function svgSymbols(): SvgSymbols {
+  const ids = new Map<string, string>();
+  const defs: string[] = [];
+  return {
+    use(src, x, y, s) {
+      if (!src) return "";
+      let id = ids.get(src);
+      if (id === undefined) {
+        id = `fluyo-sym-${ids.size}`;
+        ids.set(src, id);
+        defs.push(`<symbol id="${id}" viewBox="0 0 64 64" preserveAspectRatio="xMidYMid meet"><image width="64" height="64" href="${escapeXML(src)}"/></symbol>`);
+      }
+      return `<use href="#${id}" xlink:href="#${id}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}"/>`;
+    },
+    defs() {
+      return defs.length ? "<defs>\n" + defs.join("\n") + "\n</defs>" : "";
+    },
+  };
+}
+
+function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, syms: SvgSymbols): string {
   const fill = svgNodeFill(n, theme);
   const stroke = escapeXML(n.color);
   const dash = svgDash(n);
@@ -727,11 +776,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
       // previa, exactamente como hace el exportador de la app.
       const src = n.anim ? animDataUri(n.anim) : "";
       const s = Math.max(10, Math.min(n.w, n.h - (n.label ? 26 : 8)));
-      if (src) {
-        const ix = n.x - s / 2;
-        const iy = n.y - (n.label ? 8 : 0) - s / 2;
-        parts.push(`<image x="${ix.toFixed(2)}" y="${iy.toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}" href="${src}" preserveAspectRatio="xMidYMid meet"/>`);
-      }
+      parts.push(syms.use(src, n.x - s / 2, n.y - (n.label ? 8 : 0) - s / 2, s));
       parts.push(svgLabelLines(n, theme, globalFont));
       break;
     }
@@ -739,7 +784,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string): st
     case "icon": {
       const src = n.icon ? iconDataUri(n.icon, nodeIconTint(n)) : "";
       const s = Math.min(n.w, n.h - 26) * 0.78;
-      if (src) parts.push(`<image x="${(n.x - s / 2).toFixed(2)}" y="${(n.y - n.h / 2 + 4).toFixed(2)}" width="${s.toFixed(2)}" height="${s.toFixed(2)}" href="${src}" preserveAspectRatio="xMidYMid meet"/>`);
+      parts.push(syms.use(src, n.x - s / 2, n.y - n.h / 2 + 4, s));
       parts.push(svgLabelLines(n, theme, globalFont));
       break;
     }
@@ -861,7 +906,14 @@ export function pageToSVG(
   // Sin rectángulo de fondo: el SVG que exporta la app es transparente.
   const labelPos = placeEdgeLabels(page);
   for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos));
-  for (const n of page.nodes) parts.push(renderNodeToSVG(n, theme, font));
-  parts.push("</svg>");
+  /* Los símbolos se recogen dibujando, así que el <defs> con los íconos solo se
+     conoce al final. Se inserta antes de los nodos, no al cierre: un id se
+     resuelve igual esté donde esté, pero declarar antes de usar es lo que abren
+     sin quejarse los editores externos. */
+  const syms = svgSymbols();
+  const nodos = page.nodes.map(n => renderNodeToSVG(n, theme, font, syms));
+  const defs = syms.defs();
+  if (defs) parts.push(defs);
+  parts.push(...nodos, "</svg>");
   return parts.join("\n");
 }
