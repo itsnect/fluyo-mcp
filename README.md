@@ -137,7 +137,7 @@ Se envían como lista en `operations` y se aplican en orden.
 
 Importa ser preciso aquí, porque una versión anterior de este README prometía paridad que el código no daba.
 
-**Derivado mecánicamente de Fluyo** — `npm run sync:config` lee `fluyo/js/config.js` y `fluyo/js/state.js` y genera `src/generated/config.ts`. La paleta, los temas, los 47 íconos con su SVG, los 8 GIFs, las 11 tipografías y los tamaños por forma no se copian a mano: se extraen. CI comprueba que sigan sincronizados.
+**Derivado mecánicamente de Fluyo** — `npm run sync:config` lee `fluyo/js/config.js` y `fluyo/js/state.js` y genera `src/generated/config.ts`. La paleta, los temas, los 72 íconos con su SVG, los 8 GIFs, las 12 tipografías y los tamaños por forma no se copian a mano: se extraen. CI comprueba que sigan sincronizados.
 
 **Portado a mano, verificado por tests** — la geometría de aristas y el exportador SVG son ports de `fluyo/js/geometry.js` y `fluyo/js/export.js`. No hay forma de derivarlos automáticamente, así que el renderer se compara en cada CI contra los SVG que produjo el exportador de la propia app para los cinco ejemplos publicados.
 

@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
-import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICONS, PALETTE } from "./schema.js";
+import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from "./schema.js";
 import { CreateDiagramInputShape, DocumentInputSchema, OperationSchema, ThemeSchema } from "./model.js";
 import { createDiagram, editDiagram, parseDocument } from "./diagram.js";
 import { pageToSVG } from "./svg.js";
@@ -149,8 +149,10 @@ server.registerTool(
   {
     title: "Listar íconos disponibles",
     annotations: TOOL_PURA,
+    /* Los grupos salen de ICON_GROUPS, no de una lista escrita a mano: esta misma
+       frase ya se quedó nombrando seis grupos cuando la app tenía ocho. */
     description:
-      "Devuelve las claves de ícono válidas para nodos shape='icon', agrupadas (General, GCP, AWS, Azure, Estados, Varios). " +
+      `Devuelve las claves de ícono válidas para nodos shape='icon', agrupadas (${ICON_GROUPS.join(", ")}). ` +
       "Son los mismos íconos que ofrece el cajón de la aplicación.",
     inputSchema: {},
   },

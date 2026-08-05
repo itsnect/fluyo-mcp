@@ -30,8 +30,8 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
-import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, drawnContentBox, pageEdgeGeometry, placeEdgeLabels } from "../src/svg.js";
-import { CODE_ADV, CODE_LANGS, DEFAULT_LANG, FONTS, THEMES } from "../src/generated/config.js";
+import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, drawnContentBox, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels } from "../src/svg.js";
+import { CODE_ADV, CODE_LANGS, DEFAULT_LANG, DEFAULT_SIZES, FONTS, THEMES } from "../src/generated/config.js";
 import { FluyoEdge, FluyoNode, FluyoPage } from "../src/model.js";
 import { layeredLayout } from "../src/layout.js";
 import { FIXTURES_DIR, packageRoot } from "./helpers.js";
@@ -487,6 +487,7 @@ interface AppGeometry {
   placeEdgeLabels: (measure: (e: FluyoEdge) => { w: number; h: number }) => Map<number, { x: number; y: number }>;
   codeBlockLayout: (n: FluyoNode) => unknown;
   codeColors: (n: FluyoNode, theme: string) => unknown;
+  labelLayout: (n: FluyoNode, measure: (fs: number) => number) => unknown;
   setPage: (page: FluyoPage) => void;
 }
 
@@ -517,17 +518,18 @@ function loadAppGeometry(fluyoPath: string): AppGeometry {
     /* Las constantes se le inyectan desde el codegen, que las extrae de
        js/config.js. Así esta suite mide el ALGORITMO de maquetación y no si las
        constantes están sincronizadas, que es trabajo de `check:config`. */
-    CODE_ADV, CODE_LANGS, DEFAULT_LANG, THEMES, FONTS,
+    CODE_ADV, CODE_LANGS, DEFAULT_LANG, THEMES, FONTS, DEFAULT_SIZES,
   };
   const ctx = createContext(sandbox);
   // El valor de la última expresión es lo que devuelve runInContext: es la forma
   // de sacar del script unas funciones declaradas con `function`/`const`, que no
   // se cuelgan del objeto de contexto.
-  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels, codeBlockLayout, codeColors});", ctx) as {
+  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels, codeBlockLayout, codeColors, labelLayout});", ctx) as {
     edgePoints: AppGeometry["edgePoints"];
     placeEdgeLabels: AppGeometry["placeEdgeLabels"];
     codeBlockLayout: AppGeometry["codeBlockLayout"];
     codeColors: AppGeometry["codeColors"];
+    labelLayout: AppGeometry["labelLayout"];
   };
   return {
     ...api,
@@ -580,6 +582,27 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
           assert.deepEqual(
             plano(app.codeColors(nodo, d.theme)), plano(codeColors(nodo, d.theme as never)),
             `colores del bloque de código del nodo ${nodo.id} en ${d.name}`
+          );
+        }
+
+        /* Maquetación de la etiqueta. Se le pasa a la app el MISMO medidor
+           heurístico que usa el MCP, igual que con las etiquetas de arista: lo
+           que se compara es la regla de escalado —escala de caja, límite de
+           ancho y límite de alto— y no la medición de texto, que es la
+           divergencia conocida y documentada en svg.ts.
+
+           Con el mismo medidor la coincidencia tiene que ser EXACTA, así que se
+           compara la estructura entera: tamaño de fuente, interlineado, ancla,
+           línea base y la caja que consume el editor in-situ. Esa caja es la que
+           coloca el textarea transparente encima del texto; si la app y el
+           servidor dejan de calcularla igual, el textarea se descuadra en la app
+           y nadie se entera hasta verlo. */
+        for (const nodo of page.nodes) {
+          if (!nodo.label || nodo.shape === "code") continue;
+          assert.deepEqual(
+            plano(app.labelLayout(nodo, measureNodeLabel(nodo))),
+            plano(labelLayout(nodo, measureNodeLabel(nodo))),
+            `maquetación de la etiqueta del nodo ${nodo.id} (${nodo.shape}) en ${d.name}`
           );
         }
 

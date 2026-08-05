@@ -60,6 +60,9 @@ export const FluyoNodeSchema = z
     img: z.string().optional(),
     /** Clave del GIF animado, solo en nodos `shape:"anim"`. */
     anim: z.string().optional(),
+    /** Solo en `shape:"icon"`. Si es true, la pastilla del ícono se pinta con
+     *  `color` en vez de con su color original. */
+    tint: z.boolean().optional(),
     fs: z.number().nullable().optional(),
 
     /* Estilo. Todos opcionales y sin `.default()` a propósito: si el documento no
@@ -220,6 +223,7 @@ const commonNodeFields = {
   color: z.string().optional().describe("Nombre semántico (usa list_colors) o hex (#6a9fb5)."),
   icon: z.string().optional().describe("Solo si shape='icon'. Usa list_icons para ver claves válidas (kafka, gke, cloudsql, lambda, s3, azvm, etc)."),
   anim: z.string().optional().describe("Solo si shape='anim'. Usa list_anims para ver claves válidas (spinner, progress, check, etc)."),
+  tint: z.boolean().optional().describe("Solo si shape='icon'. Tiñe la pastilla del ícono con `color` en vez de dejarle el suyo. Por defecto false: los íconos conservan su color de marca."),
   x: z.number().optional().describe("Posición X manual. Si se omite junto con y, se calcula con auto-layout."),
   y: z.number().optional(),
   w: z.number().optional(),
@@ -300,6 +304,7 @@ const editNodeFields = {
   color: z.string().optional(),
   icon: z.string().optional(),
   anim: z.string().optional(),
+  tint: z.boolean().optional().describe("Solo en shape='icon'. Tiñe la pastilla del ícono con el color del nodo."),
   x: z.number().optional(),
   y: z.number().optional(),
   w: z.number().optional(),
