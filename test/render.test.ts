@@ -29,11 +29,28 @@ import { FIXTURES_DIR, loadFixtures } from "./helpers.js";
 
 const count = (s: string, re: RegExp) => (s.match(re) ?? []).length;
 
-const ELEMENTOS: Array<[string, RegExp]> = [
-  ["<g> por nodo", /<g id="node-/g],
-  ["<image>", /<image /g],
-  ["<text>", /<text /g],
-  ["<polyline>", /<polyline /g],
+/** Cuántos dibujos referenciados se PINTAN, sea cual sea el mecanismo.
+ *
+ *  Los íconos y los GIFs dejaron de incrustarse como un `<image>` por nodo y
+ *  pasaron a un `<symbol>` en `<defs>` más un `<use>` por nodo, para no repetir
+ *  el data URI tantas veces como nodos (svg.ts, «Símbolos reutilizables»). Contar
+ *  `<image>` a secas mediría el mecanismo de deduplicación en vez de lo que este
+ *  golden quiere medir —que no falte ningún dibujo—, y daría rojo por un cambio
+ *  que no pierde nada.
+ *
+ *  Los `<image>` que viven DENTRO de `<defs>` no se cuentan: son la plantilla,
+ *  no una instancia pintada. Los de fuera sí (las imágenes del usuario siguen
+ *  yendo inline, porque no se conoce su tamaño intrínseco). */
+function instanciasDibujadas(svg: string): number {
+  const sinDefs = svg.replace(/<defs>[\s\S]*?<\/defs>/g, "");
+  return count(sinDefs, /<image /g) + count(sinDefs, /<use /g);
+}
+
+const ELEMENTOS: Array<[string, (s: string) => number]> = [
+  ["<g> por nodo", s => count(s, /<g id="node-/g)],
+  ["dibujos pintados (<image> fuera de defs + <use>)", instanciasDibujadas],
+  ["<text>", s => count(s, /<text /g)],
+  ["<polyline>", s => count(s, /<polyline /g)],
 ];
 
 function renderFixture(doc: unknown): string {
@@ -51,15 +68,79 @@ describe("el SVG coincide en estructura con el que exporta la app", () => {
       const mine = renderFixture(fx.doc);
       const app = readFileSync(golden, "utf8");
 
-      for (const [nombre, re] of ELEMENTOS) {
+      for (const [nombre, medir] of ELEMENTOS) {
         assert.equal(
-          count(mine, re),
-          count(app, re),
+          medir(mine),
+          medir(app),
           `número de ${nombre} distinto del que produce la app — el renderer se está dejando algo`
         );
       }
     });
   }
+});
+
+describe("los íconos repetidos no se incrustan una vez por nodo", () => {
+  /** Página con `repeticiones` nodos que usan solo `distintos` íconos. */
+  function pagina(distintos: number, repeticiones: number) {
+    const claves = ["run", "cloudsql", "gke", "queue", "cache", "gcs", "bigquery", "pubsub", "vertex", "gcf"];
+    const nodes = Array.from({ length: repeticiones }, (_, i) => ({
+      id: i + 1, shape: "icon" as const, x: 200 + (i % 6) * 380, y: 200 + Math.floor(i / 6) * 230,
+      w: 120, h: 92, label: `n${i}`, color: "#6a9fb5", fill: null, border: "solid", lblPos: "center",
+      textBg: null, textColor: null, font: null, bold: false, pulse: false, order: i,
+      icon: claves[i % distintos], tint: false,
+    }));
+    return { name: "P", nextId: 999, nodes, edges: [] };
+  }
+
+  it("un ícono usado por diez nodos se declara una sola vez", () => {
+    const svg = pageToSVG(pagina(1, 10) as never, "dark", {});
+    assert.equal((svg.match(/<symbol /g) ?? []).length, 1, "debería haber un único <symbol>");
+    assert.equal((svg.match(/<use /g) ?? []).length, 10, "debería haber un <use> por nodo");
+    assert.equal(
+      (svg.match(/data:image\/svg\+xml/g) ?? []).length, 1,
+      "el data URI del ícono no puede aparecer más de una vez"
+    );
+  });
+
+  it("cada ícono distinto se declara una vez, y solo una", () => {
+    const svg = pageToSVG(pagina(10, 30) as never, "dark", {});
+    assert.equal((svg.match(/<symbol /g) ?? []).length, 10);
+    assert.equal((svg.match(/<use /g) ?? []).length, 30);
+  });
+
+  /* Este es el número que motiva todo esto. Con íconos oficiales de proveedor
+     (1,5–4 KB en vez de los ~430 B de los dibujados a mano) un diagrama de 30
+     nodos superaba los 200 KB de DEFAULT_MAX_TOOL_RESULT_BYTES y export_diagram
+     devolvía un error en vez del diagrama. Ver INFORME-ICONOS-MARCA.md §6.2. */
+  it("con íconos repetidos el SVG se reduce a menos de la mitad", () => {
+    const svg = pageToSVG(pagina(10, 30) as never, "dark", {});
+    // Reconstruye lo que salía antes: cada <use> vuelve a llevar el URI completo.
+    const uri = new Map<string, string>();
+    for (const m of svg.matchAll(/<symbol id="([^"]+)"[^>]*><image[^>]*href="([^"]*)"\/><\/symbol>/g)) uri.set(m[1], m[2]);
+    const antes = svg
+      .replace(/<defs>\n<symbol[\s\S]*?<\/defs>\n?/, "")
+      .replace(/<use href="#([^"]+)"[^>]*\/>/g, (_, id: string) => `<image href="${uri.get(id)}"/>`);
+    assert.ok(
+      svg.length < antes.length * 0.65,
+      `esperada una reducción de más del 35 %: antes ${antes.length} B, ahora ${svg.length} B`
+    );
+  });
+
+  it("el <defs> de símbolos va declarado antes del primer <use>", () => {
+    const svg = pageToSVG(pagina(3, 6) as never, "dark", {});
+    assert.ok(svg.indexOf("<symbol ") < svg.indexOf("<use "), "declarar antes de usar");
+  });
+
+  it("dos nodos con el mismo ícono pero distinto teñido no comparten símbolo", () => {
+    const p = pagina(1, 2) as never as { nodes: Array<Record<string, unknown>> };
+    p.nodes[1].tint = true;
+    p.nodes[1].color = "#d0576a";
+    const svg = pageToSVG(p as never, "dark", {});
+    assert.equal(
+      (svg.match(/<symbol /g) ?? []).length, 2,
+      "el teñido cambia el dibujo, así que son dos símbolos distintos"
+    );
+  });
 });
 
 describe("el lienzo se alinea con el exportador de la app", () => {
