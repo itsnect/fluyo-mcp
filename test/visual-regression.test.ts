@@ -2,15 +2,17 @@
  * TEST DE REGRESIÓN VISUAL
  *
  * Renderiza los 5 ejemplos oficiales de Fluyo más las 2 fixtures que produjo el
- * servidor en producción, y busca automáticamente los cuatro defectos que hacían
+ * servidor en producción, y busca automáticamente los defectos que hacían
  * ilegibles los diagramas generados por MCP:
  *
  *   A) dos aristas entre el mismo par de nodos con la MISMA ruta
  *   B) etiquetas encima de un nodo o encima de otra etiqueta
  *   C) aristas que atraviesan el dibujo de un nodo que no es ni su origen ni su destino
  *   D) extremos que no aterrizan en el borde del nodo
+ *   E) tramos largos compartidos por aristas distintas en sentido opuesto
+ *   F) aristas que entran en la caja de anclaje de su PROPIO origen o destino
  *
- * Y una quinta comprobación que es la que de verdad impide que esto se vuelva a
+ * Y una comprobación más que es la que de verdad impide que esto se vuelva a
  * abrir: que `fluyo/js/geometry.js` y `src/svg.ts` calculen EXACTAMENTE la misma
  * geometría. Los dos son ports manuales el uno del otro; sin esta comprobación,
  * arreglar uno y olvidar el otro no lo nota nadie hasta que un usuario abre el
@@ -129,11 +131,17 @@ function insideRect(p: { x: number; y: number }, r: Rect): boolean {
 
 const SOLAPE_MIN = 40;  // px de trazo compartido para considerarlo un problema
 
-/** Longitud de trazo que dos polilíneas comparten recorriéndolo en sentidos
- *  contrarios. Colineal y a menos de COLINEAL_TOL de distancia. */
+/** Longitud de trazo que dos polilíneas comparten, colineal y a menos de
+ *  COLINEAL_TOL de distancia, separada por sentido de recorrido.
+ *
+ *  La distinción importa y no es la misma para los dos usos: entre aristas de
+ *  pares DISTINTOS solo molesta el sentido opuesto (el mismo sentido es un
+ *  tronco que se lee como un bus), mientras que entre aristas del MISMO par
+ *  molestan los dos, porque ahí compartir trazo es justo lo que el reparto por
+ *  carriles existe para evitar. */
 const COLINEAL_TOL = 1.5;
-function solapeOpuesto(A: { x: number; y: number }[], B: { x: number; y: number }[]): number {
-  let total = 0;
+function solapeColineal(A: { x: number; y: number }[], B: { x: number; y: number }[]): { mismo: number; opuesto: number } {
+  let mismo = 0, opuesto = 0;
   for (let a = 1; a < A.length; a++) for (let b = 1; b < B.length; b++) {
     const a1 = A[a - 1], a2 = A[a], b1 = B[b - 1], b2 = B[b];
     const va = { x: a2.x - a1.x, y: a2.y - a1.y }, vb = { x: b2.x - b1.x, y: b2.y - b1.y };
@@ -142,16 +150,16 @@ function solapeOpuesto(A: { x: number; y: number }[], B: { x: number; y: number 
     const ua = { x: va.x / La, y: va.y / La };
     if (Math.abs(ua.x * vb.y - ua.y * vb.x) / Lb > 0.02) continue;                 // no paralelos
     if (Math.abs((b1.x - a1.x) * -ua.y + (b1.y - a1.y) * ua.x) > COLINEAL_TOL) continue; // paralelos pero separados
-    if (ua.x * vb.x + ua.y * vb.y > 0) continue;                                   // mismo sentido: es un tronco, no un defecto
     const proy = (q: { x: number; y: number }) => (q.x - a1.x) * ua.x + (q.y - a1.y) * ua.y;
     const lo = Math.max(0, Math.min(proy(b1), proy(b2)));
     const hi = Math.min(La, Math.max(proy(b1), proy(b2)));
-    if (hi > lo) total += hi - lo;
+    if (hi <= lo) continue;
+    if (ua.x * vb.x + ua.y * vb.y > 0) mismo += hi - lo; else opuesto += hi - lo;
   }
-  return total;
+  return { mismo, opuesto };
 }
 
-/* ===================== Los cuatro chequeos ===================== */
+/* ===================== Los chequeos ===================== */
 
 function findings(page: FluyoPage): string[] {
   const out: string[] = [];
@@ -174,7 +182,24 @@ function findings(page: FluyoPage): string[] {
       const rev = [...q].reverse();
       const igualDirecta = p.length === q.length && p.every((pt, k) => Math.abs(pt.x - q[k].x) < 2 && Math.abs(pt.y - q[k].y) < 2);
       const igualInversa = p.length === rev.length && p.every((pt, k) => Math.abs(pt.x - rev[k].x) < 2 && Math.abs(pt.y - rev[k].y) < 2);
-      if (igualDirecta || igualInversa) out.push(`A: e${es[i].id} y e${es[j].id} comparten ruta`);
+      if (igualDirecta || igualInversa) { out.push(`A: e${es[i].id} y e${es[j].id} comparten ruta`); continue; }
+
+      // A-bis) rutas distintas pero dibujadas una encima de otra en buena parte
+      // del recorrido. La comparación de arriba solo ve rutas IDÉNTICAS, y dos
+      // hermanas de un par paralelo pueden acabar con el mismo canal largo y
+      // separarse solo al final: `parallelLane` reparte moviendo las anclas y el
+      // canal del medio, así que un canal que salga de un ancla —y no del punto
+      // medio— es el MISMO para las dos por construcción.
+      //
+      // Medido en un barrido sintético de 400 configuraciones con carril activo:
+      // 0 de ellas disparan la comparación de rutas idénticas, y 256 comparten
+      // aquí más de 40px. Sin este chequeo, un par paralelo que pierda su carril
+      // es invisible para la suite.
+      const sol = solapeColineal(p, q);
+      const total = sol.mismo + sol.opuesto;
+      if (total >= SOLAPE_MIN) {
+        out.push(`A: e${es[i].id} y e${es[j].id}, del mismo par, comparten ${Math.round(total)}px de trazo`);
+      }
     }
   }
 
@@ -217,8 +242,37 @@ function findings(page: FluyoPage): string[] {
     const ka = a.from < a.to ? `${a.from}-${a.to}` : `${a.to}-${a.from}`;
     const kb = b.from < b.to ? `${b.from}-${b.to}` : `${b.to}-${b.from}`;
     if (ka === kb) continue;   // mismo par: lo cubre A
-    const op = solapeOpuesto(geom.get(a.id) ?? [], geom.get(b.id) ?? []);
+    const op = solapeColineal(geom.get(a.id) ?? [], geom.get(b.id) ?? []).opuesto;
     if (op >= SOLAPE_MIN) out.push(`E: e${a.id} "${a.label}" y e${b.id} "${b.label}" comparten ${Math.round(op)}px de trazo en sentido opuesto`);
+  }
+
+  // F) la ruta entra en la caja de anclaje de su PROPIO origen o destino
+  //
+  //    El chequeo C no puede ver esto: hace `continue` sobre e.from y e.to, o sea
+  //    que por construcción no mira los dos nodos que la arista toca. Este es el
+  //    que caza el muñón de 28px —la ruta que atraviesa su propio nodo, se pasa
+  //    de largo y vuelve al borde—, y mira LOS DOS extremos: el defecto es
+  //    simétrico y medirlo solo en el destino se dejaba fuera un caso de tres.
+  //
+  //    Se mide contra anchorBox() y no contra la caja del nodo. Con la caja
+  //    completa el mismo medidor da 26 casos, de los que 24 son falsos positivos:
+  //    en un nodo `icon` la caja de anclaje es más estrecha que el nodo y el
+  //    extremo cae legítimamente dentro de la grande.
+  //
+  //    La caja se encoge BORDE_TOL por lado para que el tramo de aproximación,
+  //    que nace sobre el borde, no cuente como entrar.
+  for (const e of page.edges) {
+    const p = geom.get(e.id) ?? [];
+    if (p.length < 2) continue;
+    for (const [id, cual] of [[e.from, "su origen"], [e.to, "su destino"]] as const) {
+      const n = byId.get(id);
+      if (!n) continue;
+      const b = drawnBox(n);
+      const r = { x: b.x + BORDE_TOL, y: b.y + BORDE_TOL, w: Math.max(0, b.w - 2 * BORDE_TOL), h: Math.max(0, b.h - 2 * BORDE_TOL) };
+      let L = 0;
+      for (let i = 1; i < p.length; i++) L += insideLength(p[i - 1], p[i], r);
+      if (L >= CRUCE_MIN) out.push(`F: e${e.id} "${e.label}" entra ${Math.round(L)}px en ${cual} "${nombre(n)}"`);
+    }
   }
 
   // D) extremos que no aterrizan en el nodo
@@ -249,28 +303,40 @@ function findings(page: FluyoPage): string[] {
 /* ===================== Baseline ===================== */
 
 /**
- * Cruces conocidos y aceptados, uno por línea. Los cuatro son el mismo patrón: un
- * tramo vertical largo cuya x la fija el ancla del nodo de destino, atravesando un
+ * Cruces conocidos y aceptados, uno por línea. Son el mismo patrón: un tramo
+ * vertical largo cuya x la fija el ancla del nodo de destino, atravesando un
  * tercer icono que cae en esa misma columna. No se arreglan desplazando el canal
  * —la x no es libre— sino con ruteo que rodee obstáculos, que es un algoritmo
  * distinto y está fuera del alcance de esta tanda.
  *
  * Ya existían antes de los arreglos de rutas y etiquetas: no los introdujo esta
- * serie de cambios. Al implementar el ruteo con evasión, estas cuatro líneas
- * tienen que desaparecer y el test avisará si se olvidan.
+ * serie de cambios. Al implementar el ruteo con evasión, estas líneas tienen que
+ * desaparecer y el test avisará si se olvidan.
+ *
+ * ─── CUATRO ENTRADAS BORRADAS AL ARREGLAR EL MUÑÓN DE 28 px ───────────────────
+ *
+ * Esta lista tenía cuatro entradas más. NO se han rendido ni se han relajado los
+ * chequeos: dejaron de ocurrir. Eran el muñón de 28px visto desde otro chequeo,
+ * y al arreglar el conector de orthoRoute() desaparecieron solas. Se anotan por
+ * nombre porque, leídas en el historial, parecen un baseline que alguien podó:
+ *
+ *   arquitectura-serverless-aws
+ *     C: e16 "encola" atraviesa el nodo "Lambda: worker"
+ *     E: e16 "encola" y e17 "dispara" comparten 108px de trazo en sentido opuesto
+ *   microservicios-api-gateway
+ *     C: e21 "consume" atraviesa el nodo "Pedidos"
+ *     E: e20 "publica" y e21 "consume" comparten 154px de trazo en sentido opuesto
+ *
+ * Las dos de tipo E ya estaban señaladas en la nota (2) de más abajo como «no
+ * comparten ancla, sus tramos coinciden porque los nodos están en la misma
+ * columna». Eso era verdad a medias: la mitad del solape la ponía el muñón, o
+ * sea el tramo que se pasaba 28px de largo y volvía. Al no pasarse, el trazo
+ * compartido baja por debajo de SOLAPE_MIN. Las dos de tipo C son lo mismo: la
+ * ruta que atravesaba su propio destino seguía de largo hasta un tercer nodo.
+ *
+ * El chequeo F es el que vigila que no vuelvan.
  */
 const BASELINE: Record<string, string[]> = {
-  "arquitectura-serverless-aws": [
-    'C: e16 "encola" atraviesa el nodo "Lambda: worker"',
-    /* Ver TRAZOS COMPARTIDOS más abajo: «encola» baja por la columna x=1460 y
-       «dispara» sube por ella. No comparten ancla —los nodos están alineados en
-       esa columna— así que el reparto por puerto no lo toca. */
-    'E: e16 "encola" y e17 "dispara" comparten 108px de trazo en sentido opuesto',
-  ],
-  "microservicios-api-gateway": [
-    'C: e21 "consume" atraviesa el nodo "Pedidos"',
-    'E: e20 "publica" y e21 "consume" comparten 154px de trazo en sentido opuesto',
-  ],
   "oauth2-flujo-autenticacion": ['C: e12 "4. code → token" atraviesa el nodo "API protegida"'],
   "pipeline-etl-datos": ['C: e16 "sí" atraviesa el nodo "Cuarentena"'],
 
@@ -299,11 +365,20 @@ const BASELINE: Record<string, string[]> = {
  * completo les mete nodos ficticios en las capas intermedias, precisamente para
  * que la arista rodee. Eso es un cambio del algoritmo de layout y está fuera del
  * alcance de esta tanda; queda anotado aquí para que no se pierda.
+ *
+ * Aquí también se borró una entrada al arreglar el muñón de 28px, por el mismo
+ * motivo que las cuatro del BASELINE de arriba y no por haber relajado nada:
+ *
+ *   microservicios-api-gateway
+ *     E: e20 "publica" y e21 "consume" comparten 56px de trazo en sentido opuesto
+ *
+ * El auto-layout es donde más se notaba el defecto: sobre los 8 documentos
+ * recolocados, el chequeo F encontraba 10 aristas entrando en su propio nodo —en
+ * 6 de los 8— frente a las 3 de los documentos tal como están guardados.
  */
 const BASELINE_LAYOUT: Record<string, string[]> = {
   "microservicios-api-gateway": [
     'C: e15 "/users" atraviesa el nodo "orders-db"',
-    'E: e20 "publica" y e21 "consume" comparten 56px de trazo en sentido opuesto',
   ],
 };
 
@@ -371,7 +446,47 @@ const BASELINE_LAYOUT: Record<string, string[]> = {
  */
 
 /**
- * (2) TRAZOS COMPARTIDOS EN SENTIDO OPUESTO — quedan 2 de 3.
+ * (3) EL MUÑÓN DE 28 px AL ENTRAR POR EL LADO CONTRARIO — ARREGLADO.
+ *
+ * Este bloque describía un defecto que se dejó medido y sin arreglar por alcance.
+ * Ya no está pendiente: se arregló en orthoRoute() y el chequeo F de arriba es el
+ * que impide que vuelva. Se deja el rastro porque su desaparición se llevó por
+ * delante cinco entradas de baseline y eso, leído en el historial, parece otra
+ * cosa.
+ *
+ * QUÉ ERA: el pasillo de aproximación de `pad` = 28 px es correcto —es lo que hace
+ * que la flecha entre perpendicular al borde—, pero el CONECTOR entre los dos
+ * puntos de pasillo se elegía con una tabla fija que no miraba por dónde pasaba.
+ * Cuando el otro nodo caía del lado contrario al lado anclado, la ruta lo
+ * atravesaba, se pasaba 28 px de largo y volvía al borde. Como los nodos nacen con
+ * `fill:null` se veía el trazo por dentro, y por fuera asomaba el muñón.
+ *
+ * CUÁNTO ERA, medido contra anchorBox() y no contra la caja completa del nodo
+ * (con la caja completa el mismo medidor daba 26 casos, de los que 24 eran falsos
+ * positivos suyos: en un nodo `icon` la caja de anclaje es más estrecha):
+ *
+ *   · 16 de las 25 combinaciones de fromSide × toSide entre dos cajas
+ *   · 3 aristas del corpus publicado — serverless e16 "encola", microservicios
+ *     e20 "publica" y e21 "consume". La tercera entraba en su ORIGEN, no en su
+ *     destino: el defecto es simétrico y una primera medición que solo miró el
+ *     destino se la dejó fuera.
+ *   · 10 aristas de ese mismo corpus recolocado con layeredLayout, en 6 de los 8
+ *     documentos. El generador lo producía mucho más que la edición a mano.
+ *
+ * QUÉ SE HIZO: entre dos puntos hay siempre dos maneras de doblar en ortogonal.
+ * orthoRoute() comprueba si la ruta de hoy entra en la caja de anclaje de alguno
+ * de sus dos nodos y, solo en ese caso, prueba los canales alternativos y se queda
+ * con el que no entra. Una arista sana sale por la cláusula de salida temprana sin
+ * evaluar nada: de las 54 aristas del corpus cambiaron 3, y son las 3 defectuosas.
+ * Ninguna ganó un vértice — el arreglo es doblar antes, no rodear.
+ *
+ * LO QUE NO ARREGLA: los cruces del tipo C que quedan en BASELINE siguen pidiendo
+ * ruteo con evasión de obstáculos, que es otro algoritmo. Este cambio solo mira
+ * los dos nodos que la propia arista toca; un tercer nodo en medio le da igual.
+ */
+
+/**
+ * (2) TRAZOS COMPARTIDOS EN SENTIDO OPUESTO — resueltos los 3.
  *
  * Compartir tramo no es un defecto por sí solo. Medido sobre los 7 documentos:
  * 14 pares de aristas de pares distintos comparten ≥8px, y el reparto es limpio
@@ -383,15 +498,77 @@ const BASELINE_LAYOUT: Record<string, string[]> = {
  *   · 3 pares lo recorren en sentido OPUESTO. Esos sí confunden: una sola línea
  *     con dos puntas de flecha.
  *
- * De los 3, `portLane()` arregla uno —oauth2 e12/e13, que compartían el ancla
- * exacta (1560,508) en el lado sur del hex— y los otros dos no, porque no
- * comparten ancla: sus tramos largos coinciden porque los nodos están alineados
- * en la misma columna (x=1460 en serverless, x=1200 en microservicios). Ahí la x
- * del tramo la fija el ancla del destino y moverla desconecta el extremo.
+ * De los 3, `portLane()` arregló uno —oauth2 e12/e13, que compartían el ancla
+ * exacta (1560,508) en el lado sur del hex—. De los otros dos se dijo aquí que no
+ * compartían ancla, sino que sus tramos largos coincidían por estar los nodos
+ * alineados en la misma columna (x=1460 en serverless, x=1200 en microservicios),
+ * y que solo saldrían con ruteo con evasión de obstáculos.
  *
- * Salida: mover el tramo largo a un canal libre, o sea ruteo con evasión de
- * obstáculos — el mismo algoritmo que reclaman los 4 cruces del tipo C. Cuando
- * se implemente, estas entradas del BASELINE deben desaparecer solas.
+ * Eso era verdad a medias, y el arreglo del muñón —nota (3)— los resolvió sin
+ * ruteo con evasión: buena parte de la longitud compartida la ponía el propio
+ * muñón, el trozo que se pasaba 28px de largo y volvía. Al doblar antes, el
+ * solape cae por debajo de SOLAPE_MIN y las dos entradas del BASELINE
+ * desaparecieron.
+ *
+ * Queda pendiente el caso general —dos tramos largos que coinciden sin que ningún
+ * extremo se pase de largo— pero hoy no ocurre en ningún documento del corpus.
+ */
+
+/**
+ * (4) UN PAR PARALELO EN CONFIGURACIÓN DEFECTUOSA PIERDE SU CARRIL — medido,
+ *     sin arreglar, vigilado por el chequeo A.
+ *
+ * Se buscó a propósito al arreglar el muñón, porque era el único riesgo que no se
+ * podía cerrar con los números del corpus. Barrido sintético: dos hermanas de un
+ * par paralelo (las dos A→B, y una en cada sentido) × 8 posiciones del segundo
+ * nodo × 25 combinaciones de lado = 400 casos con carril activo.
+ *
+ *   con muñón (chequeo F):                    ANTES 288   DESPUÉS 0
+ *   hermanas con ≥40px de trazo colineal:     ANTES   0   DESPUÉS 256
+ *
+ * O sea: el arreglo quita el muñón en los 288 y, en 256, las dos hermanas acaban
+ * dibujadas una encima de otra —hasta 783px— en vez de separadas por PARALLEL_SEP.
+ *
+ * POR QUÉ NO SE ARREGLA REORDENANDO LOS CANDIDATOS. Se probó: cambiar el
+ * desempate de (penetración, codos, longitud) a (penetración, longitud, codos) no
+ * mueve ni un caso, porque en esas configuraciones el canal que se elige es el
+ * ÚNICO limpio de la familia. La causa es estructural: `parallelLane` separa las
+ * hermanas moviendo las anclas A LO LARGO del lado, así que la coordenada
+ * PERPENDICULAR al lado —la que fija el canal de aproximación— es la misma para
+ * las dos por construcción. Cuando la ruta limpia tiene que ir por ese canal, las
+ * dos van por él.
+ *
+ * Ejemplo, las dos aristas de A(400,500) a B(800,300), fromSide "s", toSide "e":
+ *
+ *   ANTES    e1 (386,535) (386,563) (386,286) (948,286) (920,286)   ← separadas,
+ *            e2 (414,535) (414,563) (414,314) (948,314) (920,314)     y las dos
+ *                                    ^^^^^^^ suben ATRAVESANDO A (239px dentro)
+ *   DESPUÉS  e1 (386,535) (386,563) (948,563) (948,286) (920,286)   ← limpias,
+ *            e2 (414,535) (414,563) (948,563) (948,314) (920,314)     encimadas
+ *                                    ^^^^^^^^^^^^^^^^^ 534px en y=563 las dos
+ *
+ * Ninguno de los dos estados es bueno. DECISIÓN DEL MANTENEDOR, tomada con estos
+ * 256/400 delante y no por descarte: se prefiere «dos flechas limpias que van
+ * juntas y se separan al final» a «dos flechas separadas que atraviesan su propio
+ * nodo». Un trazo compartido se lee; una flecha que cruza su propio nodo, no.
+ * Quien reabra esto no está corrigiendo un olvido: está reabriendo una decisión.
+ *
+ * EL ARREGLO DE VERDAD, cuando se aborde: desplazar la ruta ELEGIDA entera,
+ * tramo a tramo perpendicularmente a sí mismo, que es lo que el comentario de
+ * `parallelLane` en geometry.js describe pero orthoRoute nunca implementó — hoy
+ * el carril solo mueve las anclas y el canal del medio. Eso cambia la geometría
+ * de todas las aristas de un par paralelo, así que pide su propia tanda con su
+ * medición antes/después.
+ *
+ * EN EL CORPUS NO OCURRE. Hay dos pares paralelos activos —ingesta-v2 e11/e12 y
+ * rag-chatbot e6/e7— y dos extremos con carril de puerto —oauth2 e12/e13—, y
+ * ninguno está en configuración defectuosa: sus rutas salen idénticas al
+ * centésimo de píxel antes y después del arreglo.
+ *
+ * QUÉ LO VIGILA: el chequeo A comparaba solo rutas IDÉNTICAS, y en los 400 casos
+ * del barrido no dispara ni una vez. Por eso se le añadió la comparación de trazo
+ * colineal entre aristas del mismo par (A-bis): caza los 256 y no da ningún falso
+ * positivo sobre los 8 documentos, guardados ni recolocados.
  */
 
 /* ===================== Suites ===================== */
