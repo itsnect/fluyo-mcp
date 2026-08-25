@@ -371,6 +371,55 @@ const BASELINE_LAYOUT: Record<string, string[]> = {
  */
 
 /**
+ * (3) EL MUÑÓN DE 28 px AL ENTRAR POR EL LADO CONTRARIO — medido, sin arreglar.
+ *
+ * orthoRoute() antepone a cada extremo un pasillo de aproximación de `pad` = 28 px
+ * sobre la normal del lado anclado (fluyo/js/geometry.js). Es correcto y es lo que
+ * hace que la flecha entre perpendicular al borde.
+ *
+ * Se convierte en defecto cuando el origen está del lado CONTRARIO al lado
+ * anclado. Entonces la ruta sube por encima del nodo hasta el pasillo, y el último
+ * tramo baja de vuelta al borde:
+ *
+ *   A abajo-izquierda de B, toSide="n":
+ *     (480,500) -> (508,500) -> (800,500) -> (800,237) -> (800,265)
+ *                                            ^^^^^^^^^     ^^^^^^^^^
+ *                        se pasa 28 px por encima de B  y vuelve al borde
+ *
+ * El tramo largo atraviesa la caja de B, y como los nodos nacen con `fill:null`
+ * —semitransparente— se ve a través. Por arriba queda un muñón de 28 px asomando:
+ * los dos tramos son colineales, así que en pantalla es una línea que sobresale.
+ *
+ * CASOS EN EL CORPUS PUBLICADO: 2, medidos contra anchorBox() y no contra la caja
+ * completa del nodo — con la caja completa salen 26, pero 24 son falsos positivos
+ * del propio medidor, porque en los nodos `icon` la caja de anclaje es más
+ * estrecha que el nodo y el extremo cae legítimamente dentro de la caja grande.
+ *
+ *   arquitectura-serverless-aws   e16 "encola"  -> "SQS"
+ *   microservicios-api-gateway    e20 "publica" -> "Event bus"
+ *
+ * Los dos ya aparecen en el BASELINE de arriba como trazos compartidos en sentido
+ * opuesto (tipo E). No es casualidad: parte de ese solape ES este muñón.
+ *
+ * POR QUÉ NO ESTÁ EN LA LISTA BASELINE Y SÍ AQUÍ: el chequeo C hace
+ * `if (n.id === e.from || n.id === e.to) continue`, o sea que NO mira el nodo de
+ * destino — por construcción no puede ver una arista que atraviesa su propio
+ * destino. No hay ninguna cadena de hallazgo que añadir a BASELINE: si se
+ * añadiera, la suite «los defectos aceptados siguen existiendo» daría rojo al no
+ * encontrarla nunca. Detectarlo pide un chequeo nuevo, no una entrada nueva.
+ *
+ * El chequeo que haría falta, si algún día se aborda: para cada arista, mirar si
+ * algún tramo que no sea el último cruza anchorBox() del nodo de destino. Es
+ * barato. Lo que no es barato es el arreglo — que el pasillo salga por el lado por
+ * el que de verdad llega el trazo, o ruteo con evasión, que es el mismo algoritmo
+ * que reclaman los 4 cruces del tipo C y los 2 trazos compartidos de (2).
+ *
+ * Se documenta aquí y no se arregla por decisión de alcance: la tanda de
+ * usabilidad que descubrió esto tocaba manejadores e interacción, y mover el
+ * pasillo cambia la geometría de TODAS las aristas ortogonales del corpus.
+ */
+
+/**
  * (2) TRAZOS COMPARTIDOS EN SENTIDO OPUESTO — quedan 2 de 3.
  *
  * Compartir tramo no es un defecto por sí solo. Medido sobre los 7 documentos:
