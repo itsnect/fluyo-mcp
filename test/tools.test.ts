@@ -167,18 +167,18 @@ describe("catálogos", () => {
 
 describe("create_diagram", () => {
   const args = {
-    pageName: "Dispersiones MX",
+    pageName: "Pipeline de eventos",
     theme: "dark",
     nodes: [
       { key: "gw", shape: "rect", label: "API\nGateway", color: "Servicio" },
       { key: "kafka", shape: "icon", icon: "kafka", label: "Kafka", pulse: true, color: "Eventos / Kafka" },
-      { key: "spei", shape: "rect", label: "Router SPEI", color: "Servicio" },
+      { key: "svc", shape: "rect", label: "Servicio de\npedidos", color: "Servicio" },
       { key: "db", shape: "cylinder", label: "Cloud SQL", color: "Datos" },
     ],
     edges: [
       { from: "gw", to: "kafka", label: "evento", route: "ortho" },
-      { from: "kafka", to: "spei", label: "topic: dispersiones", route: "ortho" },
-      { from: "spei", to: "db", label: "persistencia", dashed: true },
+      { from: "kafka", to: "svc", label: "topic: pedidos", route: "ortho" },
+      { from: "svc", to: "db", label: "persistencia", dashed: true },
     ],
   };
 

@@ -1,6 +1,6 @@
 # Fixtures del test de contrato
 
-Estos cinco `.fluyo.json` son **copias literales** de los ejemplos que Fluyo publica
+Estos ocho `.fluyo.json` son **copias literales** de los ejemplos que Fluyo publica
 en `fluyo/ejemplos/data/` y sirve en <https://fluyo.space/ejemplos/>. Son documentos
 reales producidos por la aplicación, no fixtures escritos a mano.
 
@@ -9,7 +9,9 @@ correr en CI y en un clon que no tenga `fluyo/` al lado.
 
 ## Por qué estos y no otros
 
-Entre los cinco cubren toda la superficie del formato v3 que la app produce hoy:
+Entre los ocho cubren toda la superficie del formato v3 que la app produce hoy. Los
+cinco primeros son de arquitectura de software; los tres últimos, de proceso de
+negocio, y son los únicos del corpus con `build:true` en `settings`:
 
 | Ejemplo | Cubre |
 |---|---|
@@ -18,6 +20,9 @@ Entre los cinco cubren toda la superficie del formato v3 que la app produce hoy:
 | `microservicios-api-gateway` | grafo con bifurcación, rutas `ortho` |
 | `oauth2-flujo-autenticacion` | **`shape:"anim"`**, `diamond`, `hex` |
 | `pipeline-etl-datos` | **`shape:"anim"`**, iconos de los grupos Estados y Varios |
+| `funnel-de-ventas` | `build:true`, `diamond` con dos salidas, `circle` con `pulse` |
+| `onboarding-de-cliente` | `build:true`, arista de vuelta sobre el flujo principal |
+| `cadena-de-suministro` | `build:true`, **`shape:"anim"`** con `progress`, `cylinder` |
 
 Los dos con `shape:"anim"` y los iconos de los grupos `Estados`/`Varios`
 (`bell`, `cache`, `cdn`, `file`, `graph`, `warn`) son justo lo que el servidor no
