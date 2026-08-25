@@ -16,7 +16,7 @@ resultado sigue siendo el caso interesante.
 
 Están **fuera** del directorio padre a propósito: `test/fixtures/*.fluyo.json` es un
 espejo exacto de `fluyo/ejemplos/data/`, mantenido por `npm run sync:fixtures`, y el
-test de contrato afirma que ahí hay exactamente cinco archivos. Estas dos no vienen
+test de contrato afirma que ahí hay exactamente ocho archivos. Estas tres no vienen
 de allí y no deben aparecer en ese recuento.
 
 La copia gemela vive en `fluyo/test/fixtures/regresion-visual/`. Las dos deben ser

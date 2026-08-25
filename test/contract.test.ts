@@ -1,7 +1,7 @@
 /**
  * TEST DE CONTRATO — fluyo-mcp ↔ formato .fluyo.json
  *
- * Carga los cinco ejemplos REALES que Fluyo publica (copiados en test/fixtures/,
+ * Carga los ocho ejemplos REALES que Fluyo publica (copiados en test/fixtures/,
  * ver el README de esa carpeta) y verifica tres propiedades sobre cada uno:
  *
  *   a) el schema los acepta                    — no se rechaza lo que la app produce
@@ -36,8 +36,8 @@ after(async () => { await h?.close(); });
 const fixtures = loadFixtures();
 
 describe("contrato con el formato .fluyo.json que produce la app", () => {
-  it("hay cinco ejemplos reales cargados", () => {
-    assert.equal(fixtures.length, 5, "se esperaban los 5 ejemplos de fluyo/ejemplos/data");
+  it("hay ocho ejemplos reales cargados", () => {
+    assert.equal(fixtures.length, 8, "se esperaban los 8 ejemplos de fluyo/ejemplos/data");
   });
 
   for (const fx of fixtures) {

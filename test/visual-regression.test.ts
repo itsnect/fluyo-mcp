@@ -1,8 +1,9 @@
 /**
  * TEST DE REGRESIÓN VISUAL
  *
- * Renderiza los 5 ejemplos oficiales de Fluyo más las 2 fixtures que produjo el
- * servidor en producción, y busca automáticamente los defectos que hacían
+ * Renderiza los 8 ejemplos oficiales de Fluyo —cinco de arquitectura y tres de
+ * proceso de negocio— más las 3 fixtures de regresión, y busca automáticamente
+ * los defectos que hacían
  * ilegibles los diagramas generados por MCP:
  *
  *   A) dos aristas entre el mismo par de nodos con la MISMA ruta
@@ -574,8 +575,8 @@ const BASELINE_LAYOUT: Record<string, string[]> = {
 /* ===================== Suites ===================== */
 
 describe("regresión visual: los cuatro defectos de legibilidad", () => {
-  it("están cargados los 5 ejemplos oficiales y las fixtures de regresión", () => {
-    assert.equal(docs.length, 8, `documentos encontrados: ${docs.map(d => d.name).join(", ")}`);
+  it("están cargados los 8 ejemplos oficiales y las fixtures de regresión", () => {
+    assert.equal(docs.length, 11, `documentos encontrados: ${docs.map(d => d.name).join(", ")}`);
   });
 
   for (const doc of docs) {
