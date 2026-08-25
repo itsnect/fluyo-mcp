@@ -25,7 +25,7 @@ function lbl(defaults: Record<string, string>, overrides: Record<string, string>
 const eventDrivenPipeline: TemplateDef = {
   id: "event_driven_pipeline",
   name: "Pipeline orientado a eventos (Kafka)",
-  description: "Gateway -> Kafka -> N servicios consumidores -> base de datos. El patrón clásico de dispersión/streaming: un productor emite eventos, varios servicios los consumen en paralelo.",
+  description: "Gateway -> Kafka -> N servicios consumidores -> base de datos. El patrón clásico de reparto/streaming: un productor emite eventos, varios servicios los consumen en paralelo.",
   overridableKeys: ["gateway", "kafka", "svcA", "svcB", "db"],
   build(overrides) {
     const d: Record<string, string> = {
