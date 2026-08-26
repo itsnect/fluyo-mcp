@@ -5,6 +5,7 @@ import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from 
 import { CreateDiagramInputShape, DocumentInputSchema, OperationSchema, ThemeSchema } from "./model.js";
 import { createDiagram, editDiagram, parseDocument } from "./diagram.js";
 import { pageToSVG } from "./svg.js";
+import { MAX_LINK_CHARS, buildOpenLink } from "./link.js";
 import { TEMPLATES, assertOverridableKeys, getTemplate } from "./templates.js";
 
 /**
@@ -38,6 +39,28 @@ function summarize(project: ReturnType<typeof createDiagram>): string {
   return `Diagrama "${page.name}" — ${page.nodes.length} nodo(s), ${page.edges.length} arista(s), tema "${project.doc.theme}".`;
 }
 
+/**
+ * El resumen más el enlace que abre el diagrama animado en la app.
+ *
+ * El enlace va DENTRO del bloque de resumen y no en uno propio: `content[]`
+ * sigue teniendo dos elementos —resumen y JSON— y ningún cliente que ya lea
+ * estas respuestas tiene que cambiar nada.
+ *
+ * Cuando no cabe, se dice por qué y qué hacer, en vez de callarse. El JSON sale
+ * igual: el diagrama es perfectamente válido, lo que no cabe es la URL.
+ */
+function summarizeWithLink(project: ReturnType<typeof createDiagram>): string {
+  const link = buildOpenLink(project);
+  if (link) return `${summarize(project)}\nÁbrelo animado en Fluyo: ${link}`;
+  return (
+    `${summarize(project)}\n` +
+    `Este diagrama no cabe en un enlace (el tope son ${MAX_LINK_CHARS.toLocaleString("es-ES")} caracteres de URL). ` +
+    "Casi siempre es por nodos shape:\"image\", que llevan la imagen entera dentro como data URI: " +
+    "uno solo puede pesar más que un diagrama de cien nodos. " +
+    "Guarda el JSON de abajo como .fluyo.json y ábrelo en Fluyo con «Abrir»."
+  );
+}
+
 /** Registra las herramientas de Fluyo sobre una instancia nueva de McpServer. Separado de
  *  index.ts para poder conectarlo tanto a stdio (uso real) como a un InMemoryTransport
  *  (los tests de test/) sin duplicar las definiciones de herramientas. */
@@ -55,14 +78,16 @@ server.registerTool(
     description:
       "Crea un diagrama de arquitectura completo (formato .fluyo.json) a partir de una lista de nodos y aristas. " +
       "Si un nodo no trae x/y, se posiciona automáticamente en capas de izquierda a derecha según las aristas (auto-layout). " +
-      "El JSON resultante se puede abrir directo en fluyo (botón Abrir) o seguir editando con edit_diagram / exportando con export_diagram. " +
+      "La respuesta trae un enlace fluyo.space/#d=… que abre el diagrama YA ANIMADO en la app: dáselo al usuario, " +
+      "es la forma más rápida de que vea el resultado y no requiere guardar ningún archivo. " +
+      "El JSON también se puede guardar como .fluyo.json y abrir con «Abrir», seguir editando con edit_diagram o exportar con export_diagram. " +
       "Usa list_icons para ver íconos válidos y list_templates si el patrón ya existe como plantilla.",
     inputSchema: CreateDiagramInputShape,
   },
   async (input) => {
     try {
       const project = createDiagram(input);
-      return ok(summarize(project), JSON.stringify(project, null, 2));
+      return ok(summarizeWithLink(project), JSON.stringify(project, null, 2));
     } catch (err) {
       return fail(err);
     }
@@ -80,7 +105,8 @@ server.registerTool(
       "Aplica una lista de operaciones (add_node, update_node, remove_node, add_edge, update_edge, remove_edge, set_theme, rename_page, relayout) " +
       "sobre un documento Fluyo existente (el JSON completo devuelto por create_diagram o cargado desde un .fluyo.json). " +
       "Las operaciones se aplican en orden; add_node puede definir un 'key' temporal que add_edge referencia en la misma llamada. " +
-      "Para editar nodos/aristas ya existentes en el documento, usa su 'id' numérico (visible en el JSON del documento).",
+      "Para editar nodos/aristas ya existentes en el documento, usa su 'id' numérico (visible en el JSON del documento). " +
+      "La respuesta trae un enlace fluyo.space/#d=… con el diagrama YA EDITADO, listo para abrir en la app.",
     inputSchema: {
       document: DocumentInputSchema,
       pageIndex: z.number().optional().describe("Índice de página a editar (por defecto, la página actual del documento)."),
@@ -90,7 +116,7 @@ server.registerTool(
   async ({ document, pageIndex, operations }) => {
     try {
       const project = editDiagram({ document, pageIndex, operations });
-      return ok(summarize(project), JSON.stringify(project, null, 2));
+      return ok(summarizeWithLink(project), JSON.stringify(project, null, 2));
     } catch (err) {
       return fail(err);
     }
@@ -248,7 +274,8 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Instancia uno de los templates de list_templates como un documento Fluyo completo, con auto-layout aplicado. " +
-      "Se pueden personalizar los labels de los nodos vía 'labelOverrides' (mapa key -> nuevo texto).",
+      "Se pueden personalizar los labels de los nodos vía 'labelOverrides' (mapa key -> nuevo texto). " +
+      "La respuesta trae un enlace fluyo.space/#d=… que abre el diagrama animado en la app.",
     inputSchema: {
       templateId: z.string(),
       pageName: z.string().optional(),
@@ -274,7 +301,7 @@ server.registerTool(
         nodes,
         edges,
       });
-      return ok(summarize(project), JSON.stringify(project, null, 2));
+      return ok(summarizeWithLink(project), JSON.stringify(project, null, 2));
     } catch (err) {
       return fail(err);
     }
