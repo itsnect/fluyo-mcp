@@ -219,6 +219,22 @@ export function createDiagram(input: CreateDiagramInput): FluyoProject {
   const project: FluyoProject = {
     version: 3,
     app: "fluyo",
+    /* Firma de la herramienta sobre su propia salida. No es dato del usuario:
+       no deriva de nada que nadie escribiera, así que frente a «el contenido de
+       tus diagramas no se envía nunca» ni siquiera entra en la discusión.
+       Responde exactamente lo que hoy no se puede saber: cuántos de los
+       diagramas que se abren en la app venían de aquí.
+
+       Se autolimpia. `serializeProject()` (fluyo/js/state.js) devuelve
+       exactamente {version, app, doc, settings}, así que esta clave NO sobrevive
+       al primer guardado desde la app — que es la semántica correcta: a partir
+       de que alguien lo guarda, el archivo es suyo y no de esta herramienta.
+
+       Va solo en lo que se CREA. Un documento que entra por edit_diagram y sale
+       editado no se firma: si venía sin marca, es de quien lo hizo, y esta
+       herramienta solo lo tocó. Si venía con ella, el `.passthrough()` de los
+       schemas la conserva sin que haya que hacer nada. */
+    meta: { generator: "fluyo-mcp" },
     doc: {
       theme: input.theme,
       pages: [page],

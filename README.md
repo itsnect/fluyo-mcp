@@ -109,7 +109,46 @@ El modelo llamará a `create_diagram` con algo así:
 }
 ```
 
-El resultado es un `.fluyo.json` completo, listo para abrir en Fluyo o para seguir editando con `edit_diagram`.
+El resultado es un `.fluyo.json` completo, y el resumen de la respuesta trae un enlace
+`fluyo.space/#d=…` que lo abre **ya animado** en la app, sin guardar ningún archivo. También se
+puede guardar el JSON y abrirlo con el botón **Abrir**, o seguir editándolo con `edit_diagram`.
+
+---
+
+## El enlace `fluyo.space/#d=…`
+
+`create_diagram`, `edit_diagram` y `create_from_template` devuelven, junto al resumen, un
+enlace que abre el diagrama **ya animado** en la app. Es el paso que faltaba: antes había que
+copiar el JSON del chat, guardarlo como `.fluyo.json` y abrirlo a mano.
+
+**El diagrama viaja dentro del enlace.** No hay backend, no hay nada que dar de alta y no hay
+nada que caduque. Va detrás de la almohadilla a propósito: el navegador **no envía el
+fragmento al servidor**, ni en la petición ni en la cabecera `Referer`, así que el contenido
+no llega a ningún registro de acceso — ni al de fluyo.space, ni al de nadie.
+
+La contrapartida, dicha claramente: va **codificado, no cifrado**. Quien reciba el enlace
+puede leer el diagrama. Trátalo como tratarías el archivo.
+
+**Formato**, por si alguien quiere generarlos por su cuenta:
+
+```
+#d= base64url( [1 byte de versión] + [carga] )
+
+     1 → deflate-raw            ← lo que emite este servidor
+     0 → JSON en UTF-8 tal cual ← lo entiende el lector, no se emite
+```
+
+**Tamaño.** Medido sobre los ocho ejemplos que publica Fluyo: 3.971 bytes de JSON minificado
+de media acaban en 1.061 caracteres de URL — factor 5, porque este JSON repite las mismas
+claves en cada nodo y eso es justo lo que come el deflate. Un diagrama de 8 nodos son 987
+caracteres; uno de 30, 2.429.
+
+**Cuándo no hay enlace.** Por encima de 16.000 caracteres no se emite, y la respuesta explica
+por qué. El límite no lo pone el navegador —Chrome traga fragmentos de dos millones de
+caracteres— sino el medio por el que viaja el enlace: un cliente de correo en texto plano
+parte las líneas largas, y una URL partida ya no abre nada. Lo que dispara el tope en la
+práctica no es el número de nodos, son los nodos `image`: llevan la imagen entera dentro como
+data URI y uno solo puede pesar más que un diagrama de cien nodos.
 
 ---
 
@@ -159,7 +198,6 @@ Importa ser preciso aquí, porque una versión anterior de este README prometía
 - **No se leen documentos del formato v1.** La app los migra al abrirlos; ábrelo y vuelve a guardarlo.
 - **El auto-layout es un Sugiyama simplificado.** Va muy bien en pipelines y arquitecturas convencionales; para grafos muy ramificados conviene dar coordenadas o retocar tras un `relayout`.
 - **`edit_diagram` reenvía el documento entero** en la entrada y en la salida. En sesiones de edición largas sobre diagramas grandes eso consume bastante contexto.
-- **No hay forma de abrir el resultado en fluyo.space directamente.** Hay que guardar el JSON y usar el botón **Abrir**.
 
 ---
 
@@ -212,6 +250,7 @@ Se fijan **por revisión**: cambiar una crea una revisión nueva, y hasta que es
 | `RATE_LIMIT_WINDOW_MS` | `60000` | Tamaño de la ventana deslizante. |
 | `MAX_BODY_BYTES` | `1048576` (1 MB) | Tope del cuerpo de la petición. Por encima: 413. |
 | `MAX_TOOL_RESULT_BYTES` | `204800` (200 KB) | Tope del resultado de una tool. Por encima se sustituye por un error que explica cómo reducir el diagrama. |
+| `FLUYO_APP_URL` | `https://fluyo.space/` | Base de los enlaces `#d=` que devuelven las tools. Para un self-host o una copia local. Un valor que no sea una URL se ignora. |
 | `FLUYO_MCP_LOG` | activado | `off` para silenciar el registro por completo. |
 
 **`PORT` no se configura.** La inyecta Cloud Run y el contenedor la lee; fijarla a mano rompe el despliegue. En local sí se usa (`PORT=3000 npm run start:http`).
@@ -381,6 +420,7 @@ src/
   diagram.ts        # createDiagram / editDiagram
   svg.ts            # Exportador SVG
   templates.ts      # Plantillas de arquitectura
+  link.ts           # Enlace fluyo.space/#d=… (deflate-raw + base64url)
   server.ts         # Registro de las tools MCP — común a los dos transportes
   index.ts          # Entry point 1: stdio
   http.ts           # Entry point 2: Streamable HTTP (stateless) + rutas del host
@@ -400,6 +440,7 @@ test/
   tools.test.ts     # Flujo extremo a extremo de las 9 tools
   render.test.ts    # El SVG cuadra con el que produce la app
   http.test.ts      # Handshake por HTTP, paridad con stdio, seguridad y privacidad del log
+  link.test.ts      # Formato del enlace, tope de tamaño y firma meta.generator
   fixtures/         # Copias de fluyo/ejemplos/ (datos y previews de referencia)
 ```
 
