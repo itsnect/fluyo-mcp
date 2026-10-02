@@ -18,8 +18,11 @@ No necesita backend. Es una capa delgada sobre el modelo de documento de Fluyo, 
 | `list_colors` | Los 14 colores semánticos de la paleta. |
 | `list_anims` | Los 8 GIFs animados para nodos `shape:"anim"`. |
 | `list_fonts` | Las 11 tipografías disponibles. |
+| `describe_document` | Lee un documento Fluyo (v1–v5) y lo resume para un agente: páginas, elementos, conexiones, biblioteca de eventos, Historias con sus pasos, validación de integridad, versiones de schema y motor. No modifica nada. |
+| `author_document` | Crea/modifica **Historias** y **EventTypes** (la biblioteca de eventos) sobre una copia del documento en un lote atómico: Historias (`create_story`, `rename_story`, `duplicate_story`, `delete_story`, `add_step`, `remove_step`, `move_step`, `duplicate_step`, `retarget_step`, `set_wait`), página (`set_initial_availability`) y eventos (`create_event_type`, `update_event_type`, `delete_event_type`). Devuelve un documento nuevo que Fluyo ejecuta tal cual, o rechaza todo el lote explicando qué Historias/pasos quedarían inválidos. Requiere `baseRevision`. |
+| `run_story` | Ejecuta una Historia con el **mismo motor** que el editor y devuelve el Trace, el resultado de cada paso, los errores de validación y las versiones. No simula nada: el motor es el de Fluyo. |
 
-Las nueve son funciones puras: reciben JSON y devuelven JSON, sin tocar disco, red ni ningún estado externo. Van anotadas como tal (`readOnlyHint`, `idempotentHint`).
+Las doce son funciones puras: reciben JSON y devuelven JSON, sin tocar disco, red ni ningún estado externo. Van anotadas como tal (`readOnlyHint`, `idempotentHint`).
 
 ---
 
@@ -40,7 +43,7 @@ npm test        # contrato contra los ejemplos reales de Fluyo, tools y renderer
 
 ## Conectarlo
 
-Hay dos transportes sobre el mismo núcleo. Las nueve tools, sus schemas y el renderer son idénticos en los dos; lo único que cambia es por dónde entran los mensajes.
+Hay dos transportes sobre el mismo núcleo. Las doce tools, sus schemas y el renderer son idénticos en los dos; lo único que cambia es por dónde entran los mensajes.
 
 | | stdio | Streamable HTTP |
 |---|---|---|
@@ -81,6 +84,42 @@ O como ejecutable global (`npm link`):
   }
 }
 ```
+
+---
+
+## Historias: leer, validar y ejecutar (`describe_document`, `run_story`)
+
+Estas dos tools **no escriben**: leen un documento, lo validan y ejecutan una Historia. No hay autoría de Historias (crear/duplicar/editar pasos) todavía.
+
+```text
+fluyo/js (kernel)  ──sync:kernel──▶  src/generated/kernel-sources.ts  ──▶  vm aislado por llamada
+ modelo · motor · FluyoStory · FluyoIntegrity   (copia verbatim + sha256)      describe_document · run_story
+```
+
+- **El motor no se reimplementa.** `npm run sync:kernel` copia, sin modificarlos, los scripts de `fluyo/js` (`config`, `safe-svg`, `model`, `scenario-engine`, `scenario-playback`, `story-playback`, `document-integrity`). Cada llamada los carga en un contexto `vm` nuevo. `npm run check:kernel` (y el job `drift`) falla si la copia se desvía de `fluyo/`. Cada resultado trae el `kernelId` (hash del conjunto) para poder reproducirlo.
+- **Validación única.** La integridad (referencias a elementos, conexiones y eventos, acciones compatibles con su evento, Behaviors, ids, versión de schema y de motor) la decide `FluyoIntegrity` de Fluyo, no este servidor.
+- **Un paso `OCCURRENCE` es siempre `narrated`**: el motor lo registra aunque el elemento esté no disponible; no prueba que ocurriera nada real. Reintentos, colas, timeouts y lógica interna de los elementos no están en el modelo y se declaran en `unmodeled`.
+- Si una Historia no es válida (p. ej. apunta a una conexión eliminada) no hay Trace: se devuelven los errores con su Historia y Step.
+
+---
+
+## Autoría de Historias (`author_document`)
+
+```text
+describe_document (revision) ──▶ author_document (baseRevision + operaciones) ──▶ run_story
+                                   │ copia → lote → FluyoIntegrity (estado final)
+                                   ▼
+                          documento nuevo + resultRevision   |   rechazo: sin documento
+```
+
+- **Atómico**: o se aplica todo el lote o nada; el documento recibido nunca se modifica. `dryRun:true` valida y devuelve los `changes` sin documento.
+- **Revisión optimista, sin estado**: `baseRevision` es la `revision` que anunció `describe_document` (sha256 del JSON canónico del documento normalizado). Si no coincide → `REVISION_MISMATCH`. `resultRevision` es determinista.
+- **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId}` / `{from,to}` para conexiones; `{nodeId}` para elementos). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
+- **Tiempo narrativo**: `waitMs` al añadir al final o `set_wait` por momento; «al mismo tiempo» con `placement.sameMomentAs`. Eliminar colapsa la espera; duplicar entra en el mismo momento.
+- **B2**: si el estado final dejaría una Historia inválida, se rechaza el lote con `REFERENCED_ENTITY` (entidad, Historias y pasos afectados). Retargetear y borrar en el mismo lote es válido.
+- **EventTypes** (scope `eventType`, globales al documento, sin `pageIndex`): `create_event_type` (`name`, `primitive` FLOW | OCCURRENCE | SET_AVAILABILITY, `sentence` con `{source}`/`{target}`/`{name}`, `symbol?`, `motion?` sólo FLOW, `availability` sólo y obligatoria en SET_AVAILABILITY, `presentation?` como parche, `ref?`), `update_event_type` y `delete_event_type`. Un evento creado en el lote se usa con `{ref}` en `add_step`. La acción del paso la deriva la primitiva (FLOW→SEND, OCCURRENCE→OCCURRENCE, SET_AVAILABILITY→SET_STATE); nunca se escribe.
+- **Reglas del editor, las mismas**: de un evento **usado** no cambian `primitive` ni `availability` (`EVENT_TYPE_LOCKED`, con el campo y los usos) y no se elimina (`REFERENCED_ENTITY` con el EventType, las Historias y los Steps afectados). Nombre, frase, símbolo, movimiento y presentación sí cambian y se ven en todos sus usos; los Steps y el Trace no cambian. Un nombre repetido se acepta y se avisa (`DUPLICATE_EVENT_TYPE_NAME`). `describe_document` lista cada evento con `usedBy` y `usedIn` (página, Historia, Steps).
+- No crea ni edita ni borra conexiones ni elementos; `edit_diagram` no cambia.
 
 ---
 
@@ -280,7 +319,7 @@ Memoria:172.800 × 0,5  × $0,0000025 = $0,22/día
 
 En operación normal la cifra real es una fracción de eso, porque con `min-instances=0` no se factura nada mientras no hay tráfico.
 
-> **`--concurrency=80` no se toca.** Es contraintuitivo: **bajarlo multiplica el coste**. Cada instancia atiende hasta 80 peticiones a la vez; con `concurrency=10` harían falta ocho veces más instancias para el mismo tráfico, se toparía antes en `max-instances=2` y los usuarios recibirían 429 de la plataforma antes que del rate limiter. Las nueve tools son funciones puras que no comparten estado, así que 80 simultáneas por instancia no tienen ningún inconveniente.
+> **`--concurrency=80` no se toca.** Es contraintuitivo: **bajarlo multiplica el coste**. Cada instancia atiende hasta 80 peticiones a la vez; con `concurrency=10` harían falta ocho veces más instancias para el mismo tráfico, se toparía antes en `max-instances=2` y los usuarios recibirían 429 de la plataforma antes que del rate limiter. Las doce tools son funciones puras que no comparten estado, así que 80 simultáneas por instancia no tienen ningún inconveniente.
 
 ### Primer despliegue
 
@@ -437,7 +476,7 @@ scripts/
 
 test/
   contract.test.ts  # Los 5 ejemplos reales: se aceptan, round-trip sin pérdida, exportan
-  tools.test.ts     # Flujo extremo a extremo de las 9 tools
+  tools.test.ts     # Flujo extremo a extremo de las 11 tools
   render.test.ts    # El SVG cuadra con el que produce la app
   http.test.ts      # Handshake por HTTP, paridad con stdio, seguridad y privacidad del log
   link.test.ts      # Formato del enlace, tope de tamaño y firma meta.generator

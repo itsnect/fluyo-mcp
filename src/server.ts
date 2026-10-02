@@ -7,9 +7,11 @@ import { createDiagram, editDiagram, parseDocument } from "./diagram.js";
 import { pageToSVG } from "./svg.js";
 import { MAX_LINK_CHARS, buildOpenLink } from "./link.js";
 import { TEMPLATES, assertOverridableKeys, getTemplate } from "./templates.js";
+import { describeDocument, runStory, summarizeDescription, summarizeRun } from "./stories.js";
+import { AuthoringOperationSchema, authorDocument, summarizeAuthoring } from "./authoring.js";
 
 /**
- * Las nueve tools de este servidor son funciones puras: reciben JSON, devuelven
+ * Las doce tools de este servidor son funciones puras: reciben JSON, devuelven
  * JSON, y no tocan disco, red ni ningún estado fuera de su propia respuesta. No
  * hay nada que un cliente deba confirmar antes de llamarlas.
  *
@@ -302,6 +304,104 @@ server.registerTool(
         edges,
       });
       return ok(summarizeWithLink(project), JSON.stringify(project, null, 2));
+    } catch (err) {
+      return fail(err);
+    }
+  }
+);
+
+/* ===================== describe_document / run_story (FLUYO-017.1) ===================== */
+
+server.registerTool(
+  "describe_document",
+  {
+    title: "Describir un documento Fluyo",
+    annotations: TOOL_PURA,
+    description:
+      "Lee un documento Fluyo (cualquier versión que abra la app, v1–v5) y devuelve una descripción COMPACTA pensada para un agente: " +
+      "páginas con sus elementos y conexiones (ids + nombres, sin coordenadas ni estilos), disponibilidad inicial, la biblioteca de eventos " +
+      "(id, nombre, frase, símbolo, primitiva, acción, a qué se aplica —conexión o elemento—, presentación distinta del defecto y dónde se usa: Historias y pasos; " +
+      "es lo que responde «¿qué eventos puedo usar?») y las Historias con sus pasos agrupados por momento, su evento, objetivo y frase. " +
+      "También valida la integridad del documento (referencias a elementos, conexiones y eventos) con la misma regla que el motor de Fluyo, " +
+      "indica la versión de schema y de motor, y declara lo que el modelo NO representa. No modifica nada. " +
+      "Usa los ids numéricos que devuelve (los storyId son por página) para pedir run_story. " +
+      "Con includeSteps:false se omiten los pasos de cada Historia.",
+    inputSchema: {
+      document: DocumentInputSchema,
+      pageIndex: z.number().int().min(0).optional().describe("Describe sólo esta página (por defecto, todas)."),
+      includeSteps: z.boolean().default(true).describe("Incluir los pasos de cada Historia."),
+    },
+  },
+  async ({ document, pageIndex, includeSteps }) => {
+    try {
+      const description = describeDocument({ document, pageIndex, includeSteps });
+      return ok(summarizeDescription(description), JSON.stringify(description, null, 2));
+    } catch (err) {
+      return fail(err);
+    }
+  }
+);
+
+server.registerTool(
+  "run_story",
+  {
+    title: "Ejecutar una Historia de Fluyo",
+    annotations: TOOL_PURA,
+    description:
+      "Ejecuta una Historia de un documento Fluyo con el MISMO motor determinista que usa el editor (no es una simulación nueva ni la hace el modelo) " +
+      "y devuelve: la validación del documento, el Trace del motor sin modificar, el resultado de cada paso (completed, not_completed con su razón, " +
+      "state_changed, no_change o narrated), la frase de cada paso y las versiones de schema y motor. " +
+      "Un paso OCCURRENCE es siempre 'narrated': el motor lo registra aunque el elemento esté no disponible y NO prueba que ocurriera nada real. " +
+      "Si la Historia no es válida no hay Trace: se devuelven los errores. No modifica el documento. " +
+      "Pide antes describe_document para conocer pageIndex y storyId.",
+    inputSchema: {
+      document: DocumentInputSchema,
+      pageIndex: z.number().int().min(0).optional().describe("Página de la Historia (por defecto, la página actual del documento)."),
+      storyId: z.number().int().min(1).describe("Id de la Historia en esa página (los ids de Historia son por página)."),
+    },
+  },
+  async ({ document, pageIndex, storyId }) => {
+    try {
+      const result = runStory({ document, pageIndex, storyId });
+      return ok(summarizeRun(result), JSON.stringify(result, null, 2));
+    } catch (err) {
+      return fail(err);
+    }
+  }
+);
+
+/* ===================== author_document (FLUYO-017.2) ===================== */
+
+server.registerTool(
+  "author_document",
+  {
+    title: "Crear o modificar Historias y eventos de un documento Fluyo",
+    annotations: TOOL_PURA,
+    description:
+      "Aplica un LOTE ATÓMICO de operaciones de Historia y de eventos sobre una COPIA del documento y devuelve un documento nuevo que Fluyo puede ejecutar tal cual (el original no se modifica). " +
+      "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait (alcance 'story'); " +
+      "set_initial_availability (alcance 'page'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
+      "Un evento se define con name, primitive (FLOW=conexión, OCCURRENCE=elemento, SET_AVAILABILITY=elemento que cambia su disponibilidad con availability UP|DOWN), sentence (marcadores {source} {target} {name}), symbol, motion (sólo FLOW) y presentation ({connectionEffects}|{nodeEffects}, parche); la acción de los pasos la sigue decidiendo el evento. " +
+      "Las reglas son las del editor: un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) y no se elimina (REFERENCED_ENTITY, con las Historias y pasos que lo usan; quita antes esos pasos); cambiar nombre, frase, símbolo o presentación es global y no toca pasos, tiempos ni objetivos. Puedes usar {ref} de un evento creado en el lote en add_step. " +
+      "Un paso se expresa con eventTypeId + target: la acción la decide el evento. El tiempo es narrativo: add_step añade al final tras 'waitMs' (o 'al mismo tiempo' con placement) y set_wait fija la espera de un momento " +
+      "(no se escribe el tiempo absoluto). Eliminar y duplicar siguen la política de la app (eliminar colapsa la espera; duplicar entra en el mismo momento). " +
+      "Requiere 'baseRevision': la 'revision' que devolvió describe_document para ESTE documento; si no coincide se rechaza. " +
+      "Si una operación falla, o el estado final dejaría alguna Historia inválida, se rechaza TODO el lote. Con dryRun:true se valida y se devuelven los cambios sin documento. " +
+      "Campos: pageIndex, storyId/stepId (o {ref} de algo creado en el lote), eventTypeId, target ({edgeId}|{from,to} para conexiones; {nodeId} para elementos), waitMs (add_step: espera desde el último momento, por defecto 1000, el primero en 0; set_wait: espera desde el momento anterior, desplaza los posteriores), " +
+      "placement {sameMomentAs, position} (al mismo tiempo), move_step {direction}|{to:{gapIndex}|{sameMomentAs,after}}. " +
+      "Devuelve 'changes' (qué hizo cada operación y a qué Historias/pasos afecta) y 'resultRevision'. Después usa run_story para ver el Trace.",
+    inputSchema: {
+      document: DocumentInputSchema,
+      baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La 'revision' de este documento según describe_document."),
+      operations: z.array(AuthoringOperationSchema).min(1).max(200),
+      dryRun: z.boolean().default(false).describe("Sólo validar y devolver los cambios; no se devuelve documento."),
+    },
+  },
+  async ({ document, baseRevision, operations, dryRun }) => {
+    try {
+      const result = authorDocument({ document, baseRevision, operations, dryRun });
+      const blocks = [summarizeAuthoring(result), JSON.stringify(result, null, 2)];
+      return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
     } catch (err) {
       return fail(err);
     }

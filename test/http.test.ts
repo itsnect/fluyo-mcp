@@ -23,6 +23,8 @@ import { join } from "node:path";
 import { SERVER_VERSION } from "../src/http.js";
 import { checkOrigin, DEFAULT_ALLOWED_ORIGINS, clientIp, SlidingWindowRateLimiter } from "../src/http-security.js";
 
+import { createKernel } from "../src/kernel.js";
+import { revisionOf } from "../src/revision.js";
 import { loadFixture, packageRoot, startHarness, textBlocks, type Harness } from "./helpers.js";
 import { connectHttpClient, initializeMessage, postRaw, startHttpHarness, type HttpHarness } from "./http-helpers.js";
 
@@ -44,7 +46,7 @@ describe("handshake MCP por HTTP", () => {
 
       // (b) tools/list
       const { tools } = await client.listTools();
-      assert.equal(tools.length, 9, `se esperaban 9 tools, llegaron ${tools.length}`);
+      assert.equal(tools.length, 12, `se esperaban 12 tools, llegaron ${tools.length}`);
 
       // (c) tools/call
       const result = await client.callTool({ name: "list_colors", arguments: {} });
@@ -78,6 +80,7 @@ describe("handshake MCP por HTTP", () => {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const DOC = loadFixture("kafka-event-pipeline.fluyo.json");
+const STORIES_DOC = JSON.parse(readFileSync(join(packageRoot(), "test", "fixtures", "stories", "fluyo-017-1-cliente-kafka-comercio.fluyo.json"), "utf8"));
 
 const LLAMADAS: ReadonlyArray<{ name: string; arguments: Record<string, unknown> }> = [
   {
@@ -102,9 +105,19 @@ const LLAMADAS: ReadonlyArray<{ name: string; arguments: Record<string, unknown>
     name: "create_from_template",
     arguments: { templateId: "rag_chatbot", labelOverrides: { llm: "Claude" } },
   },
+  { name: "describe_document", arguments: { document: STORIES_DOC } },
+  { name: "run_story", arguments: { document: STORIES_DOC, pageIndex: 0, storyId: 2 } },
+  {
+    name: "author_document",
+    arguments: {
+      document: STORIES_DOC,
+      baseRevision: revisionOf(createKernel(), STORIES_DOC),
+      operations: [{ op: "duplicate_story", scope: "story", pageIndex: 0, storyId: 1, name: "Copia por HTTP" }],
+    },
+  },
 ];
 
-describe("las nueve tools responden igual por HTTP que por el transporte de stdio", () => {
+describe("las doce tools responden igual por HTTP que por el transporte de stdio", () => {
   let http: HttpHarness;
   let mem: Harness;
   let httpClient: Awaited<ReturnType<typeof connectHttpClient>>;
@@ -120,7 +133,7 @@ describe("las nueve tools responden igual por HTTP que por el transporte de stdi
     await http?.close();
   });
 
-  it("la lista de casos cubre las nueve", async () => {
+  it("la lista de casos cubre las doce", async () => {
     const { tools } = await mem.client.listTools();
     assert.deepEqual(
       LLAMADAS.map(c => c.name).sort(),
@@ -146,7 +159,7 @@ describe("las nueve tools responden igual por HTTP que por el transporte de stdi
 
   /** No basta con que coincidan: si las dos fallaran igual, la paridad sería
    *  cierta y el servidor estaría roto. */
-  it("ninguna de las nueve devolvió error", async () => {
+  it("ninguna de las doce devolvió error", async () => {
     for (const call of LLAMADAS) {
       const r = await httpClient.client.callTool(call);
       assert.notEqual((r as { isError?: boolean }).isError, true, `${call.name} devolvió isError por HTTP`);

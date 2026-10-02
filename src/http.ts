@@ -9,7 +9,7 @@
  * MODO STATELESS
  * ──────────────
  * Cada petición construye un `McpServer` y un `StreamableHTTPServerTransport`
- * nuevos y los tira al terminar. Suena derrochador y no lo es: las nueve tools son
+ * nuevos y los tira al terminar. Suena derrochador y no lo es: las once tools son
  * funciones puras —entra JSON, sale JSON— así que no hay absolutamente nada que
  * preservar entre llamadas. A cambio desaparecen el registro de sesiones, el
  * `Mcp-Session-Id` y la coordinación entre instancias, que es justo lo que no se

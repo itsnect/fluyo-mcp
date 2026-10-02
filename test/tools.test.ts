@@ -46,6 +46,9 @@ const TOOLS_ESPERADAS = [
   "list_fonts",
   "list_templates",
   "create_from_template",
+  "describe_document",
+  "run_story",
+  "author_document",
 ];
 
 describe("identidad del servidor", () => {
@@ -59,7 +62,7 @@ describe("identidad del servidor", () => {
 });
 
 describe("lo que ve un cliente en tools/list", () => {
-  it("están las nueve tools", async () => {
+  it("están las doce tools", async () => {
     const { tools } = await h.client.listTools();
     assert.deepEqual(tools.map(t => t.name).sort(), [...TOOLS_ESPERADAS].sort());
   });
@@ -73,7 +76,7 @@ describe("lo que ve un cliente en tools/list", () => {
   });
 
   /** Los directorios usan las annotations para decidir qué avisar al usuario.
-   *  Las nueve son funciones puras, así que el juego es uniforme. */
+   *  Las doce son funciones puras, así que el juego es uniforme. */
   it("todas declaran annotations de función pura", async () => {
     const { tools } = await h.client.listTools();
     for (const t of tools) {
@@ -90,7 +93,7 @@ describe("lo que ve un cliente en tools/list", () => {
   it("el schema publicado no arrastra el documento entero", async () => {
     const { tools } = await h.client.listTools();
     const bytes = JSON.stringify(tools).length;
-    assert.ok(bytes < 30_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
+    assert.ok(bytes < 45_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
   });
 });
 

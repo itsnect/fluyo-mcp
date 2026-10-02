@@ -36,6 +36,8 @@
     "start:http": "node dist/http.js",
     "dev": "tsc -p tsconfig.json --watch",
     "sync:config": "node scripts/sync-config.ts",
+    "sync:kernel": "node scripts/sync-kernel.ts",
+    "check:kernel": "node scripts/sync-kernel.ts --check",
     "check:config": "node scripts/sync-config.ts --check",
     "sync:fixtures": "node scripts/sync-fixtures.ts",
     "build:test": "tsc -p tsconfig.test.json",

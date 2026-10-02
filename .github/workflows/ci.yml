@@ -42,6 +42,15 @@ jobs:
             *) echo "::error::check:config debería omitirse con un aviso cuando falta fluyo/."; exit 1 ;;
           esac
 
+      - name: check:kernel sin fluyo/ debe avisar, no fallar
+        run: |
+          salida="$(npm run --silent check:kernel 2>&1)"
+          echo "$salida"
+          case "$salida" in
+            *omitido*) echo "OK: sale con aviso cuando no encuentra Fluyo." ;;
+            *) echo "::error::check:kernel debería omitirse con un aviso cuando falta fluyo/."; exit 1 ;;
+          esac
+
   # El chequeo de verdad: con los dos repos al lado, ¿siguen sincronizados?
   # Si este job se pone rojo, Fluyo cambió y este servidor todavía no se ha
   # enterado. Es exactamente la señal que faltaba cuando se abrió el drift.
@@ -72,6 +81,13 @@ jobs:
       - name: Las constantes generadas coinciden con fluyo/js/config.js
         working-directory: fluyo-mcp
         run: npm run check:config
+
+      # El kernel (modelo, motor, receta de reproducción, integridad) que ejecuta este
+      # servidor es una copia VERBATIM de fluyo/js. Si fluyo/ cambia, la copia se desfasa
+      # y los resultados de run_story dejarían de ser los del editor.
+      - name: El kernel copiado coincide con fluyo/js
+        working-directory: fluyo-mcp
+        run: npm run check:kernel
 
       - name: Las fixtures coinciden con los ejemplos publicados
         working-directory: fluyo-mcp
