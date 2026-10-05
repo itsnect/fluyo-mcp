@@ -155,17 +155,18 @@ describe("describe_document", () => {
     assert.equal(d.eventTypes[3].availability, "DOWN");
   });
 
-  it("es compacta: no devuelve el documento (coordenadas, estilos, presentación)", async () => {
+  it("es compacta: no devuelve el documento (estilos, presentación); desde 018.3 sí la geometría mínima para modificar (x, y, w, h, ruta, lados)", async () => {
     const text = JSON.stringify(await describeDoc(fixture()));
-    assert.ok(text.length < 5_000, `describe ocupa ${text.length} caracteres para 3 elementos y 3 Historias`);
-    assert.doesNotMatch(text, /"x":|"y":|"color":|presentation|"waypoints"/);
+    assert.ok(text.length < 6_000, `describe ocupa ${text.length} caracteres para 3 elementos y 3 Historias`);
+    assert.doesNotMatch(text, /"color":|presentation|"border"|"lblPos"/);
     // El peso de un documento real está en estilos y geometría, no en el relato: con 60 elementos describe es una fracción.
     const grande = fixture();
     const pg = grande.doc.pages[0];
     for (let i = 0; i < 60; i++) pg.nodes.push({ ...pg.nodes[0], id: 100 + i, label: `Servicio ${i}`, x: i * 10, y: i * 5 });
     pg.nextId = 200;
     const completo = JSON.stringify(grande).length, compacto = JSON.stringify(await describeDoc(grande)).length;
-    assert.ok(compacto < completo * 0.6, `describe (${compacto}) no es bastante menor que el documento (${completo})`);
+    // 018.3: describe incluye x/y/w/h (necesarios para modificar): en un documento de nodos SIN estilo (este) ya pesa cerca de 3/4; con estilos reales sigue siendo una fracción.
+    assert.ok(compacto < completo * 0.8, `describe (${compacto}) no es bastante menor que el documento (${completo})`);
   });
 
   it("includeSteps:false y pageIndex acotan la respuesta", async () => {
@@ -181,7 +182,7 @@ describe("describe_document", () => {
     assert.equal(d.readable, true);
     assert.equal(d.valid, true);
     assert.deepEqual(d.eventTypes, []);
-    assert.deepEqual(d.pages, [{ pageIndex: 0, name: "Página 1", nodes: [], connections: [], initialUnavailable: [], stories: [] }]);
+    assert.deepEqual(d.pages, [{ pageIndex: 0, name: "Página 1", nodes: [], connections: [], bounds: null, initialUnavailable: [], stories: [] }]);
   });
 
   it("documento con una sola Historia", async () => {

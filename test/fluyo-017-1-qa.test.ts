@@ -120,7 +120,7 @@ const ALLOWED_KEYS = new Set([
   "authoringScopes", "presentation", "usedIn", "usedInTruncated",
   "showSymbol", "symbolSize", "message", "messageColor", "messageSize", "messageWeight", "messageFont", "messagePosition", "highlight", "blink", "dim", "fillColor", "visualDuration", "visualDurationMs",
   "size", "style", "trail", "arrival", "during", "stepIds",
-  "pages", "nodes", "label", "shape", "icon", "connections", "from", "to", "fromLabel", "toLabel", "initialUnavailable",
+  "pages", "nodes", "label", "shape", "icon", "x", "y", "w", "h", "route", "fromSide", "toSide", "waypoints", "bounds", "minX", "minY", "maxX", "maxY", "connections", "from", "to", "fromLabel", "toLabel", "initialUnavailable",
   "stories", "durationMs", "executable", "stepCount", "moments", "at", "steps", "eventTypeId", "event", "state", "kind", "unmodeled",
 ]);
 const keysOf = (v: unknown, out = new Set<string>()): Set<string> => {
@@ -161,7 +161,7 @@ describe("describe_document: auditoría de contrato", () => {
     const extra = [...keysOf(d)].filter(k => !ALLOWED_KEYS.has(k));
     assert.deepEqual(extra, [], `claves fuera del contrato: ${extra.join(", ")}`);
     const text = JSON.stringify(d);
-    for (const prohibido of ["nodeEffects", "connectionEffects", "waypoints", "customBg", "theme", "settings", "scPlayback", "activeSends", "cursorVirtual", "undo", "autosave", "localStorage"])
+    for (const prohibido of ["nodeEffects", "connectionEffects", "customBg", "theme", "settings", "scPlayback", "activeSends", "cursorVirtual", "undo", "autosave", "localStorage"])
       assert.ok(!text.includes(prohibido), `describe filtra «${prohibido}»`);
   });
 
@@ -171,7 +171,7 @@ describe("describe_document: auditoría de contrato", () => {
     for (let i = 0; i < 59; i++) { const p = clone(page); p.name = "Página " + i; doc.doc.pages.push(p); }
     const completo = JSON.stringify(doc).length;
     const compacto = JSON.stringify(await describeDoc(doc, { includeSteps: false })).length;
-    assert.ok(compacto < completo * 0.5, `describe(includeSteps:false) ${compacto} vs documento ${completo}`);
+    assert.ok(compacto < completo * 0.6, `describe(includeSteps:false) ${compacto} vs documento ${completo}`);
     const acotado = JSON.stringify(await describeDoc(doc, { pageIndex: 3 })).length;
     assert.ok(acotado < 6_500, `describe de una página: ${acotado}`);
   });

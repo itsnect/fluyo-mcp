@@ -45,7 +45,8 @@ function packageRoot(): string {
 const ROOT = packageRoot();
 const FLUYO_PATH = resolve(ROOT, process.env.FLUYO_PATH ?? join("..", "fluyo"));
 const CONFIG_JS = join(FLUYO_PATH, "js", "config.js");
-const STATE_JS = join(FLUYO_PATH, "js", "state.js");
+/** Desde 018.1 newNode() (state.js) delega en createNodeIn (model.js), que es quien lee DEFAULT_SIZES. */
+const MODEL_JS = join(FLUYO_PATH, "js", "model.js");
 const OUT_FILE = join(ROOT, "src", "generated", "config.ts");
 
 /* ===================== Formas que toma Fluyo ===================== */
@@ -103,8 +104,8 @@ function readConfigJs(): Extracted {
   return out;
 }
 
-/** DEFAULT_SIZES sale ya evaluado de config.js. Lo único que se lee de js/state.js
- *  es una comprobación: que newNode() lo siga usando. Si alguien volviera a escribir
+/** DEFAULT_SIZES sale ya evaluado de config.js. Lo único que se lee de js/model.js
+ *  es una comprobación: que createNodeIn() (la que usa newNode) lo siga usando. Si alguien volviera a escribir
  *  los tamaños a mano allí, este archivo generado dejaría de describir a la app sin
  *  que nadie se enterase, que es justo el fallo que este script viene a evitar. */
 function readDefaultSizes(cfg: Extracted): Array<[string, [number, number]]> {
@@ -117,11 +118,11 @@ function readDefaultSizes(cfg: Extracted): Array<[string, [number, number]]> {
       throw new Error(`DEFAULT_SIZES["${k}"] no es un par de números positivos.`);
     }
   }
-  if (!/DEFAULT_SIZES\s*\[\s*shape\s*\]/.test(readFileSync(STATE_JS, "utf8"))) {
+  if (!/DEFAULT_SIZES\s*\[\s*shape\s*\]/.test(readFileSync(MODEL_JS, "utf8"))) {
     throw new Error(
-      `newNode() en ${STATE_JS} ya no lee DEFAULT_SIZES.\n` +
+      `createNodeIn() en ${MODEL_JS} ya no lee DEFAULT_SIZES.\n` +
         `Los tamaños que se emitirían aquí dejarían de ser los que usa la app. ` +
-        `Revisa js/state.js antes de regenerar.`
+        `Revisa js/model.js antes de regenerar.`
     );
   }
   return entries;

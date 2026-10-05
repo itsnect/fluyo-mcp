@@ -93,7 +93,9 @@ describe("lo que ve un cliente en tools/list", () => {
   it("el schema publicado no arrastra el documento entero", async () => {
     const { tools } = await h.client.listTools();
     const bytes = JSON.stringify(tools).length;
-    assert.ok(bytes < 45_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
+    // 018.2: create_node/create_connection publican la forma de sus specs (≈2 KB cada una): tope subido de 45 000 a 50 000.
+    // 018.3: update_node/update_connection/delete_node/delete_connection (parches de campos) y refs en destinos: de 50 000 a 60 000.
+    assert.ok(bytes < 60_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
   });
 });
 

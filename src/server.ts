@@ -319,7 +319,7 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Lee un documento Fluyo (cualquier versión que abra la app, v1–v5) y devuelve una descripción COMPACTA pensada para un agente: " +
-      "páginas con sus elementos y conexiones (ids + nombres, sin coordenadas ni estilos), disponibilidad inicial, la biblioteca de eventos " +
+      "páginas con sus elementos (id, nombre, forma, x/y = centro, w/h) y conexiones (id, origen, destino, ruta, lados y waypoints si los hay; sin estilos), los 'bounds' que ocupa cada página, disponibilidad inicial, la biblioteca de eventos " +
       "(id, nombre, frase, símbolo, primitiva, acción, a qué se aplica —conexión o elemento—, presentación distinta del defecto y dónde se usa: Historias y pasos; " +
       "es lo que responde «¿qué eventos puedo usar?») y las Historias con sus pasos agrupados por momento, su evento, objetivo y frase. " +
       "También valida la integridad del documento (referencias a elementos, conexiones y eventos) con la misma regla que el motor de Fluyo, " +
@@ -375,14 +375,22 @@ server.registerTool(
 server.registerTool(
   "author_document",
   {
-    title: "Crear o modificar Historias y eventos de un documento Fluyo",
+    title: "Crear, modificar y eliminar el diagrama (nodos y conexiones), Historias y eventos de un documento Fluyo",
     annotations: TOOL_PURA,
     description:
       "Aplica un LOTE ATÓMICO de operaciones de Historia y de eventos sobre una COPIA del documento y devuelve un documento nuevo que Fluyo puede ejecutar tal cual (el original no se modifica). " +
       "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait (alcance 'story'); " +
-      "set_initial_availability (alcance 'page'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
+      "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection (alcance 'page'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
       "Un evento se define con name, primitive (FLOW=conexión, OCCURRENCE=elemento, SET_AVAILABILITY=elemento que cambia su disponibilidad con availability UP|DOWN), sentence (marcadores {source} {target} {name}), symbol, motion (sólo FLOW) y presentation ({connectionEffects}|{nodeEffects}, parche); la acción de los pasos la sigue decidiendo el evento. " +
       "Las reglas son las del editor: un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) y no se elimina (REFERENCED_ENTITY, con las Historias y pasos que lo usan; quita antes esos pasos); cambiar nombre, frase, símbolo o presentación es global y no toca pasos, tiempos ni objetivos. Puedes usar {ref} de un evento creado en el lote en add_step. " +
+      "DIAGRAMA: create_node {pageIndex, spec:{shape,x,y,w?,h?,label?,…}, ref?} y create_connection {pageIndex, source, target, spec?:{label,route,fromSide,toSide,waypoints…}, ref?}. 'ref' es un nombre del LOTE (no se guarda): " +
+      "source/target son {ref} de algo creado antes en el lote EN LA MISMA PÁGINA (las refs son por página) o {id} de un elemento existente; así puedes crear Cliente → Comercio → Banco en una sola llamada sin conocer los ids. " +
+      "Los ids los asigna Fluyo (la respuesta trae 'refs': [{ref,type,pageIndex,id}] para seguir trabajando) y los defaults, la geometría de las conexiones y las reglas (auto-lazo, ids duplicados, forma) son las del editor; los campos son los del documento (w/h, color en hex). " +
+      "MODIFICAR: update_node {pageIndex, node:{id}|{ref}, spec:{x,y,w,h,shape,label,color,fill,border,…}} (mover = x/y, redimensionar = w/h; solo cambia lo que envías, las conexiones no se tocan) y " +
+      "update_connection {pageIndex, connection:{id}|{ref}, source?, target?, spec?:{label,route,fromSide,toSide,waypoints,…}} (source/target = retarget; los waypoints solo cambian si los envías: waypoints:[] vuelve a la ruta automática). " +
+      "ELIMINAR: delete_node {pageIndex, node} (quita también sus conexiones y su disponibilidad inicial) y delete_connection {pageIndex, connection}. " +
+      "Las Historias mandan (B2): si el estado final del lote dejaría una Historia inválida (un paso apunta a lo eliminado) se rechaza TODO con REFERENCED_ENTITY (entidad eliminada, Historias y pasos afectados, operación y razón); nada se limpia en silencio. " +
+      "Retargetear/quitar pasos y eliminar en el mismo lote es válido (se evalúa el estado final). Las {ref} valen también en update_*/delete_* y en los destinos de los pasos (target: {ref} | {edgeId:{ref}} | {nodeId:{ref}} | {from:{ref},to:{ref}}, nodeId de set_initial_availability). " +
       "Un paso se expresa con eventTypeId + target: la acción la decide el evento. El tiempo es narrativo: add_step añade al final tras 'waitMs' (o 'al mismo tiempo' con placement) y set_wait fija la espera de un momento " +
       "(no se escribe el tiempo absoluto). Eliminar y duplicar siguen la política de la app (eliminar colapsa la espera; duplicar entra en el mismo momento). " +
       "Requiere 'baseRevision': la 'revision' que devolvió describe_document para ESTE documento; si no coincide se rechaza. " +

@@ -19,7 +19,7 @@ No necesita backend. Es una capa delgada sobre el modelo de documento de Fluyo, 
 | `list_anims` | Los 8 GIFs animados para nodos `shape:"anim"`. |
 | `list_fonts` | Las 11 tipografías disponibles. |
 | `describe_document` | Lee un documento Fluyo (v1–v5) y lo resume para un agente: páginas, elementos, conexiones, biblioteca de eventos, Historias con sus pasos, validación de integridad, versiones de schema y motor. No modifica nada. |
-| `author_document` | Crea/modifica **Historias** y **EventTypes** (la biblioteca de eventos) sobre una copia del documento en un lote atómico: Historias (`create_story`, `rename_story`, `duplicate_story`, `delete_story`, `add_step`, `remove_step`, `move_step`, `duplicate_step`, `retarget_step`, `set_wait`), página (`set_initial_availability`) y eventos (`create_event_type`, `update_event_type`, `delete_event_type`). Devuelve un documento nuevo que Fluyo ejecuta tal cual, o rechaza todo el lote explicando qué Historias/pasos quedarían inválidos. Requiere `baseRevision`. |
+| `author_document` | Crea, modifica y elimina el **diagrama** (`create_node`, `create_connection`, `update_node`, `update_connection`, `delete_node`, `delete_connection`), **Historias** y **EventTypes** (la biblioteca de eventos) sobre una copia del documento en un lote atómico: diagrama (`create_node`, `create_connection`, `update_node`, `update_connection`, `delete_node`, `delete_connection`), Historias (`create_story`, `rename_story`, `duplicate_story`, `delete_story`, `add_step`, `remove_step`, `move_step`, `duplicate_step`, `retarget_step`, `set_wait`), página (`set_initial_availability`) y eventos (`create_event_type`, `update_event_type`, `delete_event_type`). Devuelve un documento nuevo que Fluyo ejecuta tal cual, o rechaza todo el lote explicando qué Historias/pasos quedarían inválidos. Requiere `baseRevision`. |
 | `run_story` | Ejecuta una Historia con el **mismo motor** que el editor y devuelve el Trace, el resultado de cada paso, los errores de validación y las versiones. No simula nada: el motor es el de Fluyo. |
 
 Las doce son funciones puras: reciben JSON y devuelven JSON, sin tocar disco, red ni ningún estado externo. Van anotadas como tal (`readOnlyHint`, `idempotentHint`).
@@ -103,7 +103,7 @@ fluyo/js (kernel)  ──sync:kernel──▶  src/generated/kernel-sources.ts  
 
 ---
 
-## Autoría de Historias (`author_document`)
+## Autoría del diagrama, Historias y eventos (`author_document`)
 
 ```text
 describe_document (revision) ──▶ author_document (baseRevision + operaciones) ──▶ run_story
@@ -114,12 +114,38 @@ describe_document (revision) ──▶ author_document (baseRevision + operacion
 
 - **Atómico**: o se aplica todo el lote o nada; el documento recibido nunca se modifica. `dryRun:true` valida y devuelve los `changes` sin documento.
 - **Revisión optimista, sin estado**: `baseRevision` es la `revision` que anunció `describe_document` (sha256 del JSON canónico del documento normalizado). Si no coincide → `REVISION_MISMATCH`. `resultRevision` es determinista.
-- **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId}` / `{from,to}` para conexiones; `{nodeId}` para elementos). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
+- **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId}` / `{from,to}` para conexiones; `{nodeId}` para elementos; o `{ref}` de lo creado en el lote; los ids de `edgeId`/`nodeId`/`from`/`to` también admiten `{ref}`). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
 - **Tiempo narrativo**: `waitMs` al añadir al final o `set_wait` por momento; «al mismo tiempo» con `placement.sameMomentAs`. Eliminar colapsa la espera; duplicar entra en el mismo momento.
-- **B2**: si el estado final dejaría una Historia inválida, se rechaza el lote con `REFERENCED_ENTITY` (entidad, Historias y pasos afectados). Retargetear y borrar en el mismo lote es válido.
+- **B2**: si el estado final dejaría una Historia inválida, se rechaza el lote con `REFERENCED_ENTITY` (entidad, Historias y pasos afectados). Retargetear y borrar en el mismo lote es válido. (El editor de Fluyo aplica la misma detección pero **confirma** en lugar de rechazar —una persona ve el resultado y tiene Undo—; ninguno de los dos borra Steps ni Historias en silencio.)
 - **EventTypes** (scope `eventType`, globales al documento, sin `pageIndex`): `create_event_type` (`name`, `primitive` FLOW | OCCURRENCE | SET_AVAILABILITY, `sentence` con `{source}`/`{target}`/`{name}`, `symbol?`, `motion?` sólo FLOW, `availability` sólo y obligatoria en SET_AVAILABILITY, `presentation?` como parche, `ref?`), `update_event_type` y `delete_event_type`. Un evento creado en el lote se usa con `{ref}` en `add_step`. La acción del paso la deriva la primitiva (FLOW→SEND, OCCURRENCE→OCCURRENCE, SET_AVAILABILITY→SET_STATE); nunca se escribe.
 - **Reglas del editor, las mismas**: de un evento **usado** no cambian `primitive` ni `availability` (`EVENT_TYPE_LOCKED`, con el campo y los usos) y no se elimina (`REFERENCED_ENTITY` con el EventType, las Historias y los Steps afectados). Nombre, frase, símbolo, movimiento y presentación sí cambian y se ven en todos sus usos; los Steps y el Trace no cambian. Un nombre repetido se acepta y se avisa (`DUPLICATE_EVENT_TYPE_NAME`). `describe_document` lista cada evento con `usedBy` y `usedIn` (página, Historia, Steps).
-- No crea ni edita ni borra conexiones ni elementos; `edit_diagram` no cambia.
+- **Crear elementos y conexiones** (scope `page`, FLUYO-018.2): `create_node` `{pageIndex, spec:{shape,x,y,w?,h?,label?,…}, ref?}` y `create_connection` `{pageIndex, source, target, spec?:{label?,route?,fromSide?,toSide?,waypoints?,…}, ref?}`. Los campos son los del documento (`w`/`h`, colores en hex tal cual); sin ellos rigen los defaults del editor. Todas las formas salvo `image` (necesita bytes de imagen, igual que `create_diagram`). Lo decide `createNodeIn`/`createConnectionIn` de Fluyo —las mismas funciones que el editor—: forma, ids, `source`/`target`, auto-lazo (`SELF_LOOP`), ids duplicados (`DUPLICATE_ID`), geometría por defecto. Este servidor no calcula ninguna geometría.
+- **`ref` del lote**: nombre que das a lo que creas; NO se guarda en el documento. `source`/`target` son `{ref}` (algo creado antes en el lote, **en la misma página**: las refs son por página, así que `cliente` puede existir en la página 0 y en la 1) o `{id}` (un elemento existente). Así se construye Cliente → Comercio → Banco en una sola llamada sin conocer ningún id:
+
+```json
+[
+  {"op":"create_node","scope":"page","pageIndex":0,"ref":"cliente","spec":{"shape":"rect","x":200,"y":300,"label":"Cliente"}},
+  {"op":"create_node","scope":"page","pageIndex":0,"ref":"comercio","spec":{"shape":"rect","x":600,"y":300,"label":"Comercio"}},
+  {"op":"create_connection","scope":"page","pageIndex":0,"ref":"pago","source":{"ref":"cliente"},"target":{"ref":"comercio"}}
+]
+```
+
+  La respuesta trae `changes` (qué se creó, dónde, con qué `ref` e `id`) y `refs`: `[{ref, type:"node"|"connection", pageIndex, id}]` para seguir trabajando (también con `dryRun`, que no devuelve documento). Errores estructurados: `UNKNOWN_REF`, `DUPLICATE_REF`, `SOURCE_NOT_FOUND`, `TARGET_NOT_FOUND`, `SELF_LOOP`, `DUPLICATE_ID`, `INVALID_FIELD` (con `field`), `PAGE_NOT_FOUND`.
+- **Límites**: 200 operaciones por lote (se rechazan antes de ejecutar nada); `label` ≤ 500, `waypoints` ≤ 100 por conexión, `keywords` ≤ 200, campos de texto cortos con tope.
+- **Modificar** (scope `page`, FLUYO-018.3): `update_node` `{pageIndex, node:{id}|{ref}, spec:{…}}` y `update_connection` `{pageIndex, connection:{id}|{ref}, source?, target?, spec?:{…}}`. `spec` es un **parche**: solo cambia lo que envías (`undefined`/ausente no toca nada; `null` vacía lo anulable). Mover = `x`/`y`; redimensionar = `w`/`h`. Campos de un elemento: `x, y, w, h, shape, label, color, fill, border, lblPos, textBg, textColor, font, bold, pulse, order, fs` y, según la forma, `tint` (icono) o `lang, keywords, kwBg, kwColor` (código); la forma solo cambia entre las del selector del editor (rect, cylinder, diamond, circle, hex, text, code; no desde/hacia image, icon, anim). De una conexión: `label, route, fromSide, toSide, waypoints, font, bold, fs, animated, dashed, startArrow, endArrow, flowDir, lineColor, dotColor, speedFac, dots, dotsGlobal`. `id`, `icon`, `anim`, `img` y `ref` no se modifican; un campo desconocido es `INVALID_FIELD`. **Retarget** = `source`/`target` en la operación (`{ref}`|`{id}`; extremo inexistente → `SOURCE_NOT_FOUND`/`TARGET_NOT_FOUND`, auto-lazo → `SELF_LOOP`). **Los waypoints solo cambian si los envías** (mover, redimensionar o retargetear los conservan; `waypoints:[]` vuelve a la ruta automática): `changes[].affects.connectionsWithWaypoints` avisa de las conexiones con ruta manual afectadas por un movimiento. Este servidor no calcula geometría: la ruta se deriva en el editor.
+- **Eliminar** (scope `page`): `delete_node` `{pageIndex, node}` (quita también las conexiones del elemento y su disponibilidad inicial; `changes[].cascade` lo informa) y `delete_connection` `{pageIndex, connection}`. **Las Historias mandan (B2)**: la validación es sobre el **estado final** del lote, así que el orden no importa; si alguna Historia quedaría con un paso que apunta a lo eliminado se rechaza TODO con `REFERENCED_ENTITY` `{entity, affectedStories[{storyId,storyName,stepIds}], affectedSteps, operationIndex, operation, reason, cascadedFrom?}` (una conexión eliminada en cascada con su elemento lleva `cascadedFrom`). **No se limpia nada en silencio**: ni Steps, ni EventTypes, ni Historias. Para eliminar algo usado, retargetea (`retarget_step`) o quita (`remove_step`) esos pasos en el mismo lote.
+- **Refs en update/delete y en destinos**: `node`/`connection`/`source`/`target` de `update_*`/`delete_*` aceptan `{ref}` (algo creado antes en el lote, en la misma página) o `{id}`. Una ref desconocida (o de otra página) → `UNKNOWN_REF`; repetida → `DUPLICATE_REF`; usar una entidad que el propio lote ya eliminó → `NODE_NOT_FOUND`/`CONNECTION_NOT_FOUND` indicando qué operación la eliminó. Las refs de lo eliminado en el lote no se devuelven en `refs`.
+
+```json
+[
+  {"op":"update_node","scope":"page","pageIndex":0,"node":{"id":1},"spec":{"x":240,"w":200,"label":"Cliente final"}},
+  {"op":"update_connection","scope":"page","pageIndex":0,"connection":{"id":4},"target":{"id":3},"spec":{"label":"Pago","route":"ortho","waypoints":[]}},
+  {"op":"delete_node","scope":"page","pageIndex":0,"node":{"id":2}}
+]
+```
+
+  Errores nuevos: `NODE_NOT_FOUND`, `CONNECTION_NOT_FOUND`, `REFERENCED_ENTITY` (diagrama). `describe_document` añade lo necesario para modificar sin volcar el documento: por elemento `x,y,w,h`; por conexión `route`, `fromSide`/`toSide` y `waypoints` (solo si existen); por página `bounds {minX,minY,maxX,maxY}` (agregado de las cajas, sin rutas). Las refs son efímeras y no aparecen.
+- `edit_diagram` no cambia (sigue siendo la herramienta legacy).
 
 ---
 

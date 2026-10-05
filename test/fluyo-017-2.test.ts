@@ -228,17 +228,15 @@ describe("atomicidad", () => {
 
 /* ═══════════════ 4. Sin edición estructural del diagrama (corrección de scope, FLUYO-017.3) ═══════════════ */
 
-describe("MCP no expone borrado estructural; la política B2 vive en FluyoIntegrity", () => {
-  it("delete_connection y delete_node no existen: ni en tools/list ni como operación", async () => {
-    assert.doesNotMatch(JSON.stringify(await h.client.listTools()), /delete_connection|delete_node/);
+describe("B2 del diagrama: delete_node/delete_connection existen desde 018.3 (forma {node}|{connection}); la política vive en FluyoIntegrity", () => {
+  it("delete_connection y delete_node (018.3) NO admiten la forma antigua de 017.2 ({edgeId}/{nodeId} sueltos)", async () => {
     for (const op of [P("delete_connection", { edgeId: 5 }), P("delete_node", { nodeId: 2 })]) {
       let rejected = false;
       try { rejected = isToolError(await author(simple(), [op])); } catch { rejected = true; }
       assert.equal(rejected, true, String(op.op));
     }
-    // Tampoco el kernel las reconoce (un cliente que no use el schema de MCP).
     const r = createKernel().call<any>("FluyoAuthoring.apply(__a.p, __a.o)", { p: simple(), o: [P("delete_connection", { edgeId: 5 })] });
-    assert.deepEqual([r.ok, r.errors[0].code], [false, "UNKNOWN_OPERATION"]);
+    assert.deepEqual([r.ok, r.errors[0].code], [false, "INVALID_OPERATION"]);
   });
 
   it("removalImpact (kernel): conexión usada → Historias y Steps exactos; retarget + eliminación sería válida sobre el estado final", async () => {
@@ -413,7 +411,8 @@ describe("servidor real por stdio", () => {
     assert.ok(t);
     const ops = JSON.stringify(t.inputSchema);
     for (const op of ["create_story", "rename_story", "duplicate_story", "delete_story", "add_step", "remove_step", "move_step", "duplicate_step", "retarget_step", "set_wait", "set_initial_availability"]) assert.ok(ops.includes(op), op);
-    assert.ok(!ops.includes("add_edge") && !ops.includes("delete_connection") && !ops.includes("delete_node"));
+    for (const op of ["create_node", "create_connection", "update_node", "update_connection", "delete_node", "delete_connection"]) assert.ok(ops.includes(op), op);
+    assert.ok(!ops.includes("add_edge") && !ops.includes("move_node"));
   });
 
   it("flujo completo describe → author → run por stdio", async () => {

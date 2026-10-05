@@ -350,7 +350,7 @@ describe("contrato de tools/list", () => {
     return (items.oneOf ?? items.anyOf).find((o: any) => o.properties.op.const === op || o.properties.op.enum?.[0] === op);
   };
 
-  it("author_document publica las 3 operaciones de eventos (scope eventType) y NO el borrado estructural", async () => {
+  it("author_document publica las 3 operaciones de eventos (scope eventType) y ninguna operación de diagrama antigua (add_edge, add_node…)", async () => {
     const { tools } = await h.client.listTools();
     const t = tools.find(x => x.name === "author_document")!;
     const schema: any = t.inputSchema;
@@ -361,7 +361,7 @@ describe("contrato de tools/list", () => {
       assert.ok(!("pageIndex" in o.properties), `${op} no tiene pageIndex`);
       assert.equal(o.additionalProperties, false);
     }
-    assert.doesNotMatch(JSON.stringify(t), /delete_connection|delete_node|add_edge|add_node|remove_node|remove_edge/);
+    assert.doesNotMatch(JSON.stringify(t), /add_edge|add_node|remove_node|remove_edge/);
     assert.match(t.description ?? "", /eventType/);
     // Los valores fuera de las listas cerradas ni siquiera llegan al kernel: los rechaza el schema.
     for (const [op, campo] of [[E("create_event_type", { name: "N", primitive: "FLOW", sentence: "{source}", presentation: { connectionEffects: { arrival: "boom" } } }), "arrival"], [E("create_event_type", { name: "", primitive: "FLOW", sentence: "{source}" }), "name"]] as const) {
@@ -431,6 +431,5 @@ describe("servidor real por stdio", () => {
     }
     const { tools } = await client.listTools();
     assert.equal(tools.length, 12);
-    assert.doesNotMatch(JSON.stringify(tools.find(x => x.name === "author_document")), /delete_connection|delete_node/);
   });
 });

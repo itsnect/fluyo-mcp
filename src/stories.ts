@@ -80,8 +80,8 @@ interface KernelModel {
   }>;
   pages: Array<{
     name: string;
-    nodes: Array<{ id: number; label: string; shape: string; icon?: string }>;
-    edges: Array<{ id: number; from: number; to: number; label?: string }>;
+    nodes: Array<{ id: number; label: string; shape: string; icon?: string; x: number; y: number; w: number; h: number }>;
+    edges: Array<{ id: number; from: number; to: number; label?: string; route: string; fromSide: string | null; toSide: string | null; waypoints: Array<{ x: number; y: number }> }>;
     behaviors: Array<{ nodeId: number; initialState: string }>;
     stories: Array<{
       id: number;
@@ -122,8 +122,9 @@ const READ_MODEL = `(function(){
       presentation: eventTypePresentationDiff(et), usedIn: eventTypeUsagesIn(d, et.id)})),
     pages: d.pages.map(pg => ({
       name: pg.name,
-      nodes: pg.nodes.map(n => ({id: n.id, label: n.label, shape: n.shape, icon: n.icon})),
-      edges: pg.edges.map(e => ({id: e.id, from: e.from, to: e.to, label: e.label})),
+      nodes: pg.nodes.map(n => ({id: n.id, label: n.label, shape: n.shape, icon: n.icon, x: n.x, y: n.y, w: n.w, h: n.h})),
+      edges: pg.edges.map(e => ({id: e.id, from: e.from, to: e.to, label: e.label, route: e.route,
+        fromSide: e.fromSide || null, toSide: e.toSide || null, waypoints: (e.waypoints || []).map(w => ({x: w.x, y: w.y}))})),
       behaviors: pg.behaviors,
       stories: pg.scenarios.map(sc => ({
         id: sc.id, name: sc.name, engineVersion: sc.engineVersion, stepCount: sc.steps.length,
@@ -145,6 +146,17 @@ export interface DescribeInput {
   document: unknown;
   pageIndex?: number;
   includeSteps?: boolean;
+}
+
+/** Rectángulo que ocupan las cajas de los nodos (x,y = centro; w,h). Solo agrega lo que ya está en el documento: no calcula rutas ni layout. */
+function boundsOf(nodes: Array<{ x: number; y: number; w: number; h: number }>) {
+  if (!nodes.length) return null;
+  return {
+    minX: Math.min(...nodes.map(n => n.x - n.w / 2)),
+    minY: Math.min(...nodes.map(n => n.y - n.h / 2)),
+    maxX: Math.max(...nodes.map(n => n.x + n.w / 2)),
+    maxY: Math.max(...nodes.map(n => n.y + n.h / 2)),
+  };
 }
 
 export function describeDocument(input: DescribeInput) {
@@ -192,6 +204,10 @@ export function describeDocument(input: DescribeInput) {
           label: oneLine(n.label),
           shape: n.shape,
           ...(n.icon ? { icon: n.icon } : {}),
+          x: n.x,
+          y: n.y,
+          w: n.w,
+          h: n.h,
           availability: initial.get(n.id) ?? "UP",
         })),
         connections: pg.edges.map(e => ({
@@ -201,7 +217,12 @@ export function describeDocument(input: DescribeInput) {
           fromLabel: label.get(e.from) ?? "?",
           toLabel: label.get(e.to) ?? "?",
           ...(e.label ? { label: e.label } : {}),
+          route: e.route,
+          ...(e.fromSide ? { fromSide: e.fromSide } : {}),
+          ...(e.toSide ? { toSide: e.toSide } : {}),
+          ...(e.waypoints.length ? { waypoints: e.waypoints } : {}),
         })),
+        bounds: boundsOf(pg.nodes),
         initialUnavailable: pg.behaviors.filter(b => b.initialState === "DOWN").map(b => b.nodeId),
         stories: pg.stories.map(sc => {
           const last = sc.groups.length ? sc.groups[sc.groups.length - 1].at : 0;
