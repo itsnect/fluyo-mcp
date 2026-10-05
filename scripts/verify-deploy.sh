@@ -188,14 +188,23 @@ else
   # Un solo pase de node: cuenta, valida title y annotations, y nombra a los que fallen.
   report=$(node -e '
     const fs = require("fs");
-    const EXPECTED = 9;
+    const EXPECTED = [
+      "author_document", "create_diagram", "create_from_template", "describe_document",
+      "edit_diagram", "export_diagram", "list_anims", "list_colors", "list_fonts",
+      "list_icons", "list_templates", "run_story",
+    ];
     const ANN = ["readOnlyHint","destructiveHint","idempotentHint","openWorldHint"];
     let d;
     try { d = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
     catch { console.log("ERR|la respuesta no es JSON"); process.exit(0); }
     const tools = d?.result?.tools;
     if (!Array.isArray(tools)) { console.log("ERR|la respuesta no trae result.tools"); process.exit(0); }
-    console.log(`COUNT|${tools.length}|${EXPECTED}`);
+    // Contrato exacto: ni faltan ni sobran. Un conteo solo no detectaría un cambio de nombre.
+    const got = tools.map(t => t.name);
+    const faltan = EXPECTED.filter(n => !got.includes(n));
+    const sobran = got.filter(n => !EXPECTED.includes(n));
+    const detalle = [faltan.length ? `faltan: ${faltan.join(",")}` : "", sobran.length ? `sobran: ${sobran.join(",")}` : ""].filter(Boolean).join("; ");
+    console.log(`COUNT|${got.length === EXPECTED.length && !detalle ? "" : (detalle || "distinto número")}|${got.length}/${EXPECTED.length}`);
     // El SDK puede exponer el title en la raíz o dentro de annotations; vale cualquiera.
     const sinTitle = tools.filter(t => !(t.title || t.annotations?.title)).map(t => t.name);
     console.log(`TITLE|${sinTitle.join(",")}`);
@@ -212,9 +221,9 @@ else
         fail "tools/list devuelve una lista de tools" "$a"
         ;;
       COUNT)
-        [ "$a" = "$b" ] \
-          && pass "las 9 tools están presentes" \
-          || fail "las 9 tools están presentes" "encontradas $a de $b"
+        [ -z "$a" ] \
+          && pass "las 12 tools del contrato están presentes, ni más ni menos" \
+          || fail "las 12 tools del contrato están presentes, ni más ni menos" "$a (encontradas $b)"
         ;;
       TITLE)
         [ -z "$a" ] \
