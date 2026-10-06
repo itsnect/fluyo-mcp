@@ -118,7 +118,7 @@ describe("describe_document", () => {
     assert.equal(d.kernelId, KERNEL_ID);
     assert.equal(d.valid, true);
     assert.equal(d.capabilities.authoring, true, "desde 017.2 existe author_document (Historias) y desde 017.3 también para eventos");
-    assert.deepEqual(d.capabilities.authoringScopes, ["story", "page", "eventType"]);
+    assert.deepEqual(d.capabilities.authoringScopes, ["story", "page", "eventType", "document"]);
     assert.deepEqual(d.capabilities.tools, ["describe_document", "run_story", "author_document"]);
     assert.deepEqual(d.capabilities.eventPrimitives, ["FLOW", "OCCURRENCE", "SET_AVAILABILITY"]);
 

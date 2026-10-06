@@ -81,7 +81,7 @@ const MUTATIONS: Mutation[] = [
     ["    label: Text(500).optional(),\n    color:", "    label: z.string().optional(),\n    color:"]),
   M("el schema permite crear 'image' (sin bytes de imagen)", TS,
     ["    shape: CreatableShapeSchema.describe(", "    shape: ShapeSchema.describe("],
-    ["import { BorderSchema, CreatableShapeSchema,", "import { ShapeSchema, BorderSchema, CreatableShapeSchema,"]),
+    ["import { CreatableShapeSchema,", "import { ShapeSchema, CreatableShapeSchema,"]),
 ];
 
 /* ── infraestructura */

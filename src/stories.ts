@@ -61,7 +61,17 @@ const oneLine = (label: unknown): string => {
 interface KernelModel {
   documentVersion: number;
   engineVersion: number;
-  limits: { maxSteps: number; maxTraceEvents: number; maxVirtualMs: number; maxRuntimeJobs: number };
+  limits: {
+    maxSteps: number;
+    maxTraceEvents: number;
+    maxVirtualMs: number;
+    maxRuntimeJobs: number;
+    maxNodesPerPage: number;
+    maxConnectionsPerPage: number;
+    coordMax: number;
+    sizeMin: number;
+    sizeMax: number;
+  };
   primitives: string[];
   actions: string[];
   cur: number;
@@ -112,7 +122,10 @@ const READ_MODEL = `(function(){
     documentVersion: serializeProject().version,
     engineVersion: FluyoScenarios.ENGINE_VERSION,
     limits: {maxSteps: FluyoScenarios.MAX_SCENARIO_STEPS, maxTraceEvents: FluyoScenarios.MAX_TRACE_EVENTS,
-             maxVirtualMs: FluyoScenarios.MAX_VIRTUAL_TIME_MS, maxRuntimeJobs: FluyoScenarios.MAX_RUNTIME_JOBS},
+             maxVirtualMs: FluyoScenarios.MAX_VIRTUAL_TIME_MS, maxRuntimeJobs: FluyoScenarios.MAX_RUNTIME_JOBS,
+             // Reglas de ENTRADA de author_document (018.5), no del documento: un documento antiguo que las exceda se abre igual.
+             maxNodesPerPage: FluyoAuthoring.LIMITS.maxNodesPerPage, maxConnectionsPerPage: FluyoAuthoring.LIMITS.maxConnectionsPerPage,
+             coordMax: FluyoAuthoring.LIMITS.coordMax, sizeMin: FluyoAuthoring.LIMITS.sizeMin, sizeMax: FluyoAuthoring.LIMITS.sizeMax},
     primitives: [...EVENT_TYPE_PRIMITIVES],
     actions: [...SCENARIO_ACTIONS],
     cur: d.cur,
@@ -270,7 +283,7 @@ export function describeDocument(input: DescribeInput) {
       limits: model.limits,
       tools: ["describe_document", "run_story", "author_document"],
       authoring: true,
-      authoringScopes: ["story", "page", "eventType"],
+      authoringScopes: ["story", "page", "eventType", "document"],
     },
     eventTypes: model.eventTypes.map(et => {
       // Con pageIndex sólo se listan los usos de esa página (usedBy sigue siendo el total del documento).

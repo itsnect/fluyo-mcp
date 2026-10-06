@@ -175,10 +175,12 @@ describe("018.4.1 — documentos con nodos image por las tools MCP", () => {
     assert.equal(bad, true);
   });
 
-  it("documento SIN image: comportamiento idéntico y kernelId sin cambios", async () => {
+  it("documento SIN image: comportamiento idéntico y kernelId = el del kernel", async () => {
     const d = documentOf(await call("describe_document", { document: story() }));
     assert.equal(d.readable, true);
     assert.equal(d.kernelId, KERNEL_ID);
-    assert.equal(KERNEL_ID, "90e70a270b0fe350e87fcc58ce067d48e3ce9b5c49ae0ebc1ada0ff6e0ca7a16", "el hotfix no toca el kernel sincronizado");
+    // 018.4.1 fijó aquí el kernelId de producción (90e70a27…): el hotfix no tocaba el kernel. FLUYO-018.5 sí lo cambia (páginas, reglas de entrada y límites),
+    // así que ya no se fija el valor: lo vigila check:kernel (copia verbatim de fluyo/js) y el test de arriba (el kernelId que devuelve la tool es el del kernel).
+    assert.match(KERNEL_ID, /^[0-9a-f]{64}$/);
   });
 });

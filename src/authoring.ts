@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { createKernel } from "./kernel.js";
-import { BorderSchema, CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema } from "./model.js";
+import { CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema } from "./model.js";
 import { normalizeWith, revisionOfProject } from "./revision.js";
 import { UNMODELED } from "./stories.js";
 
@@ -36,6 +36,7 @@ const Target = z
 const story = z.literal("story");
 const page = z.literal("page");
 const eventType = z.literal("eventType");
+const documentScope = z.literal("document");
 
 /* Eventos de la biblioteca (EventTypes, globales al documento). Las listas cerradas son las de la UI de Fluyo (model.js);
    un test las compara con las del kernel. El valor lo valida el kernel: aquí sólo se publica la forma. */
@@ -72,6 +73,8 @@ const EventFields = {
    antes de construir nada. Los valores los decide el dominio (model.js): forma, ids, source/target, auto-lazo, defaults.
    Los campos son los del documento (w/h, no width/height) y los colores van tal cual (hex): no se traducen nombres. */
 const Text = (max: number) => z.string().max(max);
+/* El BorderSchema de model.ts es el de create_diagram/edit_diagram (legacy, sin tocar). El documento admite también "none" (selector del editor). */
+const AuthoringBorderSchema = z.enum(["solid", "dashed", "dotted", "none"]);
 const NodeSpec = z
   .strictObject({
     shape: CreatableShapeSchema.describe("Todas las formas menos 'image' (necesita bytes de imagen; igual que create_diagram)."),
@@ -83,7 +86,7 @@ const NodeSpec = z
     label: Text(500).optional(),
     color: Text(40).nullable().optional(),
     fill: Text(40).nullable().optional(),
-    border: BorderSchema.optional(),
+    border: AuthoringBorderSchema.optional(),
     lblPos: LabelPosSchema.optional(),
     textBg: Text(40).nullable().optional(),
     textColor: Text(40).nullable().optional(),
@@ -100,7 +103,7 @@ const NodeSpec = z
     kwBg: Text(40).nullable().optional(),
     kwColor: Text(40).nullable().optional(),
   })
-  .describe("Campos del elemento: shape, x, y obligatorios; el resto toma los defaults del editor. 'ref' NO va aquí: va en la operación.");
+  .describe("Campos del elemento: shape, x, y obligatorios; el resto toma los defaults del editor. Colores SOLO en HEX (#rgb, #rrggbb, #rrggbbaa); icon/anim deben existir en el catálogo (list_icons, list_anims) y las formas icon/anim los exigen. Límites de entrada: |x|,|y| ≤ 100000; w,h entre 10 y 5000 (ver capabilities.limits). 'ref' NO va aquí: va en la operación.");
 const ConnectionSpec = z
   .strictObject({
     id: Id.optional(),
@@ -137,7 +140,7 @@ const NodePatch = z
     label: Text(500).optional(),
     color: Text(40).optional(),
     fill: Text(40).nullable().optional(),
-    border: z.enum(["solid", "dashed", "dotted", "none"]).optional(),
+    border: AuthoringBorderSchema.optional(),
     lblPos: LabelPosSchema.optional(),
     textBg: Text(40).nullable().optional(),
     textColor: Text(40).nullable().optional(),
@@ -205,6 +208,8 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
   }),
   z.strictObject({ op: z.literal("delete_node"), scope: page, pageIndex: PageIndex, node: Endpoint.describe("Elimina el elemento, sus conexiones y su disponibilidad inicial. Rechazado (REFERENCED_ENTITY) si alguna Historia lo usa en el estado final.") }),
   z.strictObject({ op: z.literal("delete_connection"), scope: page, pageIndex: PageIndex, connection: Endpoint.describe("Rechazado (REFERENCED_ENTITY) si alguna Historia la usa en el estado final.") }),
+  z.strictObject({ op: z.literal("create_page"), scope: documentScope, name: z.string().min(1).max(80).optional().describe("1 a 80 caracteres; sin nombre, el del editor («Página N»). Se añade siempre al final y NO cambia la página activa.") }),
+  z.strictObject({ op: z.literal("rename_page"), scope: documentScope, pageIndex: PageIndex, name: z.string().min(1).max(80) }),
   z.strictObject({ op: z.literal("set_initial_availability"), scope: page, pageIndex: PageIndex, nodeId: IdOrRef, state: z.enum(["UP", "DOWN"]) }),
   z.strictObject({ op: z.literal("create_event_type"), scope: eventType, ...EventFields, primitive: Primitive, ref: z.string().min(1).max(40).optional() }),
   z.strictObject({

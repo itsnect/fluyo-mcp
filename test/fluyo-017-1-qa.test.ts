@@ -114,7 +114,7 @@ function hayFluyo(): boolean { try { readFileSync(join(fluyoDir(), "js", "model.
 const ALLOWED_KEYS = new Set([
   "readable", "schemaVersion", "sourceSchemaVersion", "engineVersion", "kernelId", "valid", "errorCount", "errors", "currentPageIndex",
   "revision", "code", "message", "scope", "pageIndex", "storyId", "stepId", "entityId", "entityKind", "path", "limit", "reason", "endpoint",
-  "capabilities", "readsDocumentVersions", "eventPrimitives", "stepActions", "limits", "maxSteps", "maxTraceEvents", "maxVirtualMs", "maxRuntimeJobs", "tools", "authoring",
+  "capabilities", "readsDocumentVersions", "eventPrimitives", "stepActions", "limits", "maxSteps", "maxTraceEvents", "maxVirtualMs", "maxRuntimeJobs", "maxNodesPerPage", "maxConnectionsPerPage", "coordMax", "sizeMin", "sizeMax", "tools", "authoring",
   "eventTypes", "id", "name", "sentence", "symbol", "primitive", "action", "target", "availability", "motion", "usedBy",
   /* 017.3: dónde se usa un evento y su presentación distinta del defecto (sólo lo que se aparta, sin las ramas crudas) */
   "authoringScopes", "presentation", "usedIn", "usedInTruncated",

@@ -84,7 +84,7 @@ const MUTATIONS: Mutation[] = [
     ["const NodePatch = z\n  .strictObject({", "const NodePatch = z\n  .object({"]),
   M("el parche de nodo permite cambiar a 'image'", TS,
     ["    shape: EditableShapeSchema.optional()", "    shape: ShapeSchema.optional()"],
-    ["import { BorderSchema, CreatableShapeSchema,", "import { ShapeSchema, BorderSchema, CreatableShapeSchema,"]),
+    ["import { CreatableShapeSchema,", "import { ShapeSchema, CreatableShapeSchema,"]),
   M("delete_node acepta un id desnudo (sin {id}/{ref})", TS,
     ["node: Endpoint.describe(\"Elimina el elemento,", "node: IdOrRef.describe(\"Elimina el elemento,"]),
   M("update_node declara el alcance «story»", TS,

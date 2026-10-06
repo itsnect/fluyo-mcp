@@ -239,7 +239,7 @@ describe("describe_document de EventTypes", () => {
     assert.deepEqual(Object.keys(pago), ["id", "name", "sentence", "symbol", "primitive", "action", "target", "motion", "usedBy", "usedIn"]);
     assert.deepEqual(pago.usedIn, [{ pageIndex: 0, storyId: 1, stepIds: [1] }, { pageIndex: 0, storyId: 2, stepIds: [2] }]);
     assert.equal(d.eventTypes[3].availability, "DOWN");
-    assert.deepEqual(d.capabilities.authoringScopes, ["story", "page", "eventType"]);
+    assert.deepEqual(d.capabilities.authoringScopes, ["story", "page", "eventType", "document"]);
   });
 
   it("la presentación se resume como lo que se aparta del defecto; vacía no aparece", async () => {

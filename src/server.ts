@@ -108,7 +108,8 @@ server.registerTool(
       "sobre un documento Fluyo existente (el JSON completo devuelto por create_diagram o cargado desde un .fluyo.json). " +
       "Las operaciones se aplican en orden; add_node puede definir un 'key' temporal que add_edge referencia en la misma llamada. " +
       "Para editar nodos/aristas ya existentes en el documento, usa su 'id' numérico (visible en el JSON del documento). " +
-      "La respuesta trae un enlace fluyo.space/#d=… con el diagrama YA EDITADO, listo para abrir en la app.",
+      "La respuesta trae un enlace fluyo.space/#d=… con el diagrama YA EDITADO, listo para abrir en la app. " +
+      "LEGACY: se mantiene sin cambios por compatibilidad. Para autoría moderna (nodos, conexiones, páginas, Historias; reglas y límites del editor, baseRevision y lotes atómicos) usa author_document.",
     inputSchema: {
       document: DocumentInputSchema,
       pageIndex: z.number().optional().describe("Índice de página a editar (por defecto, la página actual del documento)."),
@@ -380,7 +381,7 @@ server.registerTool(
     description:
       "Aplica un LOTE ATÓMICO de operaciones de Historia y de eventos sobre una COPIA del documento y devuelve un documento nuevo que Fluyo puede ejecutar tal cual (el original no se modifica). " +
       "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait (alcance 'story'); " +
-      "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection (alcance 'page'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
+      "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection (alcance 'page'); create_page, rename_page (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
       "Un evento se define con name, primitive (FLOW=conexión, OCCURRENCE=elemento, SET_AVAILABILITY=elemento que cambia su disponibilidad con availability UP|DOWN), sentence (marcadores {source} {target} {name}), symbol, motion (sólo FLOW) y presentation ({connectionEffects}|{nodeEffects}, parche); la acción de los pasos la sigue decidiendo el evento. " +
       "Las reglas son las del editor: un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) y no se elimina (REFERENCED_ENTITY, con las Historias y pasos que lo usan; quita antes esos pasos); cambiar nombre, frase, símbolo o presentación es global y no toca pasos, tiempos ni objetivos. Puedes usar {ref} de un evento creado en el lote en add_step. " +
       "DIAGRAMA: create_node {pageIndex, spec:{shape,x,y,w?,h?,label?,…}, ref?} y create_connection {pageIndex, source, target, spec?:{label,route,fromSide,toSide,waypoints…}, ref?}. 'ref' es un nombre del LOTE (no se guarda): " +
@@ -391,6 +392,11 @@ server.registerTool(
       "ELIMINAR: delete_node {pageIndex, node} (quita también sus conexiones y su disponibilidad inicial) y delete_connection {pageIndex, connection}. " +
       "Las Historias mandan (B2): si el estado final del lote dejaría una Historia inválida (un paso apunta a lo eliminado) se rechaza TODO con REFERENCED_ENTITY (entidad eliminada, Historias y pasos afectados, operación y razón); nada se limpia en silencio. " +
       "Retargetear/quitar pasos y eliminar en el mismo lote es válido (se evalúa el estado final). Las {ref} valen también en update_*/delete_* y en los destinos de los pasos (target: {ref} | {edgeId:{ref}} | {nodeId:{ref}} | {from:{ref},to:{ref}}, nodeId de set_initial_availability). " +
+      "PÁGINAS: create_page {name?} (scope 'document'; añade SIEMPRE al final, no cambia la página activa; sin nombre usa el del editor; 1–80 caracteres) y rename_page {pageIndex, name}. " +
+      "create_page devuelve el pageIndex creado en changes[].pageIndex: las operaciones siguientes del MISMO lote ya pueden usarlo (create_node, create_connection, create_story…); las páginas no tienen id. " +
+      "REGLAS DE ENTRADA de create_node/update_node: colores SOLO en HEX (#rgb, #rrggbb, #rrggbbaa); icon/anim deben existir en el catálogo (list_icons/list_anims) y las formas icon/anim los exigen; border admite solid|dashed|dotted|none. " +
+      "LÍMITES (capabilities.limits de describe_document): |x|,|y| ≤ coordMax, w/h entre sizeMin y sizeMax, ≤ maxNodesPerPage nodos y ≤ maxConnectionsPerPage conexiones por página; se evalúan sobre el ESTADO FINAL del lote (puedes crear y borrar dentro del mismo lote) y solo sobre lo que el lote escribe: un documento antiguo que ya los exceda se abre y se edita igual. Si se superan se rechaza TODO con LIMIT_EXCEEDED {limit, actual, field}. " +
+      "edit_diagram es LEGACY (no se retira, no cambia): la autoría moderna del diagrama usa author_document. " +
       "Un paso se expresa con eventTypeId + target: la acción la decide el evento. El tiempo es narrativo: add_step añade al final tras 'waitMs' (o 'al mismo tiempo' con placement) y set_wait fija la espera de un momento " +
       "(no se escribe el tiempo absoluto). Eliminar y duplicar siguen la política de la app (eliminar colapsa la espera; duplicar entra en el mismo momento). " +
       "Requiere 'baseRevision': la 'revision' que devolvió describe_document para ESTE documento; si no coincide se rechaza. " +
