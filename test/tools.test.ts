@@ -50,6 +50,9 @@ const TOOLS_ESPERADAS = [
   "run_story",
   "author_document",
   "propose_layout",
+  "set_theme",
+  "reorder_nodes",
+  "duplicate_node",
 ];
 
 describe("identidad del servidor", () => {
@@ -63,7 +66,7 @@ describe("identidad del servidor", () => {
 });
 
 describe("lo que ve un cliente en tools/list", () => {
-  it("están las trece tools", async () => {
+  it("están las dieciséis tools", async () => {
     const { tools } = await h.client.listTools();
     assert.deepEqual(tools.map(t => t.name).sort(), [...TOOLS_ESPERADAS].sort());
   });
@@ -77,7 +80,7 @@ describe("lo que ve un cliente en tools/list", () => {
   });
 
   /** Los directorios usan las annotations para decidir qué avisar al usuario.
-   *  Las trece son funciones puras, así que el juego es uniforme. */
+   *  Las dieciséis son funciones puras, así que el juego es uniforme. */
   it("todas declaran annotations de función pura", async () => {
     const { tools } = await h.client.listTools();
     for (const t of tools) {
@@ -97,7 +100,8 @@ describe("lo que ve un cliente en tools/list", () => {
     // 018.2: create_node/create_connection publican la forma de sus specs (≈2 KB cada una): tope subido de 45 000 a 50 000.
     // 018.3: update_node/update_connection/delete_node/delete_connection (parches de campos) y refs en destinos: de 50 000 a 60 000.
     // 018.6: propose_layout (≈2,5 KB): de 60 000 a 62 000.
-    assert.ok(bytes < 62_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
+    // 018.7a: set_theme, reorder_nodes y duplicate_node (tools de una operación, ≈2 KB cada una) y sus operaciones en author_document: de 62 000 a 70 000.
+    assert.ok(bytes < 70_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
   });
 });
 

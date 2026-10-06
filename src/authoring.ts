@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { createKernel } from "./kernel.js";
-import { CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema } from "./model.js";
+import { CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema, ThemeSchema } from "./model.js";
 import { normalizeWith, revisionOfProject } from "./revision.js";
 import { UNMODELED } from "./stories.js";
 
@@ -162,9 +162,21 @@ const ConnectionPatch = ConnectionSpec.omit({ id: true }).describe(
 const LocalRef = z.string().min(1).max(40);
 const Endpoint = z
   .union([z.strictObject({ ref: LocalRef }), z.strictObject({ id: Id })])
-  .describe("{ref} de un elemento creado ANTES en el lote, en la misma página; o {id} de un elemento existente.");
+  .describe("{ref} de algo creado antes en el lote (misma página) o {id} existente.");
 const storyRef = { pageIndex: PageIndex, storyId: IdOrRef };
 const stepRef = { ...storyRef, stepId: IdOrRef };
+
+
+/* FLUYO-018.7a: forma de set_theme / reorder_nodes / duplicate_node. Se reutiliza en las operaciones de author_document y en las tools de una sola operación. */
+export const ThemeFields = {
+  theme: ThemeSchema.optional(),
+  customBg: z.string().max(40).nullable().optional().describe("HEX o null/\"\" (sin fondo propio)."),
+};
+export const ZPlacement = z.enum(["front", "back", "forward", "backward"]).describe("Orden Z entre elementos.");
+export const DuplicateFields = {
+  connections: z.enum(["internal", "none"]).optional().describe("internal (por defecto): copia las conexiones entre los duplicados."),
+  offset: z.strictObject({ x: z.number(), y: z.number() }).optional().describe("Por defecto 20,20."),
+};
 
 export const AuthoringOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("create_story"), scope: story, pageIndex: PageIndex, name: z.string().min(1).max(120).optional(), ref: z.string().min(1).max(40).optional() }),
@@ -194,14 +206,14 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("duplicate_step"), scope: story, ...stepRef, ref: z.string().min(1).max(40).optional() }),
   z.strictObject({ op: z.literal("retarget_step"), scope: story, ...stepRef, target: Target }),
   z.strictObject({ op: z.literal("set_wait"), scope: story, ...stepRef, waitMs: Wait }),
-  z.strictObject({ op: z.literal("create_node"), scope: page, pageIndex: PageIndex, spec: NodeSpec, ref: LocalRef.optional().describe("Nombre del lote (no se guarda en el documento): luego puedes usar {ref} como source/target en la misma página.") }),
+  z.strictObject({ op: z.literal("create_node"), scope: page, pageIndex: PageIndex, spec: NodeSpec, ref: LocalRef.optional().describe("Nombre del lote (no se guarda): luego {ref} vale como source/target en la misma página.") }),
   z.strictObject({ op: z.literal("create_connection"), scope: page, pageIndex: PageIndex, source: Endpoint, target: Endpoint, spec: ConnectionSpec.optional(), ref: LocalRef.optional() }),
-  z.strictObject({ op: z.literal("update_node"), scope: page, pageIndex: PageIndex, node: Endpoint.describe("{id} del elemento existente o {ref} de uno creado antes en el lote (misma página)."), spec: NodePatch }),
+  z.strictObject({ op: z.literal("update_node"), scope: page, pageIndex: PageIndex, node: Endpoint, spec: NodePatch }),
   z.strictObject({
     op: z.literal("update_connection"),
     scope: page,
     pageIndex: PageIndex,
-    connection: Endpoint.describe("{id} de la conexión existente o {ref} de una creada antes en el lote (misma página)."),
+    connection: Endpoint,
     source: Endpoint.optional().describe("Retarget: nuevo origen."),
     target: Endpoint.optional().describe("Retarget: nuevo destino."),
     spec: ConnectionPatch.optional(),
@@ -210,6 +222,15 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("delete_connection"), scope: page, pageIndex: PageIndex, connection: Endpoint.describe("Rechazado (REFERENCED_ENTITY) si alguna Historia la usa en el estado final.") }),
   z.strictObject({ op: z.literal("create_page"), scope: documentScope, name: z.string().min(1).max(80).optional().describe("1 a 80 caracteres; sin nombre, el del editor («Página N»). Se añade siempre al final y NO cambia la página activa.") }),
   z.strictObject({ op: z.literal("rename_page"), scope: documentScope, pageIndex: PageIndex, name: z.string().min(1).max(80) }),
+  z.strictObject({ op: z.literal("set_theme"), scope: documentScope, ...ThemeFields }),
+  z.strictObject({ op: z.literal("reorder_nodes"), scope: page, pageIndex: PageIndex, nodes: z.array(Endpoint).min(1).max(100), to: ZPlacement }),
+  z.strictObject({
+    op: z.literal("duplicate_node"),
+    scope: page,
+    pageIndex: PageIndex,
+    nodes: z.array(z.strictObject({ source: Endpoint, ref: LocalRef.optional().describe("Ref de la copia.") })).min(1).max(100),
+    ...DuplicateFields,
+  }),
   z.strictObject({ op: z.literal("set_initial_availability"), scope: page, pageIndex: PageIndex, nodeId: IdOrRef, state: z.enum(["UP", "DOWN"]) }),
   z.strictObject({ op: z.literal("create_event_type"), scope: eventType, ...EventFields, primitive: Primitive, ref: z.string().min(1).max(40).optional() }),
   z.strictObject({
@@ -314,4 +335,10 @@ export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string
     `${r.touchedStories.length} Historia(s) creada(s)/editada(s), todas ejecutables. ` +
     `${r.dryRun ? "No se devuelve documento." : "Documento nuevo en el 2.º bloque."} resultRevision ${r.resultRevision.slice(0, 19)}…`
   );
+}
+
+/* Las tools de una sola operación (set_theme, reorder_nodes, duplicate_node) llaman a authorDocument con UNA operación: mismo kernel,
+   misma revisión, mismas reglas y misma respuesta que author_document. No hay lógica propia. */
+export function authorSingle(input: { document: unknown; baseRevision: string; dryRun?: boolean }, operation: Record<string, unknown>) {
+  return authorDocument({ document: input.document, baseRevision: input.baseRevision, operations: [operation], dryRun: input.dryRun });
 }

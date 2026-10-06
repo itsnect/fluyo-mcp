@@ -118,6 +118,8 @@ const ALLOWED_KEYS = new Set([
   "eventTypes", "id", "name", "sentence", "symbol", "primitive", "action", "target", "availability", "motion", "usedBy",
   /* 017.3: dónde se usa un evento y su presentación distinta del defecto (sólo lo que se aparta, sin las ramas crudas) */
   "authoringScopes", "presentation", "usedIn", "usedInTruncated",
+  /* 018.7a: el aspecto del lienzo es autorable (set_theme) y el orden Z (posición en la página) es parte de lo que se reordena */
+  "theme", "customBg", "themes", "z",
   "showSymbol", "symbolSize", "message", "messageColor", "messageSize", "messageWeight", "messageFont", "messagePosition", "highlight", "blink", "dim", "fillColor", "visualDuration", "visualDurationMs",
   "size", "style", "trail", "arrival", "during", "stepIds",
   "pages", "nodes", "label", "shape", "icon", "x", "y", "w", "h", "route", "fromSide", "toSide", "waypoints", "bounds", "minX", "minY", "maxX", "maxY", "connections", "from", "to", "fromLabel", "toLabel", "initialUnavailable",
@@ -161,7 +163,7 @@ describe("describe_document: auditoría de contrato", () => {
     const extra = [...keysOf(d)].filter(k => !ALLOWED_KEYS.has(k));
     assert.deepEqual(extra, [], `claves fuera del contrato: ${extra.join(", ")}`);
     const text = JSON.stringify(d);
-    for (const prohibido of ["nodeEffects", "connectionEffects", "customBg", "theme", "settings", "scPlayback", "activeSends", "cursorVirtual", "undo", "autosave", "localStorage"])
+    for (const prohibido of ["nodeEffects", "connectionEffects", "settings", "scPlayback", "activeSends", "cursorVirtual", "undo", "autosave", "localStorage"])
       assert.ok(!text.includes(prohibido), `describe filtra «${prohibido}»`);
   });
 

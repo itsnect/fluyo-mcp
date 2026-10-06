@@ -72,6 +72,9 @@ interface KernelModel {
     sizeMin: number;
     sizeMax: number;
   };
+  theme: string;
+  customBg: string;
+  themes: string[];
   primitives: string[];
   actions: string[];
   cur: number;
@@ -129,6 +132,7 @@ const READ_MODEL = `(function(){
     primitives: [...EVENT_TYPE_PRIMITIVES],
     actions: [...SCENARIO_ACTIONS],
     cur: d.cur,
+    theme: d.theme, customBg: d.customBg || "", themes: Object.keys(THEMES),
     eventTypes: d.eventTypes.map(et => ({id: et.id, name: et.name, sentenceTemplate: et.sentenceTemplate,
       symbol: eventSymbol(et), primitive: et.primitive, availability: et.availability,
       motion: et.motion || DEFAULT_EVENT_MOTION, spec: FluyoIntegrity.eventActionSpec(et), usedBy: eventTypeUseCount(et.id),
@@ -212,8 +216,9 @@ export function describeDocument(input: DescribeInput) {
       return {
         pageIndex,
         name: pg.name,
-        nodes: pg.nodes.map(n => ({
+        nodes: pg.nodes.map((n, z) => ({
           id: n.id,
+          z,
           label: oneLine(n.label),
           shape: n.shape,
           ...(n.icon ? { icon: n.icon } : {}),
@@ -275,7 +280,10 @@ export function describeDocument(input: DescribeInput) {
     schemaVersion: model.documentVersion,
     ...base,
     currentPageIndex: model.cur,
+    theme: model.theme,
+    customBg: model.customBg,
     capabilities: {
+      themes: model.themes,
       readsDocumentVersions: `1..${model.documentVersion}`,
       engineVersion: model.engineVersion,
       eventPrimitives: model.primitives,

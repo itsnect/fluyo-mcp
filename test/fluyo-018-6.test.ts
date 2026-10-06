@@ -9,7 +9,7 @@
  *     propuestas, sin tocar Historias, eventos, Behaviors, conexiones (salvo waypoints), tamaños ni otras páginas;
  *   · respeta los límites: LAYOUT_EXCEEDS_LIMITS estructurado, sin recortar; documentos antiguos que ya excedían los topes se abren;
  *   · errores estructurados (PAGE_NOT_FOUND, REVISION_MISMATCH, DOCUMENT_UNREADABLE), nunca TypeError ni trazas;
- *   · el servidor real por stdio publica 13 tools.
+ *   · el servidor real por stdio publica 16 tools.
  */
 
 import { describe, it, before, after } from "node:test";
@@ -196,10 +196,10 @@ describe("PARIDAD editor real ↔ MCP (golden de Fluyo): fill:\"none\" y colores
 
 /* ═══════════════════════════ B. propose_layout ═══════════════════════════ */
 
-describe("propose_layout: contrato publicado (13 tools)", () => {
+describe("propose_layout: contrato publicado (16 tools)", () => {
   it("tools/list = 13, propose_layout declarada de solo lectura y con su contrato en la descripción", async () => {
     const { tools } = await h.client.listTools();
-    assert.equal(tools.length, 13);
+    assert.equal(tools.length, 16);
     const t = tools.find(x => x.name === "propose_layout")!;
     assert.ok(t, "propose_layout publicada");
     assert.deepEqual(t.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
@@ -511,7 +511,7 @@ describe("propose_layout: errores estructurados (nunca TypeError)", () => {
   });
 });
 
-describe("servidor real por stdio: 13 tools y propose_layout de punta a punta", () => {
+describe("servidor real por stdio: 16 tools y propose_layout de punta a punta", () => {
   let client: Client;
   before(async () => {
     client = new Client({ name: "fluyo-018-6", version: "0.0.0" });
@@ -519,9 +519,9 @@ describe("servidor real por stdio: 13 tools y propose_layout de punta a punta", 
   });
   after(async () => { await client?.close(); });
 
-  it("tools/list = 13; describe → propose_layout → author_document; LAYOUT_EXCEEDS_LIMITS sin trazas", async () => {
+  it("tools/list = 16; describe → propose_layout → author_document; LAYOUT_EXCEEDS_LIMITS sin trazas", async () => {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 13);
+    assert.equal(tools.length, 16);
     assert.ok(tools.some(t => t.name === "propose_layout"));
     const mk = [N(0, {}, { ref: "a" }), N(0, {}, { ref: "b" }), N(0, {}, { ref: "c" }), C(0, R("a"), R("b"), { label: "x" }), C(0, R("b"), R("c"))];
     const d0 = documentOf(await client.callTool({ name: "describe_document", arguments: { document: empty() } }));

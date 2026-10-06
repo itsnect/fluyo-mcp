@@ -191,7 +191,8 @@ else
     const EXPECTED = [
       "author_document", "create_diagram", "create_from_template", "describe_document",
       "edit_diagram", "export_diagram", "list_anims", "list_colors", "list_fonts",
-      "list_icons", "list_templates", "propose_layout", "run_story",
+      "list_icons", "list_templates", "propose_layout", "reorder_nodes", "run_story",
+      "set_theme", "duplicate_node",
     ];
     const ANN = ["readOnlyHint","destructiveHint","idempotentHint","openWorldHint"];
     let d;
@@ -222,8 +223,8 @@ else
         ;;
       COUNT)
         [ -z "$a" ] \
-          && pass "las 13 tools del contrato están presentes, ni más ni menos" \
-          || fail "las 13 tools del contrato están presentes, ni más ni menos" "$a (encontradas $b)"
+          && pass "las 16 tools del contrato están presentes, ni más ni menos" \
+          || fail "las 16 tools del contrato están presentes, ni más ni menos" "$a (encontradas $b)"
         ;;
       TITLE)
         [ -z "$a" ] \

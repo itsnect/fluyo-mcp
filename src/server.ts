@@ -8,11 +8,11 @@ import { pageToSVG } from "./svg.js";
 import { MAX_LINK_CHARS, buildOpenLink } from "./link.js";
 import { TEMPLATES, assertOverridableKeys, getTemplate } from "./templates.js";
 import { describeDocument, runStory, summarizeDescription, summarizeRun } from "./stories.js";
-import { AuthoringOperationSchema, authorDocument, summarizeAuthoring } from "./authoring.js";
+import { AuthoringOperationSchema, DuplicateFields, ThemeFields, ZPlacement, authorDocument, authorSingle, summarizeAuthoring } from "./authoring.js";
 import { proposeLayout, summarizeLayout } from "./propose-layout.js";
 
 /**
- * Las trece tools de este servidor son funciones puras: reciben JSON, devuelven
+ * Las dieciséis tools de este servidor son funciones puras: reciben JSON, devuelven
  * JSON, y no tocan disco, red ni ningún estado fuera de su propia respuesta. No
  * hay nada que un cliente deba confirmar antes de llamarlas.
  *
@@ -384,28 +384,30 @@ server.registerTool(
     description:
       "Aplica un LOTE ATÓMICO de operaciones de Historia y de eventos sobre una COPIA del documento y devuelve un documento nuevo que Fluyo puede ejecutar tal cual (el original no se modifica). " +
       "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait (alcance 'story'); " +
-      "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection (alcance 'page'); create_page, rename_page (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
+      "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection, reorder_nodes, duplicate_node (alcance 'page'); create_page, rename_page, set_theme (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
       "Un evento se define con name, primitive (FLOW=conexión, OCCURRENCE=elemento, SET_AVAILABILITY=elemento que cambia su disponibilidad con availability UP|DOWN), sentence (marcadores {source} {target} {name}), symbol, motion (sólo FLOW) y presentation ({connectionEffects}|{nodeEffects}, parche); la acción de los pasos la sigue decidiendo el evento. " +
       "Las reglas son las del editor: un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) y no se elimina (REFERENCED_ENTITY, con las Historias y pasos que lo usan; quita antes esos pasos); cambiar nombre, frase, símbolo o presentación es global y no toca pasos, tiempos ni objetivos. Puedes usar {ref} de un evento creado en el lote en add_step. " +
-      "DIAGRAMA: create_node {pageIndex, spec:{shape,x,y,w?,h?,label?,…}, ref?} y create_connection {pageIndex, source, target, spec?:{label,route,fromSide,toSide,waypoints…}, ref?}. 'ref' es un nombre del LOTE (no se guarda): " +
+      "DIAGRAMA (create_node, create_connection): 'ref' es un nombre del LOTE (no se guarda): " +
       "source/target son {ref} de algo creado antes en el lote EN LA MISMA PÁGINA (las refs son por página) o {id} de un elemento existente; así puedes crear Cliente → Comercio → Banco en una sola llamada sin conocer los ids. " +
       "Los ids los asigna Fluyo (la respuesta trae 'refs': [{ref,type,pageIndex,id}] para seguir trabajando) y los defaults, la geometría de las conexiones y las reglas (auto-lazo, ids duplicados, forma) son las del editor; los campos son los del documento (w/h, color en hex). " +
-      "MODIFICAR: update_node {pageIndex, node:{id}|{ref}, spec:{x,y,w,h,shape,label,color,fill,border,…}} (mover = x/y, redimensionar = w/h; solo cambia lo que envías, las conexiones no se tocan) y " +
-      "update_connection {pageIndex, connection:{id}|{ref}, source?, target?, spec?:{label,route,fromSide,toSide,waypoints,…}} (source/target = retarget; los waypoints solo cambian si los envías: waypoints:[] vuelve a la ruta automática). " +
-      "ELIMINAR: delete_node {pageIndex, node} (quita también sus conexiones y su disponibilidad inicial) y delete_connection {pageIndex, connection}. " +
+      "MODIFICAR (update_node, update_connection): mover = x/y, redimensionar = w/h; solo cambia lo que envías y las conexiones no se tocan; source/target = retarget; los waypoints solo cambian si los envías (waypoints:[] vuelve a la ruta automática). " +
+      "ELIMINAR: delete_node quita también sus conexiones y su disponibilidad inicial. " +
       "Las Historias mandan (B2): si el estado final del lote dejaría una Historia inválida (un paso apunta a lo eliminado) se rechaza TODO con REFERENCED_ENTITY (entidad eliminada, Historias y pasos afectados, operación y razón); nada se limpia en silencio. " +
       "Retargetear/quitar pasos y eliminar en el mismo lote es válido (se evalúa el estado final). Las {ref} valen también en update_*/delete_* y en los destinos de los pasos (target: {ref} | {edgeId:{ref}} | {nodeId:{ref}} | {from:{ref},to:{ref}}, nodeId de set_initial_availability). " +
-      "PÁGINAS: create_page {name?} (scope 'document'; añade SIEMPRE al final, no cambia la página activa; sin nombre usa el del editor; 1–80 caracteres) y rename_page {pageIndex, name}. " +
+      "PÁGINAS: create_page añade SIEMPRE al final, no cambia la página activa; sin nombre usa el del editor; 1–80 caracteres. " +
       "create_page devuelve el pageIndex creado en changes[].pageIndex: las operaciones siguientes del MISMO lote ya pueden usarlo (create_node, create_connection, create_story…); las páginas no tienen id. " +
+      "ASPECTO, ORDEN Z Y DUPLICADO (las mismas reglas que el editor; también son tools de una sola operación con el mismo nombre): " +
+      "set_theme: parche e idempotente; customBg en HEX o null/\"\" para quitarlo; " +
+      "reorder_nodes: el Z es la posición del elemento en la página (las conexiones van siempre debajo); el orden relativo lo fija el documento, no la lista; no cambiar nada es válido (changed:false); " +
+      "duplicate_node duplica UNO o VARIOS elementos a la vez con las conexiones ENTRE ellos y su disponibilidad inicial (por defecto desplazados 20,20 como Ctrl+D): ids nuevos, nunca se copian pasos ni Historias; 'ref' nombra la copia y vale en el resto del lote; changes[].created lista {kind,from,id}. " +
       "REGLAS DE ENTRADA de create_node/update_node: colores SOLO en HEX (#rgb, #rrggbb, #rrggbbaa); icon/anim deben existir en el catálogo (list_icons/list_anims) y las formas icon/anim los exigen; border admite solid|dashed|dotted|none. " +
       "LÍMITES (capabilities.limits de describe_document): |x|,|y| ≤ coordMax, w/h entre sizeMin y sizeMax, ≤ maxNodesPerPage nodos y ≤ maxConnectionsPerPage conexiones por página; se evalúan sobre el ESTADO FINAL del lote (puedes crear y borrar dentro del mismo lote) y solo sobre lo que el lote escribe: un documento antiguo que ya los exceda se abre y se edita igual. Si se superan se rechaza TODO con LIMIT_EXCEEDED {limit, actual, field}. " +
       "edit_diagram es LEGACY (no se retira, no cambia): la autoría moderna del diagrama usa author_document. " +
-      "Un paso se expresa con eventTypeId + target: la acción la decide el evento. El tiempo es narrativo: add_step añade al final tras 'waitMs' (o 'al mismo tiempo' con placement) y set_wait fija la espera de un momento " +
+      "El tiempo es narrativo: add_step añade al final tras 'waitMs' (o 'al mismo tiempo' con placement) y set_wait fija la espera de un momento " +
       "(no se escribe el tiempo absoluto). Eliminar y duplicar siguen la política de la app (eliminar colapsa la espera; duplicar entra en el mismo momento). " +
       "Requiere 'baseRevision': la 'revision' que devolvió describe_document para ESTE documento; si no coincide se rechaza. " +
-      "Si una operación falla, o el estado final dejaría alguna Historia inválida, se rechaza TODO el lote. Con dryRun:true se valida y se devuelven los cambios sin documento. " +
-      "Campos: pageIndex, storyId/stepId (o {ref} de algo creado en el lote), eventTypeId, target ({edgeId}|{from,to} para conexiones; {nodeId} para elementos), waitMs (add_step: espera desde el último momento, por defecto 1000, el primero en 0; set_wait: espera desde el momento anterior, desplaza los posteriores), " +
-      "placement {sameMomentAs, position} (al mismo tiempo), move_step {direction}|{to:{gapIndex}|{sameMomentAs,after}}. " +
+      "Con dryRun:true se valida y se devuelven los cambios sin documento. " +
+      "waitMs: add_step por defecto 1000 (el primero 0); set_wait lo cuenta desde el momento anterior y desplaza los posteriores; move_step {direction}|{to:{gapIndex}|{sameMomentAs,after}}. " +
       "Devuelve 'changes' (qué hizo cada operación y a qué Historias/pasos afecta) y 'resultRevision'. Después usa run_story para ver el Trace.",
     inputSchema: {
       document: DocumentInputSchema,
@@ -455,6 +457,73 @@ server.registerTool(
       return fail(err);
     }
   }
+);
+
+
+/* ===================== set_theme · reorder_nodes · duplicate_node (FLUYO-018.7a) =====================
+   Tools de UNA operación: llaman a authorDocument con la operación homónima (mismo kernel, revisión, reglas y respuesta que author_document;
+   en un lote, con refs entre operaciones, usa author_document). */
+
+const SingleBase = {
+  document: DocumentInputSchema,
+  baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La 'revision' de describe_document."),
+  dryRun: z.boolean().default(false).describe("Solo validar: sin documento."),
+};
+const NodeIds = z.array(z.strictObject({ id: z.number().int().min(1) })).min(1).max(100).describe("Elementos por {id}.");
+
+async function runSingle(input: { document: unknown; baseRevision: string; dryRun?: boolean }, operation: Record<string, unknown>): Promise<ToolResult> {
+  try {
+    const result = authorSingle(input, operation);
+    const blocks = [summarizeAuthoring(result), JSON.stringify(result, null, 2)];
+    return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+server.registerTool(
+  "set_theme",
+  {
+    title: "Cambiar el tema y el fondo de un documento Fluyo",
+    annotations: TOOL_PURA,
+    description:
+      "Cambia el tema (dark, crema, claro) y/o el fondo personalizado (customBg en HEX; null o \"\" lo quita) sobre una COPIA y devuelve el documento nuevo. Parche: solo cambia lo que envías; repetir el valor actual no es un error (changed:false). " +
+      "Requiere baseRevision (la 'revision' de describe_document). Equivale a set_theme de author_document.",
+    inputSchema: { ...SingleBase, ...ThemeFields },
+  },
+  async ({ document, baseRevision, dryRun, theme, customBg }) =>
+    runSingle({ document, baseRevision, dryRun }, { op: "set_theme", scope: "document", ...(theme !== undefined ? { theme } : {}), ...(customBg !== undefined ? { customBg } : {}) })
+);
+
+server.registerTool(
+  "reorder_nodes",
+  {
+    title: "Cambiar el orden Z (capas) de elementos de una página",
+    annotations: TOOL_PURA,
+    description:
+      "Reordena elementos de UNA página (pageIndex) al frente, al fondo, una capa arriba o una abajo (to). El orden Z es la posición del elemento en la página y las conexiones siempre van debajo de todos. " +
+      "Con varios conservan su orden relativo del documento (la lista no importa). Si ya estaban en su sitio no es un error (changed:false). Requiere baseRevision. Equivale a reorder_nodes de author_document.",
+    inputSchema: { ...SingleBase, pageIndex: z.number().int().min(0), nodes: NodeIds, to: ZPlacement },
+  },
+  async ({ document, baseRevision, dryRun, pageIndex, nodes, to }) =>
+    runSingle({ document, baseRevision, dryRun }, { op: "reorder_nodes", scope: "page", pageIndex, nodes, to })
+);
+
+server.registerTool(
+  "duplicate_node",
+  {
+    title: "Duplicar uno o varios elementos de una página",
+    annotations: TOOL_PURA,
+    description:
+      "Duplica los elementos indicados (nodes, uno o varios) de UNA página en una sola operación atómica: ids nuevos, desplazados (offset; por defecto 20,20 como Ctrl+D), con las conexiones que hay ENTRE ellos (connections:internal; none las omite) incluidos sus waypoints, y con su disponibilidad inicial. " +
+      "No copia conexiones con un extremo fuera del conjunto ni pasos, Historias o eventos (siguen apuntando a los originales). changes[].created lista {kind,from,id}. Requiere baseRevision. Para nombrar las copias y usarlas en el mismo lote, usa author_document.",
+    inputSchema: { ...SingleBase, pageIndex: z.number().int().min(0), nodes: NodeIds, ...DuplicateFields },
+  },
+  async ({ document, baseRevision, dryRun, pageIndex, nodes, connections, offset }) =>
+    runSingle({ document, baseRevision, dryRun }, {
+      op: "duplicate_node", scope: "page", pageIndex, nodes: nodes.map(n => ({ source: { id: n.id } })),
+      ...(connections !== undefined ? { connections } : {}), ...(offset !== undefined ? { offset } : {}),
+    })
 );
 
   return server;
