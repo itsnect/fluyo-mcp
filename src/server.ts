@@ -9,9 +9,10 @@ import { MAX_LINK_CHARS, buildOpenLink } from "./link.js";
 import { TEMPLATES, assertOverridableKeys, getTemplate } from "./templates.js";
 import { describeDocument, runStory, summarizeDescription, summarizeRun } from "./stories.js";
 import { AuthoringOperationSchema, authorDocument, summarizeAuthoring } from "./authoring.js";
+import { proposeLayout, summarizeLayout } from "./propose-layout.js";
 
 /**
- * Las doce tools de este servidor son funciones puras: reciben JSON, devuelven
+ * Las trece tools de este servidor son funciones puras: reciben JSON, devuelven
  * JSON, y no tocan disco, red ni ningún estado fuera de su propia respuesta. No
  * hay nada que un cliente deba confirmar antes de llamarlas.
  *
@@ -202,7 +203,9 @@ server.registerTool(
   {
     title: "Listar colores semánticos",
     annotations: TOOL_PURA,
-    description: "Devuelve los nombres de color semántico aceptados en 'color', 'lineColor' y 'dotColor' (también se acepta cualquier hex #rrggbb).",
+    description:
+      "Devuelve los nombres de color semántico de la paleta de Fluyo, con su hex. Los nombres los aceptan create_diagram, edit_diagram y create_from_template en 'color', 'lineColor' y 'dotColor' (también cualquier hex #rrggbb). " +
+      "author_document NO acepta nombres: ahí los colores (de elementos y de conexiones, incl. lineColor y dotColor) van SOLO en HEX; usa el hex de esta lista. fill admite además \"none\" (sin relleno).",
     inputSchema: {},
   },
   async () => {
@@ -415,6 +418,38 @@ server.registerTool(
     try {
       const result = authorDocument({ document, baseRevision, operations, dryRun });
       const blocks = [summarizeAuthoring(result), JSON.stringify(result, null, 2)];
+      return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
+    } catch (err) {
+      return fail(err);
+    }
+  }
+);
+
+/* ===================== propose_layout (FLUYO-018.6) ===================== */
+
+server.registerTool(
+  "propose_layout",
+  {
+    title: "Proponer posiciones (auto-layout) para una página de un documento Fluyo",
+    annotations: TOOL_PURA,
+    description:
+      "SOLO LECTURA: no modifica el documento ni devuelve uno nuevo. Calcula con el auto-layout por capas de Fluyo (el de create_diagram y edit_diagram.relayout) dónde colocar los elementos de UNA página (pageIndex; por defecto la actual) " +
+      "y devuelve 'batches': lotes de author_document ya listos (update_node {x,y}; update_connection {waypoints:[]} para conexiones con ruta manual cuyos extremos se mueven, salvo clearWaypoints:false). " +
+      "Flujo: describe_document → propose_layout → author_document con cada lote EN ORDEN (≤200 operaciones; el baseRevision del primero es la 'revision' del documento y el de cada siguiente el resultRevision del anterior). " +
+      "Solo cambia x/y (y waypoints si lo pides): no toca Historias, eventos, disponibilidad, conexiones, tamaños, formas ni otras páginas. Es determinista. " +
+      "Respeta capabilities.limits: si el layout necesita |x| o |y| > coordMax NO recorta: LAYOUT_EXCEEDS_LIMITS {limit, limitValue, actual, field, nodeId, required}. Reubica TODA la página (Sugiyama simplificado; en grafos muy ramificados conviene retocar a mano). " +
+      "Errores: PAGE_NOT_FOUND, REVISION_MISMATCH (si pasas baseRevision), DOCUMENT_UNREADABLE.",
+    inputSchema: {
+      document: DocumentInputSchema,
+      pageIndex: z.number().int().min(0).optional().describe("Página a ordenar (por defecto, la página actual del documento)."),
+      clearWaypoints: z.boolean().default(true).describe("Si true, las conexiones con waypoints manuales cuyos extremos se mueven vuelven a su ruta automática (update_connection waypoints:[]). Si false se conservan y se avisa."),
+      baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).optional().describe("Opcional: la 'revision' de este documento según describe_document; si no coincide se rechaza."),
+    },
+  },
+  async ({ document, pageIndex, clearWaypoints, baseRevision }) => {
+    try {
+      const result = proposeLayout({ document, pageIndex, clearWaypoints, baseRevision });
+      const blocks = [summarizeLayout(result), JSON.stringify(result, null, 2)];
       return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
     } catch (err) {
       return fail(err);

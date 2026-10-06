@@ -108,8 +108,8 @@ describe("contrato: schema, describe_document y herramientas", () => {
     const e = tools.find(t => t.name === "edit_diagram")!.description!;
     assert.match(e, /LEGACY/);
     assert.match(e, /author_document/);
-    assert.equal(tools.length, 12, "ninguna herramienta nueva");
-    assert.ok(JSON.stringify(tools).length < 60_000);
+    assert.equal(tools.length, 13, "12 de 018.5 + propose_layout (018.6)");
+    assert.ok(JSON.stringify(tools).length < 62_000); // 018.6: +propose_layout
   });
 
   it("edit_diagram (legacy) NO cambia: sus operaciones, su schema de borde y su resultado", async () => {

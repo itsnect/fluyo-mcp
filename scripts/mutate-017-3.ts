@@ -102,8 +102,8 @@ const MUTATIONS: Mutation[] = [
   M("describe: usedIn omite los pasos", "src/stories.ts",
     ["stepIds: u.stepIds.slice(0, MAX_USAGE_STEPS),", "stepIds: [],"]),
   M("estado compartido entre llamadas: un único contexto del kernel", "src/kernel.ts",
-    ["export function createKernel(): Kernel {\n  const context = vm.createContext({});\n  for (const file of KERNEL_FILES) {\n    vm.runInContext(file.source, context, { filename: `kernel/${file.name}`, timeout: EVAL_TIMEOUT_MS });\n  }",
-     "let SHARED: ReturnType<typeof vm.createContext> | undefined;\nexport function createKernel(): Kernel {\n  const fresh = !SHARED;\n  const context = (SHARED ??= vm.createContext({}));\n  if (fresh) for (const file of KERNEL_FILES) {\n    vm.runInContext(file.source, context, { filename: `kernel/${file.name}`, timeout: EVAL_TIMEOUT_MS });\n  }"]),
+    ["export function createKernel(): Kernel {\n  const context = vm.createContext({});\n  installWebGlobals(context);\n  for (const file of KERNEL_FILES) {\n    vm.runInContext(file.source, context, { filename: `kernel/${file.name}`, timeout: EVAL_TIMEOUT_MS });\n  }",
+     "let SHARED: ReturnType<typeof vm.createContext> | undefined;\nexport function createKernel(): Kernel {\n  const fresh = !SHARED;\n  const context = (SHARED ??= vm.createContext({}));\n  if (fresh) installWebGlobals(context);\n  if (fresh) for (const file of KERNEL_FILES) {\n    vm.runInContext(file.source, context, { filename: `kernel/${file.name}`, timeout: EVAL_TIMEOUT_MS });\n  }"]),
   M("el schema de MCP admite un campo extra (force) en delete_event_type", "src/authoring.ts",
     ["z.strictObject({ op: z.literal(\"delete_event_type\"), scope: eventType, eventTypeId: IdOrRef }),", "z.strictObject({ op: z.literal(\"delete_event_type\"), scope: eventType, eventTypeId: IdOrRef, force: z.boolean().optional() }),"]),
 ];

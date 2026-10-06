@@ -1,6 +1,6 @@
 import { ANIMS, CANVAS, DEFAULT_FONT, DEFAULT_SIZES, ICONS, resolveColor } from "./schema.js";
 import { describeDocumentIssues, describeInternalIssues } from "./errors.js";
-import { layeredLayout } from "./layout.js";
+import { layeredLayout, layoutPage } from "./layout.js";
 import {
   FluyoNode,
   FluyoEdge,
@@ -364,9 +364,7 @@ export function editDiagram(input: EditDiagramInput): FluyoProject {
         break;
       }
       case "relayout": {
-        const layoutNodes = page.nodes.map(n => ({ key: n.id, w: n.w, h: n.h }));
-        const layoutEdges = page.edges.map(e => ({ from: e.from, to: e.to, label: e.label, fs: e.fs, bold: e.bold }));
-        const { positions } = layeredLayout(layoutNodes, layoutEdges);
+        const positions = layoutPage(page);
         page.nodes = page.nodes.map(n => {
           const p = positions.get(n.id);
           return p ? { ...n, x: p.x, y: p.y } : n;

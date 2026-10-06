@@ -430,6 +430,6 @@ describe("servidor real por stdio", () => {
       noStack(res);
     }
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 12);
+    assert.equal(tools.length, 13);
   });
 });

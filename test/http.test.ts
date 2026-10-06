@@ -46,7 +46,7 @@ describe("handshake MCP por HTTP", () => {
 
       // (b) tools/list
       const { tools } = await client.listTools();
-      assert.equal(tools.length, 12, `se esperaban 12 tools, llegaron ${tools.length}`);
+      assert.equal(tools.length, 13, `se esperaban 13 tools, llegaron ${tools.length}`);
 
       // (c) tools/call
       const result = await client.callTool({ name: "list_colors", arguments: {} });
@@ -115,9 +115,10 @@ const LLAMADAS: ReadonlyArray<{ name: string; arguments: Record<string, unknown>
       operations: [{ op: "duplicate_story", scope: "story", pageIndex: 0, storyId: 1, name: "Copia por HTTP" }],
     },
   },
+  { name: "propose_layout", arguments: { document: STORIES_DOC, pageIndex: 0 } },
 ];
 
-describe("las doce tools responden igual por HTTP que por el transporte de stdio", () => {
+describe("las trece tools responden igual por HTTP que por el transporte de stdio", () => {
   let http: HttpHarness;
   let mem: Harness;
   let httpClient: Awaited<ReturnType<typeof connectHttpClient>>;
@@ -133,7 +134,7 @@ describe("las doce tools responden igual por HTTP que por el transporte de stdio
     await http?.close();
   });
 
-  it("la lista de casos cubre las doce", async () => {
+  it("la lista de casos cubre las trece", async () => {
     const { tools } = await mem.client.listTools();
     assert.deepEqual(
       LLAMADAS.map(c => c.name).sort(),
@@ -159,7 +160,7 @@ describe("las doce tools responden igual por HTTP que por el transporte de stdio
 
   /** No basta con que coincidan: si las dos fallaran igual, la paridad sería
    *  cierta y el servidor estaría roto. */
-  it("ninguna de las doce devolvió error", async () => {
+  it("ninguna de las trece devolvió error", async () => {
     for (const call of LLAMADAS) {
       const r = await httpClient.client.callTool(call);
       assert.notEqual((r as { isError?: boolean }).isError, true, `${call.name} devolvió isError por HTTP`);
