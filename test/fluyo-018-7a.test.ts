@@ -198,7 +198,7 @@ describe("describe_document: theme, customBg, themes y z", () => {
   });
 });
 
-describe("servidor real por stdio: 16 tools y el flujo de punta a punta", () => {
+describe("servidor real por stdio: 15 tools y el flujo de punta a punta", () => {
   let client: Client;
   before(async () => {
     client = new Client({ name: "fluyo-018-7a", version: "0.0.0" });
@@ -206,9 +206,9 @@ describe("servidor real por stdio: 16 tools y el flujo de punta a punta", () => 
   });
   after(async () => { await client?.close(); });
 
-  it("tools/list = 16 con las tres nuevas; describe → set_theme → reorder_nodes → duplicate_node → describe", async () => {
+  it("tools/list = 15 (16 − edit_diagram, 018.10) con las tres nuevas; describe → set_theme → reorder_nodes → duplicate_node → describe", async () => {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 16);
+    assert.equal(tools.length, 15);
     for (const n of ["set_theme", "reorder_nodes", "duplicate_node"]) assert.ok(tools.some(t => t.name === n), n);
     assert.ok(JSON.stringify(tools).length < 72_000);   // 018.7c: +delete_page
     const d0 = documentOf(await client.callTool({ name: "describe_document", arguments: { document: golden.document } }));

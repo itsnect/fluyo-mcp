@@ -176,9 +176,9 @@ describe("delete_page: lotes, revisiones y dryRun", () => {
     const e = await rejected(golden.document, [DP(1, "Pagos"), { op: "create_node", scope: "page", pageIndex: 0, spec: { shape: "rect", x: 0, y: 0, color: "red" } }], "INVALID_FIELD");
     assert.equal(e.operationIndex, 1);
   });
-  it("tools/list: delete_page publica exactamente op, scope, pageIndex y expectedName (obligatorio); siguen 16 tools", async () => {
+  it("tools/list: delete_page publica exactamente op, scope, pageIndex y expectedName (obligatorio); 15 tools (edit_diagram retirada en 018.10)", async () => {
     const { tools } = await h.client.listTools();
-    assert.equal(tools.length, 16);
+    assert.equal(tools.length, 15);
     assert.equal(tools.some(t => t.name === "delete_page"), false, "no hay tool de una operación para delete_page");
     const a = tools.find(t => t.name === "author_document")!;
     const ops = (a.inputSchema as any).properties.operations.items.anyOf ?? (a.inputSchema as any).properties.operations.items.oneOf;

@@ -496,9 +496,9 @@ describe("create_from_template: la misma ruta para cada plantilla del catálogo"
 });
 
 describe("contrato publicado", () => {
-  it("siguen 16 tools; los rangos de speed/stagger publicados son los del editor y no hay defaults duplicados de ajustes", async () => {
+  it("15 tools (018.10); los rangos de speed/stagger publicados son los del editor y no hay defaults duplicados de ajustes", async () => {
     const { tools } = await h.client.listTools();
-    assert.equal(tools.length, 16);
+    assert.equal(tools.length, 15);
     const cd: any = tools.find(t => t.name === "create_diagram")!.inputSchema;
     assert.deepEqual([cd.properties.speed.minimum, cd.properties.speed.maximum, cd.properties.stagger.minimum, cd.properties.stagger.maximum], [0.2, 2, 0.2, 1.2]);
     for (const k of ["speed", "dots", "stagger", "build", "grid", "single", "pageName", "theme"]) assert.equal(cd.properties[k].default, undefined, k);
@@ -520,8 +520,8 @@ describe("servidor real por stdio: tools/list → create_diagram → create_from
     await client.connect(new StdioClientTransport({ command: process.execPath, args: [join(ROOT, "dist-test", "src", "index.js")], stderr: "pipe" }));
   });
   after(async () => { await client?.close(); });
-  it("16 tools; documentos v5 iguales a los del dominio con su revisión; rechazo estructurado sin documento", async () => {
-    assert.equal((await client.listTools()).tools.length, 16);
+  it("15 tools; documentos v5 iguales a los del dominio con su revisión; rechazo estructurado sin documento", async () => {
+    assert.equal((await client.listTools()).tools.length, 15);
     const c = CASES[2];
     const created = await client.callTool({ name: "create_diagram", arguments: c.input });
     assert.equal(isToolError(created), false, textOf(created));

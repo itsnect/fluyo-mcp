@@ -2,25 +2,23 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from "./schema.js";
-import { CreateDiagramInputShape, DocumentInputSchema, OperationSchema, ThemeSchema } from "./model.js";
-import { createDiagramResult, createFromTemplateResult, editDiagram, parseDocument, type CreateDiagramResult } from "./diagram.js";
+import { CreateDiagramInputShape, DocumentInputSchema, ThemeSchema } from "./model.js";
+import { createDiagramResult, createFromTemplateResult, parseDocument, type CreateDiagramResult } from "./diagram.js";
 import type { FluyoProject } from "./model.js";
 import { pageToSVG } from "./svg.js";
-import { MAX_LINK_CHARS, buildOpenLink } from "./link.js";
+import { openLink, openLinkLine } from "./link.js";
 import { TEMPLATES } from "./templates.js";
 import { describeDocument, runStory, summarizeDescription, summarizeRun } from "./stories.js";
 import { AuthoringOperationSchema, DuplicateFields, ThemeFields, ZPlacement, authorDocument, authorSingle, summarizeAuthoring } from "./authoring.js";
 import { proposeLayout, summarizeLayout } from "./propose-layout.js";
 
 /**
- * Las dieciséis tools de este servidor son funciones puras: reciben JSON, devuelven
+ * Las quince tools de este servidor son funciones puras: reciben JSON, devuelven
  * JSON, y no tocan disco, red ni ningún estado fuera de su propia respuesta. No
- * hay nada que un cliente deba confirmar antes de llamarlas.
- *
- * Matiz sobre `destructiveHint`: la operación `relayout` de edit_diagram sí es
- * destructiva respecto al CONTENIDO (borra los waypoints manuales, y así lo dice
- * su descripción), pero no respecto al entorno — devuelve un documento nuevo sin
- * pisar nada. Estas anotaciones hablan del entorno, así que `false` es correcto.
+ * hay nada que un cliente deba confirmar antes de llamarlas. Las que modifican un
+ * documento (author_document y las de una operación) devuelven uno NUEVO sin pisar
+ * el recibido: estas anotaciones hablan del entorno, así que `destructiveHint:false`
+ * es correcto.
  */
 const TOOL_PURA = {
   readOnlyHint: true,
@@ -54,15 +52,7 @@ function summarize(project: FluyoProject): string {
  * igual: el diagrama es perfectamente válido, lo que no cabe es la URL.
  */
 function summarizeWithLink(project: FluyoProject): string {
-  const link = buildOpenLink(project);
-  if (link) return `${summarize(project)}\nÁbrelo animado en Fluyo: ${link}`;
-  return (
-    `${summarize(project)}\n` +
-    `Este diagrama no cabe en un enlace (el tope son ${MAX_LINK_CHARS.toLocaleString("es-ES")} caracteres de URL). ` +
-    "Casi siempre es por nodos shape:\"image\", que llevan la imagen entera dentro como data URI: " +
-    "uno solo puede pesar más que un diagrama de cien nodos. " +
-    "Guarda el JSON de abajo como .fluyo.json y ábrelo en Fluyo con «Abrir»."
-  );
+  return `${summarize(project)}\n${openLinkLine(openLink(project))}`;
 }
 
 /** create_diagram / create_from_template (FLUYO-018.9): el documento v5 del dominio, o el rechazo estructurado con la misma forma
@@ -100,36 +90,6 @@ server.registerTool(
   async (input) => {
     try {
       return createdOrRejected(createDiagramResult(input));
-    } catch (err) {
-      return fail(err);
-    }
-  }
-);
-
-/* ===================== edit_diagram ===================== */
-
-server.registerTool(
-  "edit_diagram",
-  {
-    title: "Editar diagrama Fluyo",
-    annotations: TOOL_PURA,
-    description:
-      "Aplica una lista de operaciones (add_node, update_node, remove_node, add_edge, update_edge, remove_edge, set_theme, rename_page, relayout) " +
-      "sobre un documento Fluyo existente (el JSON completo devuelto por create_diagram o cargado desde un .fluyo.json). " +
-      "Las operaciones se aplican en orden; add_node puede definir un 'key' temporal que add_edge referencia en la misma llamada. " +
-      "Para editar nodos/aristas ya existentes en el documento, usa su 'id' numérico (visible en el JSON del documento). " +
-      "La respuesta trae un enlace fluyo.space/#d=… con el diagrama YA EDITADO, listo para abrir en la app. " +
-      "LEGACY: se mantiene sin cambios por compatibilidad. Para autoría moderna (nodos, conexiones, páginas, Historias; reglas y límites del editor, baseRevision y lotes atómicos) usa author_document.",
-    inputSchema: {
-      document: DocumentInputSchema,
-      pageIndex: z.number().optional().describe("Índice de página a editar (por defecto, la página actual del documento)."),
-      operations: z.array(OperationSchema).min(1),
-    },
-  },
-  async ({ document, pageIndex, operations }) => {
-    try {
-      const project = editDiagram({ document, pageIndex, operations });
-      return ok(summarizeWithLink(project), JSON.stringify(project, null, 2));
     } catch (err) {
       return fail(err);
     }
@@ -213,7 +173,7 @@ server.registerTool(
     title: "Listar colores semánticos",
     annotations: TOOL_PURA,
     description:
-      "Devuelve los nombres de color semántico de la paleta de Fluyo, con su hex. Los nombres los aceptan create_diagram, edit_diagram y create_from_template en 'color', 'lineColor' y 'dotColor' (también cualquier hex #rrggbb). " +
+      "Devuelve los nombres de color semántico de la paleta de Fluyo, con su hex. Los nombres los aceptan create_diagram y create_from_template en 'color', 'lineColor' y 'dotColor' (también cualquier hex #rrggbb). " +
       "author_document NO acepta nombres: ahí los colores (de elementos y de conexiones, incl. lineColor y dotColor) van SOLO en HEX; usa el hex de esta lista. fill admite además \"none\" (sin relleno).",
     inputSchema: {},
   },
@@ -397,13 +357,12 @@ server.registerTool(
       "duplicate_node duplica UNO o VARIOS elementos a la vez con las conexiones ENTRE ellos y su disponibilidad inicial (por defecto desplazados 20,20 como Ctrl+D): ids nuevos, nunca se copian pasos ni Historias; 'ref' nombra la copia y vale en el resto del lote; changes[].created lista {kind,from,id}. " +
       "REGLAS DE ENTRADA de create_node/update_node: colores SOLO en HEX (#rgb, #rrggbb, #rrggbbaa); icon/anim deben existir en el catálogo (list_icons/list_anims) y las formas icon/anim los exigen; border admite solid|dashed|dotted|none. " +
       "LÍMITES (capabilities.limits de describe_document): |x|,|y| ≤ coordMax, w/h entre sizeMin y sizeMax, ≤ maxNodesPerPage nodos y ≤ maxConnectionsPerPage conexiones por página; se evalúan sobre el ESTADO FINAL del lote (puedes crear y borrar dentro del mismo lote) y solo sobre lo que el lote escribe: un documento antiguo que ya los exceda se abre y se edita igual. Si se superan se rechaza TODO con LIMIT_EXCEEDED {limit, actual, field}. " +
-      "edit_diagram es LEGACY (no se retira, no cambia): la autoría moderna del diagrama usa author_document. " +
       "El tiempo es narrativo: add_step añade al final tras 'waitMs' (o 'al mismo tiempo' con placement) y set_wait fija la espera de un momento " +
       "(no se escribe el tiempo absoluto). Eliminar y duplicar siguen la política de la app (eliminar colapsa la espera; duplicar entra en el mismo momento). " +
       "Requiere 'baseRevision': la 'revision' que devolvió describe_document para ESTE documento; si no coincide se rechaza. " +
       "Con dryRun:true se valida y se devuelven los cambios sin documento. " +
       "waitMs: add_step por defecto 1000 (el primero 0); set_wait lo cuenta desde el momento anterior y desplaza los posteriores; move_step {direction}|{to:{gapIndex}|{sameMomentAs,after}}. " +
-      "Devuelve 'changes' (qué hizo cada operación y a qué Historias/pasos afecta) y 'resultRevision'. Después usa run_story para ver el Trace.",
+      "Devuelve 'changes' (qué hizo cada operación y a qué Historias/pasos afecta), 'resultRevision' y 'editorUrl': el enlace fluyo.space/#d=… que abre el documento resultante en Fluyo (dáselo al usuario; si no cabe, editorUrlError LINK_TOO_LARGE). Después usa run_story para ver el Trace.",
     inputSchema: {
       document: DocumentInputSchema,
       baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La 'revision' de este documento según describe_document."),
@@ -430,7 +389,7 @@ server.registerTool(
     title: "Proponer posiciones (auto-layout) para una página de un documento Fluyo",
     annotations: TOOL_PURA,
     description:
-      "SOLO LECTURA: no modifica el documento ni devuelve uno nuevo. Calcula con el auto-layout por capas de Fluyo (el de create_diagram y edit_diagram.relayout) dónde colocar los elementos de UNA página (pageIndex; por defecto la actual) " +
+      "SOLO LECTURA: no modifica el documento ni devuelve uno nuevo. Calcula con el auto-layout por capas de Fluyo (el de create_diagram) dónde colocar los elementos de UNA página (pageIndex; por defecto la actual) " +
       "y devuelve 'batches': lotes de author_document ya listos (update_node {x,y}; update_connection {waypoints:[]} para conexiones con ruta manual cuyos extremos se mueven, salvo clearWaypoints:false). " +
       "Flujo: describe_document → propose_layout → author_document con cada lote EN ORDEN (≤200 operaciones; el baseRevision del primero es la 'revision' del documento y el de cada siguiente el resultRevision del anterior). " +
       "Solo cambia x/y (y waypoints si lo pides): no toca Historias, eventos, disponibilidad, conexiones, tamaños, formas ni otras páginas. Es determinista. " +

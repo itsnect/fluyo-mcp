@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { createKernel } from "./kernel.js";
+import { openLink, openLinkLine, type OpenLink } from "./link.js";
 import { CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema, ThemeSchema } from "./model.js";
 import { normalizeWith, revisionOfProject } from "./revision.js";
 import { UNMODELED } from "./stories.js";
@@ -73,7 +74,7 @@ const EventFields = {
    antes de construir nada. Los valores los decide el dominio (model.js): forma, ids, source/target, auto-lazo, defaults.
    Los campos son los del documento (w/h, no width/height) y los colores van tal cual (hex): no se traducen nombres. */
 const Text = (max: number) => z.string().max(max);
-/* El BorderSchema de model.ts es el de create_diagram/edit_diagram (legacy, sin tocar). El documento admite también "none" (selector del editor). */
+/* El BorderSchema de model.ts es el de create_diagram (sin "none"). El documento admite también "none" (selector del editor). */
 const AuthoringBorderSchema = z.enum(["solid", "dashed", "dotted", "none"]);
 const NodeSpec = z
   .strictObject({
@@ -308,6 +309,9 @@ export function authorDocument(input: AuthorInput) {
   if (!result.ok) return rejected(result.errors ?? [{ code: "INVALID_OPERATION", message: "El lote no se pudo aplicar." }]);
 
   const resultRevision = revisionOfProject(result.project);
+  /* FLUYO-018.10 (D1): el enlace #d= al documento FINAL es parte del resultado, como en create_diagram (misma codificación, link.ts). Sin
+     documento (dryRun) no hay enlace; si no cabe, no se emite (nunca truncado) y se dice por qué. */
+  const link: OpenLink | null = input.dryRun ? null : openLink(result.project);
   return {
     ok: true as const,
     valid: true as const,
@@ -324,6 +328,7 @@ export function authorDocument(input: AuthorInput) {
     ...(result.pageMap ? { pageMap: result.pageMap } : {}),
     validation: result.validation ?? { valid: true, preexistingErrors: 0 },
     unmodeled: UNMODELED,
+    ...(link === null ? {} : link.ok ? { editorUrl: link.url } : { editorUrlError: { code: link.code, chars: link.chars, maxChars: link.maxChars, message: link.message } }),
     ...(input.dryRun ? {} : { document: result.project }),
   };
 }
@@ -344,7 +349,9 @@ export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string
     `${r.dryRun ? "Simulación (dryRun): " : ""}${n} operación(es) aplicada(s) sobre una copia; ` +
     diagram +
     `${r.touchedStories.length} Historia(s) creada(s)/editada(s), todas ejecutables. ` +
-    `${r.dryRun ? "No se devuelve documento." : "Documento nuevo en el 2.º bloque."} resultRevision ${r.resultRevision.slice(0, 19)}…`
+    `${r.dryRun ? "No se devuelve documento." : "Documento nuevo en el 2.º bloque."} resultRevision ${r.resultRevision.slice(0, 19)}…` +
+    ("editorUrl" in r && r.editorUrl ? `\n${openLinkLine({ ok: true, url: r.editorUrl }, "Ábrelo en Fluyo")}` : "") +
+    ("editorUrlError" in r && r.editorUrlError ? `\n${r.editorUrlError.message}` : "")
   );
 }
 

@@ -46,7 +46,7 @@ describe("handshake MCP por HTTP", () => {
 
       // (b) tools/list
       const { tools } = await client.listTools();
-      assert.equal(tools.length, 16, `se esperaban 16 tools, llegaron ${tools.length}`);
+      assert.equal(tools.length, 15, `se esperaban 15 tools, llegaron ${tools.length}`);
 
       // (c) tools/call
       const result = await client.callTool({ name: "list_colors", arguments: {} });
@@ -94,7 +94,6 @@ const LLAMADAS: ReadonlyArray<{ name: string; arguments: Record<string, unknown>
       edges: [{ from: "a", to: "b", label: "escribe", route: "ortho" }],
     },
   },
-  { name: "edit_diagram", arguments: { document: DOC, operations: [{ op: "rename_page", name: "Renombrada" }] } },
   { name: "export_diagram", arguments: { document: DOC } },
   { name: "list_icons", arguments: {} },
   { name: "list_colors", arguments: {} },
@@ -121,7 +120,7 @@ const LLAMADAS: ReadonlyArray<{ name: string; arguments: Record<string, unknown>
   { name: "duplicate_node", arguments: { document: STORIES_DOC, baseRevision: revisionOf(createKernel(), STORIES_DOC), pageIndex: 0, nodes: [{ id: 1 }, { id: 2 }] } },
 ];
 
-describe("las dieciséis tools responden igual por HTTP que por el transporte de stdio", () => {
+describe("las quince tools responden igual por HTTP que por el transporte de stdio", () => {
   let http: HttpHarness;
   let mem: Harness;
   let httpClient: Awaited<ReturnType<typeof connectHttpClient>>;
@@ -137,7 +136,7 @@ describe("las dieciséis tools responden igual por HTTP que por el transporte de
     await http?.close();
   });
 
-  it("la lista de casos cubre las dieciséis", async () => {
+  it("la lista de casos cubre las quince", async () => {
     const { tools } = await mem.client.listTools();
     assert.deepEqual(
       LLAMADAS.map(c => c.name).sort(),
@@ -163,7 +162,7 @@ describe("las dieciséis tools responden igual por HTTP que por el transporte de
 
   /** No basta con que coincidan: si las dos fallaran igual, la paridad sería
    *  cierta y el servidor estaría roto. */
-  it("ninguna de las dieciséis devolvió error", async () => {
+  it("ninguna de las quince devolvió error", async () => {
     for (const call of LLAMADAS) {
       const r = await httpClient.client.callTool(call);
       assert.notEqual((r as { isError?: boolean }).isError, true, `${call.name} devolvió isError por HTTP`);

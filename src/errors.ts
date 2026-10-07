@@ -104,16 +104,3 @@ export function describeDocumentIssues(document: unknown, issues: readonly Valid
     "\nSi lo editaste a mano, ábrelo en Fluyo y vuelve a guardarlo para normalizarlo."
   );
 }
-
-/** El documento que produce el propio servidor se revalida antes de devolverlo. Si
- *  eso falla no es culpa de la entrada: es un bug aquí dentro, y conviene que el
- *  mensaje lo diga en vez de culpar al usuario. */
-export function describeInternalIssues(issues: readonly ValidationIssue[]): string {
-  const listados = issues.slice(0, MAX_ISSUES_LISTADOS).map(i => `  · ${formatPath(i.path)}: ${i.message}`);
-  return (
-    "Error interno de fluyo-mcp: el documento resultante no pasó su propia validación.\n" +
-    listados.join("\n") +
-    "\nEs un fallo del servidor, no del diagrama. Por favor repórtalo en " +
-    "https://github.com/itsnect/fluyo-mcp/issues con la operación que lo provocó."
-  );
-}

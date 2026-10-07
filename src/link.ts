@@ -81,16 +81,42 @@ function appBaseUrl(env: NodeJS.ProcessEnv = process.env): string {
   }
 }
 
+/** Resultado del enlace: la URL, o por qué no se emite (nunca un enlace truncado). */
+export type OpenLink =
+  | { ok: true; url: string }
+  | { ok: false; code: "LINK_TOO_LARGE"; chars: number; maxChars: number; message: string };
+
 /**
- * Devuelve el enlace, o `null` si no cabe.
+ * La ÚNICA codificación `#d=` de este servidor. La usan todas las respuestas que
+ * traen un documento: create_diagram, create_from_template y author_document (y
+ * las tools de una operación que lo llaman). FLUYO-018.10: el enlace es del
+ * RESULTADO, no de una tool concreta.
  *
- * Devolver `null` en vez de lanzar es deliberado: que un diagrama no quepa en
- * una URL no lo hace inválido ni invalida la respuesta de la tool. El JSON sale
- * igual y quien llama explica el porqué en una frase.
+ * Que un diagrama no quepa en una URL no lo hace inválido ni invalida la respuesta
+ * de la tool: el JSON sale igual y quien llama explica el porqué.
  */
-export function buildOpenLink(project: FluyoProject, env?: NodeJS.ProcessEnv): string | null {
+export function openLink(project: unknown, env?: NodeJS.ProcessEnv): OpenLink {
   const json = Buffer.from(JSON.stringify(project), "utf8");
   const carga = Buffer.concat([Buffer.from([1]), deflateRawSync(json, { level: 9 })]);
   const url = `${appBaseUrl(env)}#d=${base64url(carga)}`;
-  return url.length > MAX_LINK_CHARS ? null : url;
+  if (url.length <= MAX_LINK_CHARS) return { ok: true, url };
+  return {
+    ok: false, code: "LINK_TOO_LARGE", chars: url.length, maxChars: MAX_LINK_CHARS,
+    message:
+      `Este diagrama no cabe en un enlace (el tope son ${MAX_LINK_CHARS.toLocaleString("es-ES")} caracteres de URL). ` +
+      "Casi siempre es por nodos shape:\"image\", que llevan la imagen entera dentro como data URI: " +
+      "uno solo puede pesar más que un diagrama de cien nodos. " +
+      "Guarda el JSON del documento como .fluyo.json y ábrelo en Fluyo con «Abrir».",
+  };
+}
+
+/** El enlace, o `null` si no cabe (misma codificación que openLink). */
+export function buildOpenLink(project: FluyoProject, env?: NodeJS.ProcessEnv): string | null {
+  const r = openLink(project, env);
+  return r.ok ? r.url : null;
+}
+
+/** La frase del resumen, igual para todas las tools que devuelven documento. */
+export function openLinkLine(link: OpenLink, verb = "Ábrelo animado en Fluyo"): string {
+  return link.ok ? `${verb}: ${link.url}` : link.message;
 }

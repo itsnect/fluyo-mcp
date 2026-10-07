@@ -196,7 +196,7 @@ export const DocumentInputSchema = z
     settings: z.looseObject({}).optional(),
   })
   .describe(
-    "El documento Fluyo completo (.fluyo.json): el objeto que devuelve create_diagram / edit_diagram, " +
+    "El documento Fluyo completo (.fluyo.json): el objeto que devuelve create_diagram / author_document, " +
       "o el contenido de un archivo guardado con Ctrl+S en la app."
   );
 
@@ -218,7 +218,7 @@ const commonNodeFields = {
   key: z.string().describe("Identificador temporal usado solo dentro de esta llamada para que las aristas referencien este nodo (ej: 'gateway', 'kafka')."),
   shape: CreatableShapeSchema,
   /** Sin default: si se omite, el del dominio (createNodeIn): "Nodo", "Texto" en un texto, el SQL de ejemplo en `code`, vacío en
-   *  iconos y GIFs. (En add_node de edit_diagram, legacy, lo pone buildNode.) */
+   *  iconos y GIFs. */
   label: z.string().optional(),
   color: z.string().optional().describe("Nombre de list_colors o HEX (#rgb, #rrggbb, #rrggbbaa)."),
   icon: z.string().optional().describe("Solo si shape='icon'. Usa list_icons para ver claves válidas (kafka, gke, cloudsql, lambda, s3, azvm, etc)."),
@@ -252,9 +252,6 @@ const commonNodeFields = {
 
 export const NodeSpecSchema = z.object(commonNodeFields);
 export type NodeSpec = z.infer<typeof NodeSpecSchema>;
-/** Igual que NodeSpec pero con 'label' opcional: usado internamente (ej. al construir un
- *  nodo desde una operación add_node, donde 'label' no pasó por el default de zod). */
-export type NodeBuildSpec = Omit<NodeSpec, "label"> & { label?: string };
 
 const commonEdgeFields = {
   from: z.string().describe("key del nodo de origen (el mismo 'key' usado en nodes)."),
@@ -299,74 +296,3 @@ export const CreateDiagramInputShape = {
   nodes: z.array(NodeSpecSchema).min(1),
   edges: z.array(EdgeSpecSchema).default([]),
 };
-
-/* ===================== Operaciones de edición ===================== */
-
-const editNodeFields = {
-  label: z.string().optional(),
-  color: z.string().optional(),
-  icon: z.string().optional(),
-  anim: z.string().optional(),
-  tint: z.boolean().optional().describe("Solo en shape='icon'. Tiñe la pastilla del ícono con el color del nodo."),
-  x: z.number().optional(),
-  y: z.number().optional(),
-  w: z.number().optional(),
-  h: z.number().optional(),
-  pulse: z.boolean().optional(),
-  order: z.number().optional(),
-  fs: z.number().optional(),
-  fill: z.string().optional(),
-  border: BorderSchema.optional(),
-  lblPos: LabelPosSchema.optional(),
-  textBg: z.string().optional(),
-  textColor: z.string().optional(),
-  font: z.string().optional(),
-  bold: z.boolean().optional(),
-
-  /* Solo tienen efecto en shape:"code". Van también aquí y no solo en
-     `commonNodeFields`: si estuvieran solo allí, se podría crear un nodo de
-     código con create_diagram pero no tocar sus colores ni sus palabras clave
-     con edit_diagram, que es una asimetría que el usuario sufriría sin
-     entenderla. */
-  lang: z.enum(CODE_LANG_NAMES).optional()
-    .describe("Solo en shape='code'. Preset de palabras clave: 'sql' cubre SQL y ksqlDB, 'none' desactiva el resaltado."),
-  keywords: z.array(z.string()).optional()
-    .describe("Solo en shape='code'. Lista propia de palabras clave; si se da y no está vacía, sustituye al preset de 'lang'."),
-  kwBg: z.string().optional()
-    .describe("Solo en shape='code'. Fondo del resaltado de las palabras clave."),
-  kwColor: z.string().optional()
-    .describe("Solo en shape='code'. Color del texto de las palabras clave resaltadas."),
-};
-
-const editEdgeFields = {
-  label: z.string().optional(),
-  route: RouteSchema.optional(),
-  dashed: z.boolean().optional(),
-  animated: z.boolean().optional(),
-  flowDir: FlowDirSchema.optional(),
-  fromSide: SideSchema.optional(),
-  toSide: SideSchema.optional(),
-  startArrow: z.boolean().optional(),
-  endArrow: z.boolean().optional(),
-  lineColor: z.string().optional(),
-  dotColor: z.string().optional(),
-  fs: z.number().optional(),
-  font: z.string().optional(),
-  bold: z.boolean().optional(),
-  speedFac: z.number().min(1).max(4).optional(),
-  dots: z.number().int().min(1).max(6).optional(),
-  dotsGlobal: z.boolean().optional(),
-};
-
-export const OperationSchema = z.discriminatedUnion("op", [
-  z.object({ op: z.literal("add_node"), key: z.string().describe("Referencia temporal para usar en add_edge dentro de la misma llamada."), ...editNodeFields, shape: CreatableShapeSchema }),
-  z.object({ op: z.literal("update_node"), id: z.number(), ...editNodeFields, shape: CreatableShapeSchema.optional() }),
-  z.object({ op: z.literal("remove_node"), id: z.number() }),
-  z.object({ op: z.literal("add_edge"), from: z.union([z.number(), z.string()]).describe("id numérico de un nodo existente, o key de un nodo agregado en esta misma llamada."), to: z.union([z.number(), z.string()]), ...editEdgeFields }),
-  z.object({ op: z.literal("update_edge"), id: z.number(), ...editEdgeFields }),
-  z.object({ op: z.literal("remove_edge"), id: z.number() }),
-  z.object({ op: z.literal("set_theme"), theme: ThemeSchema }),
-  z.object({ op: z.literal("rename_page"), name: z.string() }),
-  z.object({ op: z.literal("relayout") }).describe("Recalcula x/y de todos los nodos de la página en capas, a partir de las aristas actuales. Borra TODOS los waypoints manuales de la página: tras mover los nodos quedarían descolgados."),
-]);
-export type Operation = z.infer<typeof OperationSchema>;

@@ -104,19 +104,3 @@ export function paletteHexOf(name: string): string | null {
 export function colorNameToHex<T>(value: T): T | string {
   return typeof value === "string" ? paletteHexOf(value) ?? value : value;
 }
-
-/**
- * Acepta un hex (`#6a9fb5`) o un nombre semántico de la paleta de Fluyo, sin
- * distinguir mayúsculas ni acentos. Cualquier otra cosa es un error con la lista
- * completa de alternativas: el modelo tiene que poder recuperarse sin adivinar.
- */
-export function resolveColor(input: string | undefined, fallback = PALETTE[0].hex): string {
-  if (!input) return fallback;
-  const trimmed = input.trim();
-  if (/^#[0-9a-fA-F]{3,8}$/.test(trimmed)) return trimmed;
-  const byName = paletteHexOf(trimmed);
-  if (byName) return byName;
-  throw new Error(
-    `Color "${input}" no reconocido. Usa un hex (#6a9fb5) o uno de: ${PALETTE.map(p => p.name).join(", ")}.`
-  );
-}

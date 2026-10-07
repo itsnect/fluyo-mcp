@@ -11,7 +11,6 @@ No necesita backend. Es una capa delgada sobre el modelo de documento de Fluyo, 
 | Tool | Para qué |
 |---|---|
 | `create_diagram` | Texto → diagrama. Nodos y aristas; si no das `x`/`y`, aplica auto-layout por capas. Devuelve el documento **v5 del editor** (mismas reglas que `author_document`; ver «create_diagram y create_from_template por el dominio»). |
-| `edit_diagram` | Modifica un documento existente con operaciones (añadir, actualizar, borrar, cambiar tema, recalcular layout). |
 | `export_diagram` | Renderiza una página a SVG estático. |
 | `list_templates` / `create_from_template` | Instancia patrones de arquitectura predefinidos (Kafka, RAG, microservicios) con reemplazo de etiquetas. |
 | `list_icons` | Las 47 claves de ícono, agrupadas (General, GCP, AWS, Azure, Estados, Varios). |
@@ -19,14 +18,16 @@ No necesita backend. Es una capa delgada sobre el modelo de documento de Fluyo, 
 | `list_anims` | Los 8 GIFs animados para nodos `shape:"anim"`. |
 | `list_fonts` | Las 11 tipografías disponibles. |
 | `describe_document` | Lee un documento Fluyo (v1–v5) y lo resume para un agente: páginas, elementos, conexiones, biblioteca de eventos, Historias con sus pasos, validación de integridad, versiones de schema y motor. No modifica nada. |
-| `author_document` | Crea, modifica y elimina el **diagrama** (`create_node`, `create_connection`, `update_node`, `update_connection`, `delete_node`, `delete_connection`), **páginas** (`create_page`, `rename_page`, `delete_page`), el **aspecto** (`set_theme`), el **orden Z** (`reorder_nodes`) y el **duplicado** de elementos (`duplicate_node`), **Historias** y **EventTypes** (la biblioteca de eventos) sobre una copia del documento en un lote atómico: diagrama (`create_node`, `create_connection`, `update_node`, `update_connection`, `delete_node`, `delete_connection`), Historias (`create_story`, `rename_story`, `duplicate_story`, `delete_story`, `add_step`, `remove_step`, `move_step`, `duplicate_step`, `retarget_step`, `set_wait`), página (`set_initial_availability`) y eventos (`create_event_type`, `update_event_type`, `delete_event_type`). Devuelve un documento nuevo que Fluyo ejecuta tal cual, o rechaza todo el lote explicando qué Historias/pasos quedarían inválidos. Requiere `baseRevision`. |
-| `propose_layout` | **Solo lectura.** Calcula con el auto-layout por capas (el de `create_diagram`/`relayout`) dónde colocar los elementos de UNA página y devuelve lotes de `author_document` listos (`update_node {x,y}`, y `update_connection {waypoints:[]}` si se mueve una conexión con ruta manual). No modifica nada; determinista; si el layout no cabe en `coordMax` responde `LAYOUT_EXCEEDS_LIMITS` (no recorta). |
+| `author_document` | Crea, modifica y elimina el **diagrama** (`create_node`, `create_connection`, `update_node`, `update_connection`, `delete_node`, `delete_connection`), **páginas** (`create_page`, `rename_page`, `delete_page`), el **aspecto** (`set_theme`), el **orden Z** (`reorder_nodes`) y el **duplicado** de elementos (`duplicate_node`), **Historias** y **EventTypes** (la biblioteca de eventos) sobre una copia del documento en un lote atómico (la respuesta trae `editorUrl`, el enlace `#d=` que abre el resultado en Fluyo): diagrama (`create_node`, `create_connection`, `update_node`, `update_connection`, `delete_node`, `delete_connection`), Historias (`create_story`, `rename_story`, `duplicate_story`, `delete_story`, `add_step`, `remove_step`, `move_step`, `duplicate_step`, `retarget_step`, `set_wait`), página (`set_initial_availability`) y eventos (`create_event_type`, `update_event_type`, `delete_event_type`). Devuelve un documento nuevo que Fluyo ejecuta tal cual, o rechaza todo el lote explicando qué Historias/pasos quedarían inválidos. Requiere `baseRevision`. |
+| `propose_layout` | **Solo lectura.** Calcula con el auto-layout por capas (el de `create_diagram`) dónde colocar los elementos de UNA página y devuelve lotes de `author_document` listos (`update_node {x,y}`, y `update_connection {waypoints:[]}` si se mueve una conexión con ruta manual). No modifica nada; determinista; si el layout no cabe en `coordMax` responde `LAYOUT_EXCEEDS_LIMITS` (no recorta). |
 | `set_theme` | Cambia el tema (`dark`, `crema`, `claro`) y/o el fondo personalizado (`customBg` en HEX; `null` o `""` lo quita) sobre una copia. Parche e idempotente. Requiere `baseRevision`. Es la operación `set_theme` de `author_document` como tool de una sola operación. |
 | `reorder_nodes` | Orden Z de elementos de UNA página: `to` = `front`, `back`, `forward` o `backward`. Las conexiones van siempre debajo de los elementos. Requiere `baseRevision`. Equivale a la operación `reorder_nodes` de `author_document`. |
 | `duplicate_node` | Duplica uno o varios elementos (`nodes:[{id}]`) con las conexiones **entre** ellos y su disponibilidad inicial, desplazados (`offset`, por defecto 20,20 como Ctrl+D). No copia pasos ni Historias. Requiere `baseRevision`. Equivale a la operación `duplicate_node` de `author_document` (que además permite nombrar las copias con `ref`). |
 | `run_story` | Ejecuta una Historia con el **mismo motor** que el editor y devuelve el Trace, el resultado de cada paso, los errores de validación y las versiones. No simula nada: el motor es el de Fluyo. |
 
-Las dieciséis son funciones puras: reciben JSON y devuelven JSON, sin tocar disco, red ni ningún estado externo. Van anotadas como tal (`readOnlyHint`, `idempotentHint`).
+Las quince son funciones puras: reciben JSON y devuelven JSON, sin tocar disco, red ni ningún estado externo. Van anotadas como tal (`readOnlyHint`, `idempotentHint`).
+
+**`edit_diagram` se retiró en FLUYO-018.10** (era LEGACY desde 018.5). Su sustituto es `author_document` (y `propose_layout` para recolocar); ver «Retirada de `edit_diagram`».
 
 ---
 
@@ -47,7 +48,7 @@ npm test        # contrato contra los ejemplos reales de Fluyo, tools y renderer
 
 ## Conectarlo
 
-Hay dos transportes sobre el mismo núcleo. Las dieciséis tools, sus schemas y el renderer son idénticos en los dos; lo único que cambia es por dónde entran los mensajes.
+Hay dos transportes sobre el mismo núcleo. Las quince tools, sus schemas y el renderer son idénticos en los dos; lo único que cambia es por dónde entran los mensajes.
 
 | | stdio | Streamable HTTP |
 |---|---|---|
@@ -143,8 +144,7 @@ describe_document (revision) ──▶ author_document (baseRevision + operacion
 - **Aspecto, orden Z y duplicado** (FLUYO-018.7a; además son tools de una sola operación con el mismo nombre): `set_theme` `{theme?, customBg?}` (scope `document`; parche e idempotente; `customBg` solo HEX, `null` o `""` lo quita; no entra en Undo del editor), `reorder_nodes` `{pageIndex, nodes:[{id}|{ref}], to:"front"|"back"|"forward"|"backward"}` (el Z es la posición del elemento en la página; las conexiones van siempre debajo; el orden relativo lo fija el documento, no la lista; no cambiar nada es válido: `changed:false`) y `duplicate_node` `{pageIndex, nodes:[{source:{id}|{ref}, ref?}], connections?:"internal"|"none", offset?:{x,y}}` (una operación atómica; ids nuevos por orden del documento, conexiones **entre** los duplicados con sus waypoints desplazados, Behaviors copiados; nunca pasos ni Historias; `changes[].created` = `[{kind,from,id,ref?}]`; las conexiones copiadas no reciben ref). `describe_document` publica `theme`, `customBg`, `capabilities.themes` y `z` en cada elemento (0 = fondo).
 - **Reglas de entrada de `create_node`/`update_node`** (FLUYO-018.5; `fill:"none"` y colores de conexión: FLUYO-018.6): colores **solo HEX** (`#rgb`, `#rrggbb`, `#rrggbbaa`), y `fill` admite además `"none"` («Sin relleno», forma hueca; solo en `fill`); `lineColor`/`dotColor` de `create_connection`/`update_connection` siguen la misma regla (o `null` = color del tema) y un valor inválido es `INVALID_FIELD` con el campo; `icon`/`anim` deben existir en el catálogo (`list_icons`, `list_anims`) y las formas `icon`/`anim` los exigen; `border` admite `none`. `update_node` solo valida lo que cambia: un valor antiguo inválido de un documento existente no impide editarlo.
 - **Límites de autoría** (FLUYO-018.5; `describe_document` → `capabilities.limits`): `coordMax` 100000 (±, `x`/`y` y puntos de `waypoints`), `sizeMin`/`sizeMax` 10–5000 (`w`/`h`), `maxNodesPerPage` 300, `maxConnectionsPerPage` 600. Se evalúan sobre el **estado final** del lote (crear y borrar dentro del mismo lote, o cruzar un tope y volver, es válido) y solo sobre lo que el lote escribe: un documento antiguo que ya los excede se abre, se describe y se edita igual. Si no se cumplen se rechaza **todo** con `LIMIT_EXCEEDED` `{limit, limitName, actual, field, pageIndex, entity?, operationIndex}`.
-- **`propose_layout`** (FLUYO-018.6, **solo lectura**): `{document, pageIndex?, clearWaypoints?=true, baseRevision?}`. Calcula con el auto-layout por capas de siempre (el de `create_diagram` y `relayout`; no hay otro motor) dónde colocar los elementos de **una página** y devuelve `batches`: lotes de `author_document` (≤200 operaciones; `update_node {x,y}` solo de los que cambian, y `update_connection {waypoints:[]}` solo de las conexiones con ruta manual cuyos extremos se mueven) que se aplican **en orden** (el `baseRevision` de cada lote es el `resultRevision` del anterior; el primero, la `revision` del documento). No modifica nada, no guarda estado y es determinista. Respeta los límites: si el layout necesita |x| o |y| > `coordMax` no recorta, responde `LAYOUT_EXCEEDS_LIMITS` `{limit, limitValue, actual, field, nodeId, offendingNodes, required}`. Otros errores: `PAGE_NOT_FOUND`, `REVISION_MISMATCH`, `DOCUMENT_UNREADABLE`. Flujo: `describe_document` → `propose_layout` → `author_document` (cada lote).
-- **`edit_diagram` es LEGACY**: se mantiene sin cambios por compatibilidad; la autoría moderna del diagrama usa `author_document`.
+- **`propose_layout`** (FLUYO-018.6, **solo lectura**): `{document, pageIndex?, clearWaypoints?=true, baseRevision?}`. Calcula con el auto-layout por capas de siempre (el de `create_diagram`; no hay otro motor) dónde colocar los elementos de **una página** y devuelve `batches`: lotes de `author_document` (≤200 operaciones; `update_node {x,y}` solo de los que cambian, y `update_connection {waypoints:[]}` solo de las conexiones con ruta manual cuyos extremos se mueven) que se aplican **en orden** (el `baseRevision` de cada lote es el `resultRevision` del anterior; el primero, la `revision` del documento). No modifica nada, no guarda estado y es determinista. Respeta los límites: si el layout necesita |x| o |y| > `coordMax` no recorta, responde `LAYOUT_EXCEEDS_LIMITS` `{limit, limitValue, actual, field, nodeId, offendingNodes, required}`. Otros errores: `PAGE_NOT_FOUND`, `REVISION_MISMATCH`, `DOCUMENT_UNREADABLE`. Flujo: `describe_document` → `propose_layout` → `author_document` (cada lote).
 - **Refs en update/delete y en destinos**: `node`/`connection`/`source`/`target` de `update_*`/`delete_*` aceptan `{ref}` (algo creado antes en el lote, en la misma página) o `{id}`. Una ref desconocida (o de otra página) → `UNKNOWN_REF`; repetida → `DUPLICATE_REF`; usar una entidad que el propio lote ya eliminó → `NODE_NOT_FOUND`/`CONNECTION_NOT_FOUND` indicando qué operación la eliminó. Las refs de lo eliminado en el lote no se devuelven en `refs`.
 
 ```json
@@ -156,7 +156,6 @@ describe_document (revision) ──▶ author_document (baseRevision + operacion
 ```
 
   Errores nuevos: `NODE_NOT_FOUND`, `CONNECTION_NOT_FOUND`, `REFERENCED_ENTITY` (diagrama). `describe_document` añade lo necesario para modificar sin volcar el documento: por elemento `x,y,w,h`; por conexión `route`, `fromSide`/`toSide` y `waypoints` (solo si existen); por página `bounds {minX,minY,maxX,maxY}` (agregado de las cajas, sin rutas). Las refs son efímeras y no aparecen.
-- `edit_diagram` no cambia (sigue siendo la herramienta legacy).
 
 ---
 
@@ -223,8 +222,10 @@ las aplica `FluyoAuthoring` —las mismas funciones que el editor— en lotes de
 
 ## El enlace `fluyo.space/#d=…`
 
-`create_diagram`, `edit_diagram` y `create_from_template` devuelven, junto al resumen, un
-enlace que abre el diagrama **ya animado** en la app. Es el paso que faltaba: antes había que
+Toda respuesta que trae un documento lleva el enlace que lo abre **ya animado** en la app: `create_diagram` y
+`create_from_template` en el resumen, y `author_document` (y `set_theme`, `reorder_nodes`, `duplicate_node`) en el
+resumen y en el campo `editorUrl`, apuntando al documento FINAL del lote (todas las páginas, tema, Historias, eventos y
+disponibilidad). Una sola codificación (`src/link.ts`) para todas. `dryRun` y los rechazos no traen enlace. Es el paso que faltaba: antes había que
 copiar el JSON del chat, guardarlo como `.fluyo.json` y abrirlo a mano.
 
 **El diagrama viaja dentro del enlace.** No hay backend, no hay nada que dar de alta y no hay
@@ -249,8 +250,8 @@ de media acaban en 1.061 caracteres de URL — factor 5, porque este JSON repite
 claves en cada nodo y eso es justo lo que come el deflate. Un diagrama de 8 nodos son 987
 caracteres; uno de 30, 2.429.
 
-**Cuándo no hay enlace.** Por encima de 16.000 caracteres no se emite, y la respuesta explica
-por qué. El límite no lo pone el navegador —Chrome traga fragmentos de dos millones de
+**Cuándo no hay enlace.** Por encima de 16.000 caracteres no se emite (nunca se trunca), y la respuesta explica
+por qué; en `author_document`, además, como `editorUrlError {code:"LINK_TOO_LARGE", chars, maxChars, message}`. El límite no lo pone el navegador —Chrome traga fragmentos de dos millones de
 caracteres— sino el medio por el que viaja el enlace: un cliente de correo en texto plano
 parte las líneas largas, y una URL partida ya no abre nada. Lo que dispara el tope en la
 práctica no es el número de nodos, son los nodos `image`: llevan la imagen entera dentro como
@@ -258,23 +259,23 @@ data URI y uno solo puede pesar más que un diagrama de cien nodos.
 
 ---
 
-## Operaciones de `edit_diagram`
+## Retirada de `edit_diagram` (FLUYO-018.10)
 
-Se envían como lista en `operations` y se aplican en orden.
+`edit_diagram` era la tool de edición anterior a `author_document` (LEGACY desde 018.5). Se retiró: ya no aparece en
+`tools/list` y llamarla devuelve el error de tool inexistente. Cada operación tiene sustituto:
 
-| Operación | Campos principales | Descripción |
+| `edit_diagram` | Sustituto | Diferencia |
 |---|---|---|
-| `add_node` | `key`, `shape`, `label`, `color?`, `icon?`, `anim?`, estilo… | Añade un nodo. `key` solo vive durante la llamada, para que `add_edge` pueda referenciarlo. |
-| `update_node` | `id`, … | Actualiza un nodo por su id numérico. |
-| `remove_node` | `id` | Elimina el nodo y todas sus conexiones. |
-| `add_edge` | `from`, `to`, … | Crea una conexión. Acepta ids existentes o `key` de nodos creados en la misma llamada. |
-| `update_edge` | `id`, … | Modifica una arista. |
-| `remove_edge` | `id` | Elimina una arista. |
-| `set_theme` | `theme` | `dark`, `crema` o `claro`. |
-| `rename_page` | `name` | Renombra la página. |
-| `relayout` | — | Recalcula las posiciones en capas. **Borra todos los waypoints manuales** de la página. |
+| `add_node` (`key`) | `author_document` `create_node` (`ref`) | `x`/`y` obligatorios (usa los `bounds` de `describe_document` o `propose_layout` después); colores solo HEX. |
+| `update_node` | `update_node` | Solo las claves del editor: **no** cambia `icon`/`anim` ni convierte a/desde `icon`/`anim` (como el editor). Para eso, `delete_node` + `create_node` (ids nuevos; bloqueado si una Historia lo usa). |
+| `remove_node` | `delete_node` | Quita también su disponibilidad inicial; rechazado si una Historia lo usa. |
+| `add_edge` / `update_edge` / `remove_edge` | `create_connection` / `update_connection` / `delete_connection` | `update_connection` además retargetea. |
+| `set_theme` / `rename_page` | `set_theme` / `rename_page` | `pageIndex` explícito. |
+| `relayout` | `propose_layout` → lotes de `author_document` | Solo vacía los waypoints de las conexiones cuyos extremos se mueven (antes, todos). |
+| enlace `#d=` al resultado | `editorUrl` de `author_document` | Misma codificación. |
 
-> Para referenciar nodos que ya existen en el documento usa siempre su `id` numérico. Las `key` de `add_node` son temporales y no se guardan en el `.fluyo.json`.
+`author_document` pide `baseRevision` (la `revision` de `describe_document`) y devuelve el documento **normalizado**
+del editor (v5), no una copia que conserve claves desconocidas.
 
 ---
 
@@ -291,7 +292,7 @@ Importa ser preciso aquí, porque una versión anterior de este README prometía
 - **La medición de texto es una heurística.** La app pide `getBBox()` al navegador; aquí no hay DOM y se estima sumando anchos por carácter. Las etiquetas que caben en su forma salen idénticas; las que hay que encoger pueden quedar a un tamaño de fuente ligeramente distinto, y el fondo de una etiqueta de arista, unos píxeles más ancho o estrecho.
 - **`export_diagram` no anima.** Igual que "Exportar → SVG" en la app: sin puntos de flujo ni aparición escalonada. Para el GIF animado hay que abrir el documento en Fluyo.
 
-**Round-trip garantizado** — un documento guardado por la app entra y sale de este servidor **sin perder un solo campo**, incluidos los que el servidor todavía no sabe interpretar. Lo verifica un test de contrato contra los cinco ejemplos reales de `fluyo/ejemplos/data/`. No es un detalle: la versión anterior descartaba en silencio 16 campos de estilo en cada llamada.
+**Lectura sin pérdida** — un documento guardado por la app se lee (`export_diagram`) **sin perder un solo campo**, incluidos los que el servidor todavía no sabe interpretar. Lo verifica un test de contrato contra los ejemplos reales de `fluyo/ejemplos/data/`. No es un detalle: una versión anterior descartaba en silencio 16 campos de estilo en cada llamada. **La edición** (`author_document`) devuelve el documento normalizado por el kernel de Fluyo, exactamente el que la app tendría al abrirlo y guardarlo: solo cambia lo pedido.
 
 ---
 
@@ -300,10 +301,9 @@ Importa ser preciso aquí, porque una versión anterior de este README prometía
 - **Solo SVG.** PNG y GIF necesitan un renderer de canvas (`sharp`, `resvg`, `node-canvas`).
 - **El endpoint remoto tiene topes que el local no tiene.** 1 MB de cuerpo, 200 KB por respuesta de tool y 30 peticiones por minuto y por IP. Un diagrama con nodos `image` puede pasarse de cualquiera de los dos primeros; por stdio no hay ninguno.
 - **Los nodos `image` no se pueden crear**, porque llevan los bytes de la imagen dentro (`img`, un data URI que se pega o arrastra en la app). Los que ya existen se leen, editan y exportan con normalidad. Los `anim` sí se pueden crear: sus claves son un catálogo cerrado (`list_anims`).
-- **`edit_diagram` (legacy) no crea ni borra páginas.** Con `author_document` sí: `create_page`, `rename_page` y `delete_page`.
 - **No se leen documentos del formato v1.** La app los migra al abrirlos; ábrelo y vuelve a guardarlo.
-- **El auto-layout es un Sugiyama simplificado.** Va muy bien en pipelines y arquitecturas convencionales; para grafos muy ramificados conviene dar coordenadas o retocar tras un `relayout`.
-- **`edit_diagram` reenvía el documento entero** en la entrada y en la salida. En sesiones de edición largas sobre diagramas grandes eso consume bastante contexto.
+- **El auto-layout es un Sugiyama simplificado.** Va muy bien en pipelines y arquitecturas convencionales; para grafos muy ramificados conviene dar coordenadas o retocar lo que propone `propose_layout`.
+- **`author_document` reenvía el documento entero** en la entrada y en la salida. En sesiones de edición largas sobre diagramas grandes eso consume bastante contexto.
 
 ---
 
@@ -543,11 +543,12 @@ scripts/
 
 test/
   contract.test.ts  # Los 5 ejemplos reales: se aceptan, round-trip sin pérdida, exportan
-  tools.test.ts     # Flujo extremo a extremo de las 11 tools
+  tools.test.ts     # Flujo extremo a extremo de las tools
   render.test.ts    # El SVG cuadra con el que produce la app
   http.test.ts      # Handshake por HTTP, paridad con stdio, seguridad y privacidad del log
   link.test.ts      # Formato del enlace, tope de tamaño; lo creado ya no lleva meta.generator (018.9)
   fluyo-018-9.test.ts # create_diagram/create_from_template = dominio (golden, reglas, errores, stdio)
+  fluyo-018-10.test.ts # editorUrl en author_document; retirada de edit_diagram (15 tools)
   fixtures/         # Copias de fluyo/ejemplos/ (datos y previews de referencia)
 ```
 

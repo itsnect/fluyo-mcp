@@ -4,12 +4,13 @@
  *
  * Lo que se prueba de propose_layout:
  *   · estrictamente solo lectura (entrada congelada, sin documento en la respuesta, sin estado entre llamadas) y determinista;
- *   · no hay un tercer motor: sus posiciones son las de create_diagram (autoLayout) y las de edit_diagram.relayout;
+ *   · no hay un tercer motor: sus posiciones son las de create_diagram (autoLayout) y las de layoutPage (el motor de siempre; el
+ *     relayout de edit_diagram, que también lo usaba, se retiró en 018.10);
  *   · sus lotes se consumen TAL CUAL con author_document (baseRevision encadenado, ≤200 operaciones) y dejan exactamente las posiciones
  *     propuestas, sin tocar Historias, eventos, Behaviors, conexiones (salvo waypoints), tamaños ni otras páginas;
  *   · respeta los límites: LAYOUT_EXCEEDS_LIMITS estructurado, sin recortar; documentos antiguos que ya excedían los topes se abren;
  *   · errores estructurados (PAGE_NOT_FOUND, REVISION_MISMATCH, DOCUMENT_UNREADABLE), nunca TypeError ni trazas;
- *   · el servidor real por stdio publica 16 tools.
+ *   · el servidor real por stdio publica el contrato vigente (15 tools desde 018.10).
  */
 
 import { describe, it, before, after } from "node:test";
@@ -21,7 +22,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 import { authorDocument } from "../src/authoring.js";
-import { createDiagram, editDiagram } from "../src/diagram.js";
+import { createDiagram } from "../src/diagram.js";
 import { createKernel } from "../src/kernel.js";
 import { layoutPage } from "../src/layout.js";
 import { proposeLayout } from "../src/propose-layout.js";
@@ -196,19 +197,20 @@ describe("PARIDAD editor real ↔ MCP (golden de Fluyo): fill:\"none\" y colores
 
 /* ═══════════════════════════ B. propose_layout ═══════════════════════════ */
 
-describe("propose_layout: contrato publicado (16 tools)", () => {
+describe("propose_layout: contrato publicado (15 tools)", () => {
   it("tools/list = 13, propose_layout declarada de solo lectura y con su contrato en la descripción", async () => {
     const { tools } = await h.client.listTools();
-    assert.equal(tools.length, 16);
+    assert.equal(tools.length, 15);
     const t = tools.find(x => x.name === "propose_layout")!;
     assert.ok(t, "propose_layout publicada");
     assert.deepEqual(t.annotations, { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
     for (const w of ["SOLO LECTURA", "batches", "author_document", "LAYOUT_EXCEEDS_LIMITS", "coordMax", "clearWaypoints", "UNA página", "determinista"]) assert.ok(t.description!.includes(w), w);
     assert.deepEqual(Object.keys((t.inputSchema as any).properties).sort(), ["baseRevision", "clearWaypoints", "document", "pageIndex"]);
     assert.deepEqual((t.inputSchema as any).required, ["document"]);
-    // las 12 anteriores siguen ahí con su nombre
+    // las 11 anteriores que siguen vigentes (edit_diagram se retiró en 018.10) siguen ahí con su nombre
     const names = tools.map(x => x.name);
-    for (const n of ["create_diagram", "edit_diagram", "export_diagram", "list_icons", "list_colors", "list_anims", "list_fonts", "list_templates", "create_from_template", "describe_document", "run_story", "author_document"]) assert.ok(names.includes(n), n);
+    assert.ok(!names.includes("edit_diagram"));
+    for (const n of ["create_diagram", "export_diagram", "list_icons", "list_colors", "list_anims", "list_fonts", "list_templates", "create_from_template", "describe_document", "run_story", "author_document"]) assert.ok(names.includes(n), n);
   });
 
   it("list_colors aclara que author_document solo admite HEX", async () => {
@@ -261,14 +263,14 @@ describe("propose_layout: reutiliza el auto-layout existente (sin tercer motor)"
     assert.deepEqual(r.positions.map((p: any) => [p.id, p.x, p.y]), d.doc.pages[0].nodes.map((n: any) => [n.id, n.x, n.y]));
   });
 
-  it("coincide con edit_diagram.relayout sobre el mismo documento (misma función layoutPage)", () => {
+  it("coincide con layoutPage sobre el mismo documento, nodo a nodo (el motor que también usaba el relayout retirado)", () => {
     const scattered = createDiagram({ ...base, nodes: nodes.map((n, i) => ({ ...n, x: 100 + i * 13, y: 100 + i * 7 })), edges });
-    const relaid = editDiagram({ document: scattered, operations: [{ op: "relayout" } as any] });
     const r: any = proposeLayout({ document: scattered });
     assert.equal(r.ok, true);
     assert.ok(r.summary.moved > 0);
-    assert.deepEqual(r.positions.map((p: any) => [p.id, p.x, p.y]), relaid.doc.pages[0].nodes.map((n: any) => [n.id, n.x, n.y]));
-    assert.deepEqual(layoutPage(scattered.doc.pages[0] as any).get(1), { x: r.positions[0].x, y: r.positions[0].y });
+    const engine = layoutPage(scattered.doc.pages[0] as any);
+    assert.equal(r.positions.length, scattered.doc.pages[0].nodes.length);
+    assert.deepEqual(r.positions.map((p: any) => [p.id, p.x, p.y]), scattered.doc.pages[0].nodes.map((n: any) => [n.id, engine.get(n.id)!.x, engine.get(n.id)!.y]));
   });
 });
 
@@ -512,7 +514,7 @@ describe("propose_layout: errores estructurados (nunca TypeError)", () => {
   });
 });
 
-describe("servidor real por stdio: 16 tools y propose_layout de punta a punta", () => {
+describe("servidor real por stdio: 15 tools y propose_layout de punta a punta", () => {
   let client: Client;
   before(async () => {
     client = new Client({ name: "fluyo-018-6", version: "0.0.0" });
@@ -520,9 +522,9 @@ describe("servidor real por stdio: 16 tools y propose_layout de punta a punta", 
   });
   after(async () => { await client?.close(); });
 
-  it("tools/list = 16; describe → propose_layout → author_document; LAYOUT_EXCEEDS_LIMITS sin trazas", async () => {
+  it("tools/list = 15; describe → propose_layout → author_document; LAYOUT_EXCEEDS_LIMITS sin trazas", async () => {
     const { tools } = await client.listTools();
-    assert.equal(tools.length, 16);
+    assert.equal(tools.length, 15);
     assert.ok(tools.some(t => t.name === "propose_layout"));
     const mk = [N(0, {}, { ref: "a" }), N(0, {}, { ref: "b" }), N(0, {}, { ref: "c" }), C(0, R("a"), R("b"), { label: "x" }), C(0, R("b"), R("c"))];
     const d0 = documentOf(await client.callTool({ name: "describe_document", arguments: { document: empty() } }));

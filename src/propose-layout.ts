@@ -6,7 +6,7 @@ import { normalizeWith, revisionOfProject } from "./revision.js";
 /**
  * propose_layout (FLUYO-018.6): auto-layout como herramienta de LECTURA.
  *
- * Calcula con el auto-layout existente (`layoutPage` → `layeredLayout`, el mismo de create_diagram y edit_diagram.relayout: no hay otro motor)
+ * Calcula con el auto-layout existente (`layoutPage` → `layeredLayout`, el mismo de create_diagram: no hay otro motor)
  * dónde pondría los nodos de UNA página y devuelve lotes `author_document` (update_node {x,y}, y update_connection {waypoints:[]} para las
  * conexiones con ruta manual cuyos extremos se mueven) que el agente aplica tal cual. No modifica nada, no guarda estado y es determinista.
  * Quien valida y escribe sigue siendo author_document (kernel: integridad, límites, baseRevision, todo o nada). Los límites salen del kernel

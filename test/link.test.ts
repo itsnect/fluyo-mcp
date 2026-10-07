@@ -23,6 +23,8 @@ import { inflateRawSync } from "node:zlib";
 
 import { DEFAULT_APP_URL, MAX_LINK_CHARS, buildOpenLink } from "../src/link.js";
 import { createDiagram } from "../src/diagram.js";
+import { createKernel } from "../src/kernel.js";
+import { revisionOf } from "../src/revision.js";
 import {
   documentOf,
   loadFixtures,
@@ -32,6 +34,7 @@ import {
 } from "./helpers.js";
 
 let h: Harness;
+const rev = (doc: unknown): string => revisionOf(createKernel(), doc) as string;
 before(async () => { h = await startHarness(); });
 after(async () => { await h?.close(); });
 
@@ -175,23 +178,32 @@ describe("un diagrama que no cabe en una URL", () => {
     assert.equal(buildOpenLink(conImagenGrande(), {}), null);
   });
 
-  it("y la tool lo explica, sin dejar de devolver el JSON", async () => {
+  /* Hasta 018.10 este caso editaba conImagenGrande() con edit_diagram, cuyo zod laxo aceptaba esos bytes de ruido como imagen. La
+     edición es ahora author_document, que lee el documento con el kernel (como el editor) y rechaza una imagen que no es una imagen;
+     así que el documento que no cabe es uno VÁLIDO: etiquetas largas sin repetición (las imágenes reales también lo provocan). */
+  it("y la tool lo explica, sin dejar de devolver el JSON (author_document, 018.10)", async () => {
+    const RUIDO = ruido(120 * 480);
+    const base = documentOf(await h.client.callTool({ name: "create_diagram", arguments: {
+      nodes: Array.from({ length: 120 }, (_, i) => ({ key: `n${i}`, shape: "rect", x: (i % 12) * 220, y: Math.floor(i / 12) * 120, label: RUIDO.slice(i * 480, (i + 1) * 480) })),
+    } }));
+    assert.match(textBlocks(await h.client.callTool({ name: "create_diagram", arguments: { nodes: [{ key: "a", shape: "rect" }] } }))[0], /#d=/, "control: uno pequeño sí lleva enlace");
     const res = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: conImagenGrande(), operations: [{ op: "rename_page", name: "Con foto" }] },
+      name: "author_document",
+      arguments: { document: base, baseRevision: rev(base), operations: [{ op: "rename_page", scope: "document", pageIndex: 0, name: "Con foto" }] },
     });
     const [resumen] = textBlocks(res);
     assert.ok(!resumen.includes("#d="), "emitió un enlace que no debería caber");
     assert.match(resumen, /no cabe en un enlace/i);
     assert.match(resumen, /image/, "no dice cuál es la causa habitual");
-    assert.equal(documentOf(res).doc.pages[0].name, "Con foto", "el diagrama sí salió");
+    assert.equal(documentOf(res).document.doc.pages[0].name, "Con foto", "el diagrama sí salió");
+    assert.equal(documentOf(res).editorUrlError.code, "LINK_TOO_LARGE");
   });
 });
 
 /* ===================== Integración con las tools ===================== */
 
 describe("el enlace en la respuesta de las tools", () => {
-  const CON_ENLACE = ["create_diagram", "edit_diagram", "create_from_template"];
+  const CON_ENLACE = ["create_diagram", "author_document", "create_from_template"];
 
   it("las tres tools que devuelven documento traen enlace en el resumen", async () => {
     const base = await h.client.callTool({ name: "create_diagram", arguments: DIAGRAMA_BASE });
@@ -199,9 +211,9 @@ describe("el enlace en la respuesta de las tools", () => {
 
     const respuestas: Record<string, unknown> = {
       create_diagram: base,
-      edit_diagram: await h.client.callTool({
-        name: "edit_diagram",
-        arguments: { document: doc, operations: [{ op: "rename_page", name: "Editado" }] },
+      author_document: await h.client.callTool({
+        name: "author_document",
+        arguments: { document: doc, baseRevision: rev(doc), operations: [{ op: "rename_page", scope: "document", pageIndex: 0, name: "Editado" }] },
       }),
       create_from_template: await h.client.callTool({
         name: "create_from_template",
@@ -216,12 +228,13 @@ describe("el enlace en la respuesta de las tools", () => {
     }
   });
 
-  it("el enlace de edit_diagram lleva el documento YA editado", async () => {
+  it("el enlace de author_document lleva el documento YA editado (antes, el de edit_diagram)", async () => {
     const base = documentOf(await h.client.callTool({ name: "create_diagram", arguments: DIAGRAMA_BASE }));
     const res = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: base, operations: [{ op: "rename_page", name: "Después" }] },
+      name: "author_document",
+      arguments: { document: base, baseRevision: rev(base), operations: [{ op: "rename_page", scope: "document", pageIndex: 0, name: "Después" }] },
     });
+    assert.equal(/https?:\/\/\S+#d=[A-Za-z0-9\-_]+/.exec(textBlocks(res)[0])![0], documentOf(res).editorUrl);
     const url = /https?:\/\/\S+#d=[A-Za-z0-9\-_]+/.exec(textBlocks(res)[0])![0];
     const { doc } = leerEnlace(url);
     assert.equal((doc as any).doc.pages[0].name, "Después");
@@ -256,20 +269,24 @@ describe("meta.generator", () => {
   it("un documento ajeno NO se firma al editarlo", async () => {
     const ajeno = loadFixtures()[0].doc;
     const res = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: ajeno, operations: [{ op: "rename_page", name: "Tocado" }] },
+      name: "author_document",
+      arguments: { document: ajeno, baseRevision: rev(ajeno), operations: [{ op: "rename_page", scope: "document", pageIndex: 0, name: "Tocado" }] },
     });
-    assert.equal("meta" in documentOf(res), false);
+    assert.equal("meta" in documentOf(res).document, false);
   });
 
-  /** Pero si venía firmado (un documento creado antes de FLUYO-018.9), la marca sobrevive: es el
-   *  `.passthrough()` de los schemas de edit_diagram (legacy, sin cambios) haciendo su trabajo. */
-  it("y si venía firmado, la marca sobrevive a edit_diagram", async () => {
+  /** Un documento firmado antes de FLUYO-018.9 se sigue abriendo y editando. Con edit_diagram (retirada en 018.10) la marca
+   *  sobrevivía por el passthrough; author_document devuelve el documento normalizado del editor (decisión de 017.2), que no la
+   *  lleva: lo mismo que hace la app al guardarlo. */
+  it("y si venía firmado, se edita igual y sale normalizado como lo guarda el editor (sin meta)", async () => {
     const doc = { ...documentOf(await h.client.callTool({ name: "create_diagram", arguments: DIAGRAMA_BASE })), meta: { generator: "fluyo-mcp" } };
     const res = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: doc, operations: [{ op: "rename_page", name: "Editado" }] },
+      name: "author_document",
+      arguments: { document: doc, baseRevision: rev(doc), operations: [{ op: "rename_page", scope: "document", pageIndex: 0, name: "Editado" }] },
     });
-    assert.deepEqual(documentOf(res).meta, { generator: "fluyo-mcp" });
+    const j = documentOf(res);
+    assert.equal(j.ok, true);
+    assert.equal(j.document.doc.pages[0].name, "Editado");
+    assert.equal("meta" in j.document, false);
   });
 });

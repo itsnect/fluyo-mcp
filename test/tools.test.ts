@@ -7,7 +7,9 @@
  * por la aplicación, que es donde estaban los fallos reales.
  *
  * El caso «preserva el estilo» del final es el que cubre ese hueco: mete una
- * fixture real por `edit_diagram` y comprueba que sale intacta.
+ * fixture real por la ruta de edición (`author_document` desde FLUYO-018.10, que
+ * retiró `edit_diagram`) y comprueba que solo cambia lo pedido respecto a lo que
+ * la app tendría al abrirla (el documento normalizado).
  */
 
 import { describe, it, before, after } from "node:test";
@@ -15,6 +17,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
 import { FONTS } from "../src/generated/config.js";
+import { createKernel } from "../src/kernel.js";
+import { normalizeWith, revisionOf } from "../src/revision.js";
 import { join } from "node:path";
 
 import {
@@ -34,11 +38,22 @@ let h: Harness;
 before(async () => { h = await startHarness(); });
 after(async () => { await h?.close(); });
 
+/* La ruta de edición (FLUYO-018.10): author_document con baseRevision. normalized = el documento tal como lo abre la app. */
+const rev = (doc: unknown): string => revisionOf(createKernel(), doc) as string;
+const normalized = (doc: unknown): any => normalizeWith(createKernel(), doc);
+const edit = (document: unknown, operations: unknown[]) =>
+  h.client.callTool({ name: "author_document", arguments: { document, baseRevision: rev(document), operations } });
+const editedDoc = async (document: unknown, operations: unknown[]) => {
+  const r = await edit(document, operations);
+  assert.ok(!isToolError(r), textOf(r));
+  return documentOf(r).document;
+};
+const RENAME = (name: string) => ({ op: "rename_page", scope: "document", pageIndex: 0, name });
+
 /* ===================== Superficie publicada ===================== */
 
 const TOOLS_ESPERADAS = [
   "create_diagram",
-  "edit_diagram",
   "export_diagram",
   "list_icons",
   "list_colors",
@@ -66,7 +81,7 @@ describe("identidad del servidor", () => {
 });
 
 describe("lo que ve un cliente en tools/list", () => {
-  it("están las dieciséis tools", async () => {
+  it("están las quince tools (edit_diagram retirada en 018.10)", async () => {
     const { tools } = await h.client.listTools();
     assert.deepEqual(tools.map(t => t.name).sort(), [...TOOLS_ESPERADAS].sort());
   });
@@ -80,7 +95,7 @@ describe("lo que ve un cliente en tools/list", () => {
   });
 
   /** Los directorios usan las annotations para decidir qué avisar al usuario.
-   *  Las dieciséis son funciones puras, así que el juego es uniforme. */
+   *  Las quince son funciones puras, así que el juego es uniforme. */
   it("todas declaran annotations de función pura", async () => {
     const { tools } = await h.client.listTools();
     for (const t of tools) {
@@ -252,19 +267,17 @@ describe("create_diagram", () => {
   it("el documento que produce vuelve a entrar sin pérdida", async () => {
     const r = await h.client.callTool({ name: "create_diagram", arguments: args });
     const created = documentOf(r);
-    const again = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: created, operations: [{ op: "rename_page", name: created.doc.pages[0].name }] },
-    });
+    const again = await edit(created, [RENAME(created.doc.pages[0].name)]);
     assert.ok(!isToolError(again), textOf(again));
-    const diffs = collectDiffs(created, documentOf(again));
+    assert.equal(documentOf(again).changed, false, "renombrar con el mismo nombre no cambia nada");
+    const diffs = collectDiffs(created, documentOf(again).document);
     assert.equal(diffs.length, 0, `create → edit no es lossless:\n${summarizeDiffs(diffs)}\n`);
   });
 });
 
-/* ===================== edit_diagram ===================== */
+/* ===================== Editar (lo que hacía edit_diagram, por author_document) ===================== */
 
-describe("edit_diagram", () => {
+describe("editar un documento con author_document (sustituto de edit_diagram)", () => {
   async function baseDocument() {
     const r = await h.client.callTool({
       name: "create_diagram",
@@ -281,47 +294,34 @@ describe("edit_diagram", () => {
     return documentOf(r);
   }
 
-  it("aplica add_node, add_edge, update_node y relayout en orden", async () => {
+  it("crea un nodo y una conexión, modifica otro y reordena con propose_layout (antes: add_node, add_edge, update_node, relayout)", async () => {
     const doc = await baseDocument();
-    const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: {
-        document: doc,
-        operations: [
-          { op: "add_node", key: "monitor", shape: "icon", icon: "ai", label: "Monitoreo", color: "IA" },
-          { op: "add_edge", from: 3, to: "monitor", label: "métricas" },
-          { op: "update_node", id: 1, label: "Gateway v2", pulse: true },
-          { op: "relayout" },
-        ],
-      },
-    });
-    assert.ok(!isToolError(r), textOf(r));
-    const page = documentOf(r).doc.pages[0];
-    assert.equal(page.nodes.length, 4, "add_node debe sumar un nodo");
-    assert.equal(page.edges.length, 3, "add_edge debe sumar una arista");
+    const edited = await editedDoc(doc, [
+      { op: "create_node", scope: "page", pageIndex: 0, ref: "monitor", spec: { shape: "icon", icon: "ai", label: "Monitoreo", color: "#9b7fb5", x: 0, y: 0 } },
+      { op: "create_connection", scope: "page", pageIndex: 0, source: { id: 3 }, target: { ref: "monitor" }, spec: { label: "métricas" } },
+      { op: "update_node", scope: "page", pageIndex: 0, node: { id: 1 }, spec: { label: "Gateway v2", pulse: true } },
+    ]);
+    const plan = documentOf(await h.client.callTool({ name: "propose_layout", arguments: { document: edited } }));
+    assert.equal(plan.ok, true);
+    let out = edited;
+    for (const b of plan.batches) out = await editedDoc(out, b.operations);
+    const page = out.doc.pages[0];
+    assert.equal(page.nodes.length, 4, "create_node debe sumar un nodo");
+    assert.equal(page.edges.length, 3, "create_connection debe sumar una conexión");
     const gw = page.nodes.find((n: any) => n.id === 1);
     assert.equal(gw.label, "Gateway v2");
     assert.equal(gw.pulse, true);
+    assert.deepEqual(page.nodes.map((n: any) => [n.id, n.x, n.y]), plan.positions.map((q: any) => [q.id, q.x, q.y]), "las posiciones son las propuestas");
   });
 
-  it("remove_node arrastra sus aristas", async () => {
-    const doc = await baseDocument();
-    const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: doc, operations: [{ op: "remove_node", id: 2 }] },
-    });
-    const page = documentOf(r).doc.pages[0];
+  it("delete_node arrastra sus conexiones (antes: remove_node)", async () => {
+    const page = (await editedDoc(await baseDocument(), [{ op: "delete_node", scope: "page", pageIndex: 0, node: { id: 2 } }])).doc.pages[0];
     assert.equal(page.nodes.length, 2);
-    assert.equal(page.edges.length, 0, "las dos aristas tocaban el nodo 2");
+    assert.equal(page.edges.length, 0, "las dos conexiones tocaban el nodo 2");
   });
 
   it("set_theme cambia el tema del documento", async () => {
-    const doc = await baseDocument();
-    const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: doc, operations: [{ op: "set_theme", theme: "crema" }] },
-    });
-    assert.equal(documentOf(r).doc.theme, "crema");
+    assert.equal((await editedDoc(await baseDocument(), [{ op: "set_theme", scope: "document", theme: "crema" }])).doc.theme, "crema");
   });
 });
 
@@ -408,12 +408,10 @@ describe("errores accionables", () => {
       name: "create_diagram",
       arguments: { nodes: [{ key: "a", shape: "rect", label: "A" }] },
     });
-    const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: documentOf(created), operations: [{ op: "update_node", id: 9999, label: "x" }] },
-    });
+    const r = await edit(documentOf(created), [{ op: "update_node", scope: "page", pageIndex: 0, node: { id: 9999 }, spec: { label: "x" } }]);
     assert.ok(isToolError(r));
     assert.match(textOf(r), /9999/);
+    assert.equal(documentOf(r).errors[0].code, "NODE_NOT_FOUND");
   });
 
   it("un pageIndex fuera de rango dice cuántas páginas hay", async () => {
@@ -473,43 +471,41 @@ describe("un documento inválido se explica en prosa, no con un volcado de Zod",
     assert.match(textOf(r), /expected object/i);
   });
 
-  it("edit_diagram sobre un documento roto tampoco filtra Zod", async () => {
+  it("editar un documento roto tampoco filtra Zod: author_document lo rechaza estructurado y export_diagram señala la ruta", async () => {
     const doc: any = loadFixture("kafka-event-pipeline.fluyo.json");
     doc.doc.pages[0].nodes[0].x = "no soy un número";
 
     const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: doc, operations: [{ op: "rename_page", name: "x" }] },
+      name: "author_document",
+      arguments: { document: doc, baseRevision: "sha256:" + "0".repeat(64), operations: [RENAME("x")] },
     });
     assert.ok(isToolError(r));
-    assert.match(textOf(r), /doc\.pages\[0\]\.nodes\[0\]\.x/, "debe señalar la ruta del campo malo");
-    assert.doesNotMatch(textOf(r), /"code":/, "no debe filtrar el JSON de issues de Zod");
+    assert.equal(documentOf(r).errors[0].code, "DOCUMENT_UNREADABLE");
+    assert.doesNotMatch(textOf(r), /"path":|invalid_type/, "no debe filtrar el JSON de issues de Zod");
+    const e = await h.client.callTool({ name: "export_diagram", arguments: { document: doc } });
+    assert.ok(isToolError(e));
+    assert.match(textOf(e), /doc\.pages\[0\]\.nodes\[0\]\.x/, "debe señalar la ruta del campo malo");
+    assert.doesNotMatch(textOf(e), /"code":/, "no debe filtrar el JSON de issues de Zod");
   });
 });
 
 /* ===================== El caso que el smoke test antiguo no cubría ===================== */
 
-describe("un documento guardado por la app sobrevive a edit_diagram", () => {
+describe("un documento guardado por la app sobrevive a la edición (author_document; antes edit_diagram)", () => {
   it("preserva todo el estilo al renombrar la página", async () => {
     const original: any = loadFixture("kafka-event-pipeline.fluyo.json");
     const nombreOriginal = original.doc.pages[0].name;
 
-    const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: original, operations: [{ op: "rename_page", name: "Renombrada" }] },
-    });
-    assert.ok(!isToolError(r), textOf(r));
-
-    const salida = documentOf(r);
+    const salida = await editedDoc(original, [RENAME("Renombrada")]);
     assert.equal(salida.doc.pages[0].name, "Renombrada", "rename_page debe haber surtido efecto");
 
-    // Deshacemos el único cambio pedido: lo demás tiene que ser idéntico.
+    // Deshacemos el único cambio pedido: lo demás tiene que ser idéntico a lo que la app tendría al abrirlo.
     salida.doc.pages[0].name = nombreOriginal;
-    const diffs = collectDiffs(original, salida);
+    const diffs = collectDiffs(normalized(original), salida);
     assert.equal(
       diffs.length,
       0,
-      `edit_diagram alteró el documento más allá de lo pedido — ${diffs.length} diferencia(s):\n${summarizeDiffs(diffs)}\n`
+      `la edición alteró el documento más allá de lo pedido — ${diffs.length} diferencia(s):\n${summarizeDiffs(diffs)}\n`
     );
   });
 
@@ -520,15 +516,9 @@ describe("un documento guardado por la app sobrevive a edit_diagram", () => {
     const original: any = loadFixture(join("regresion-visual", "bloque-codigo.fluyo.json"));
     const nombreOriginal = original.doc.pages[0].name;
 
-    const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: original, operations: [{ op: "rename_page", name: "Renombrada" }] },
-    });
-    assert.ok(!isToolError(r), textOf(r));
-
-    const salida = documentOf(r);
+    const salida = await editedDoc(original, [RENAME("Renombrada")]);
     salida.doc.pages[0].name = nombreOriginal;
-    const diffs = collectDiffs(original, salida);
+    const diffs = collectDiffs(normalized(original), salida);
     assert.equal(
       diffs.length, 0,
       `el round-trip perdió o cambió campos de code — ${diffs.length} diferencia(s):\n${summarizeDiffs(diffs)}\n`
@@ -543,11 +533,9 @@ describe("un documento guardado por la app sobrevive a edit_diagram", () => {
     assert.equal(nodos[3].lang, "none");
   });
 
-  /* Los campos de `code` viven en DOS objetos de schema distintos —
-     `commonNodeFields` para create_diagram y `editNodeFields` para add_node y
-     update_node—, y añadirlos solo al primero dejaba crear un nodo de código
-     pero no editarlo. Esto lo fija por los dos caminos. */
-  it("add_node y update_node aceptan los campos de code", async () => {
+  /* Los campos de `code` se crean por create_diagram y se crean/editan por author_document (create_node,
+     update_node): que se pueda crear un nodo de código pero no editarlo sería una asimetría. Lo fija por los dos caminos. */
+  it("create_node y update_node aceptan los campos de code", async () => {
     const creado = await h.client.callTool({
       name: "create_diagram",
       arguments: {
@@ -561,21 +549,13 @@ describe("un documento guardado por la app sobrevive a edit_diagram", () => {
     assert.equal(doc1.doc.pages[0].nodes[0].lang, "none");
     assert.equal(doc1.doc.pages[0].nodes[0].kwBg, "#ffffff");
 
-    const editado = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: {
-        document: doc1,
-        operations: [
-          { op: "add_node", key: "b", shape: "code", label: "CREATE STREAM s", keywords: ["CREATE", "STREAM"], kwBg: "#a8b34a" },
-          { op: "update_node", id: doc1.doc.pages[0].nodes[0].id, lang: "sql", kwColor: "#111111" },
-        ],
-      },
-    });
-    assert.ok(!isToolError(editado), textOf(editado));
-    const nodos = documentOf(editado).doc.pages[0].nodes;
+    const nodos = (await editedDoc(doc1, [
+      { op: "create_node", scope: "page", pageIndex: 0, spec: { shape: "code", x: 400, y: 0, label: "CREATE STREAM s", keywords: ["CREATE", "STREAM"], kwBg: "#a8b34a" } },
+      { op: "update_node", scope: "page", pageIndex: 0, node: { id: doc1.doc.pages[0].nodes[0].id }, spec: { lang: "sql", kwColor: "#111111" } },
+    ])).doc.pages[0].nodes;
     assert.equal(nodos[0].lang, "sql", "update_node debe poder cambiar lang");
     assert.equal(nodos[0].kwColor, "#111111", "update_node debe poder cambiar kwColor");
-    assert.deepEqual(nodos[1].keywords, ["CREATE", "STREAM"], "add_node debe poder poner keywords");
+    assert.deepEqual(nodos[1].keywords, ["CREATE", "STREAM"], "create_node debe poder poner keywords");
     assert.equal(nodos[1].kwBg, "#a8b34a");
   });
 
@@ -585,11 +565,7 @@ describe("un documento guardado por la app sobrevive a edit_diagram", () => {
      de forma explícita para que se lea al revisar. */
   it("un documento sin campos de code no los gana en el round-trip", async () => {
     const original: any = loadFixture("microservicios-api-gateway.fluyo.json");
-    const r = await h.client.callTool({
-      name: "edit_diagram",
-      arguments: { document: original, operations: [{ op: "rename_page", name: "x" }] },
-    });
-    const salida = documentOf(r);
+    const salida = await editedDoc(original, [RENAME("x")]);
     for (const n of salida.doc.pages[0].nodes) {
       for (const campo of ["lang", "keywords", "kwBg", "kwColor"]) {
         assert.ok(!(campo in n), `el nodo ${n.id} ganó '${campo}' sin que nadie lo pidiera`);

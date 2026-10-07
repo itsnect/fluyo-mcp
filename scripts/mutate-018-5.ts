@@ -72,8 +72,8 @@ const MUTATIONS: Mutation[] = [
   M("describe_document publica coordMax distinto del kernel", STORIES, ["coordMax: FluyoAuthoring.LIMITS.coordMax,", "coordMax: 50000,"]),
   M("author_document pierde la comprobación de baseRevision", TS, ["if (actual !== input.baseRevision) {", "if (false) {"]),
   M("el dryRun devuelve documento", TS, ["...(input.dryRun ? {} : { document: result.project }),", "document: result.project,"]),
-  M("edit_diagram deja de figurar como legacy", SERVER, ["LEGACY: se mantiene sin cambios por compatibilidad.", "Se mantiene sin cambios por compatibilidad."]),
-  M("el BorderSchema legacy se modifica (edit_diagram admitiría none)", MODELTS, ["export const BorderSchema = z.enum([\"solid\", \"dashed\", \"dotted\"]);", "export const BorderSchema = z.enum([\"solid\", \"dashed\", \"dotted\", \"none\"]);"]),
+  /* FLUYO-018.10: retiradas las 2 mutaciones sobre edit_diagram LEGACY («deja de figurar como legacy», «BorderSchema legacy admite none»):
+     la tool ya no existe. Su invariante («no hay una segunda ruta de edición») lo vigilan test/fluyo-018-10.test.ts y scripts/mutate-018-10.ts. */
 ];
 
 

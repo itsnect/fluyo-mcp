@@ -8,7 +8,7 @@
  *   · no retroactividad: un documento antiguo que los excede o con colores/iconos «inválidos» se abre, describe y edita;
  *   · atomicidad, dryRun, baseRevision, resultRevision determinista; las 8 plantillas;
  *   · PARIDAD: el documento que construyó el editor real (golden de Fluyo) == el de author_document;
- *   · edit_diagram sigue siendo LEGACY y no cambia; el servidor real por stdio.
+ *   · (hasta 018.9: edit_diagram LEGACY sin cambios; retirada en FLUYO-018.10) el servidor real por stdio.
  */
 
 import { describe, it, before, after } from "node:test";
@@ -101,30 +101,14 @@ describe("contrato: schema, describe_document y herramientas", () => {
     assert.deepEqual(createKernel().call("FluyoAuthoring.LIMITS"), { coordMax: d.capabilities.limits.coordMax, sizeMin: d.capabilities.limits.sizeMin, sizeMax: d.capabilities.limits.sizeMax, maxNodesPerPage: 300, maxConnectionsPerPage: 600 });
   });
 
-  it("la descripción de author_document documenta páginas, reglas y límites; edit_diagram figura como LEGACY", async () => {
+  it("la descripción de author_document documenta páginas, reglas y límites; edit_diagram ya no existe (retirada en 018.10)", async () => {
     const tools = (await h.client.listTools()).tools;
     const a = tools.find(t => t.name === "author_document")!.description!;
-    for (const w of ["create_page", "rename_page", "HEX", "LIMIT_EXCEEDED", "maxNodesPerPage", "coordMax", "edit_diagram es LEGACY"]) assert.ok(a.includes(w), w);
-    const e = tools.find(t => t.name === "edit_diagram")!.description!;
-    assert.match(e, /LEGACY/);
-    assert.match(e, /author_document/);
-    assert.equal(tools.length, 16, "12 de 018.5 + propose_layout (018.6) + set_theme, reorder_nodes, duplicate_node (018.7a)");
+    for (const w of ["create_page", "rename_page", "HEX", "LIMIT_EXCEEDED", "maxNodesPerPage", "coordMax"]) assert.ok(a.includes(w), w);
+    assert.doesNotMatch(a, /edit_diagram/);
+    assert.equal(tools.find(t => t.name === "edit_diagram"), undefined);
+    assert.equal(tools.length, 15, "12 de 018.5 + propose_layout (018.6) + set_theme, reorder_nodes, duplicate_node (018.7a) − edit_diagram (018.10)");
     assert.ok(JSON.stringify(tools).length < 72_000); // 018.6: +propose_layout (62 000); 018.7a: +3 tools (70 000); 018.7c: +delete_page (72 000)
-  });
-
-  it("edit_diagram (legacy) NO cambia: sus operaciones, su schema de borde y su resultado", async () => {
-    const doc = loadFixtures()[0].doc;
-    const r = await call("edit_diagram", { document: doc, operations: [{ op: "add_node", key: "k", shape: "rect", x: 10, y: 10, label: "legacy" }, { op: "rename_page", name: "Renombrada" }] });
-    assert.equal(isToolError(r), false);
-    const out = documentOf(r);
-    assert.equal(out.doc.pages[out.doc.cur].name, "Renombrada");
-    assert.equal(out.doc.pages[out.doc.cur].nodes.at(-1).label, "legacy");
-    // el borde «none» NO se añade a edit_diagram (BorderSchema legacy intacto)
-    const addWith = (border: string) => call("edit_diagram", { document: doc, operations: [{ op: "add_node", key: "b", shape: "rect", x: 0, y: 0, border }] });
-    assert.equal(isToolError(await addWith("dotted")), false, "el control: con una clave válida y un borde del schema legacy funciona");
-    const none = await addWith("none");
-    assert.equal(isToolError(none), true);
-    assert.match(textOf(none), /border/);
   });
 });
 
