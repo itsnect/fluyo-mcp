@@ -3,10 +3,11 @@ import { z } from "zod";
 
 import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from "./schema.js";
 import { CreateDiagramInputShape, DocumentInputSchema, OperationSchema, ThemeSchema } from "./model.js";
-import { createDiagram, editDiagram, parseDocument } from "./diagram.js";
+import { createDiagramResult, createFromTemplateResult, editDiagram, parseDocument, type CreateDiagramResult } from "./diagram.js";
+import type { FluyoProject } from "./model.js";
 import { pageToSVG } from "./svg.js";
 import { MAX_LINK_CHARS, buildOpenLink } from "./link.js";
-import { TEMPLATES, assertOverridableKeys, getTemplate } from "./templates.js";
+import { TEMPLATES } from "./templates.js";
 import { describeDocument, runStory, summarizeDescription, summarizeRun } from "./stories.js";
 import { AuthoringOperationSchema, DuplicateFields, ThemeFields, ZPlacement, authorDocument, authorSingle, summarizeAuthoring } from "./authoring.js";
 import { proposeLayout, summarizeLayout } from "./propose-layout.js";
@@ -37,7 +38,7 @@ function fail(err: unknown): ToolResult {
   const message = err instanceof Error ? err.message : String(err);
   return { content: [{ type: "text", text: `Error: ${message}` }], isError: true };
 }
-function summarize(project: ReturnType<typeof createDiagram>): string {
+function summarize(project: FluyoProject): string {
   const page = project.doc.pages[project.doc.cur] ?? project.doc.pages[0];
   return `Diagrama "${page.name}" — ${page.nodes.length} nodo(s), ${page.edges.length} arista(s), tema "${project.doc.theme}".`;
 }
@@ -52,7 +53,7 @@ function summarize(project: ReturnType<typeof createDiagram>): string {
  * Cuando no cabe, se dice por qué y qué hacer, en vez de callarse. El JSON sale
  * igual: el diagrama es perfectamente válido, lo que no cabe es la URL.
  */
-function summarizeWithLink(project: ReturnType<typeof createDiagram>): string {
+function summarizeWithLink(project: FluyoProject): string {
   const link = buildOpenLink(project);
   if (link) return `${summarize(project)}\nÁbrelo animado en Fluyo: ${link}`;
   return (
@@ -62,6 +63,14 @@ function summarizeWithLink(project: ReturnType<typeof createDiagram>): string {
     "uno solo puede pesar más que un diagrama de cien nodos. " +
     "Guarda el JSON de abajo como .fluyo.json y ábrelo en Fluyo con «Abrir»."
   );
+}
+
+/** create_diagram / create_from_template (FLUYO-018.9): el documento v5 del dominio, o el rechazo estructurado con la misma forma
+ *  que author_document ([resumen, JSON {ok:false, errors…}], isError) y sin documento. */
+function createdOrRejected(r: CreateDiagramResult): ToolResult {
+  if (r.ok) return ok(summarizeWithLink(r.project), JSON.stringify(r.project, null, 2));
+  const first = r.errors[0] ?? { code: "ERROR", message: "" };
+  return { ...ok(`Diagrama RECHAZADO (${first.code}): ${first.message} No se devuelve ningún documento.`, JSON.stringify(r, null, 2)), isError: true };
 }
 
 /** Registra las herramientas de Fluyo sobre una instancia nueva de McpServer. Separado de
@@ -83,14 +92,14 @@ server.registerTool(
       "Si un nodo no trae x/y, se posiciona automáticamente en capas de izquierda a derecha según las aristas (auto-layout). " +
       "La respuesta trae un enlace fluyo.space/#d=… que abre el diagrama YA ANIMADO en la app: dáselo al usuario, " +
       "es la forma más rápida de que vea el resultado y no requiere guardar ningún archivo. " +
-      "El JSON también se puede guardar como .fluyo.json y abrir con «Abrir», seguir editando con edit_diagram o exportar con export_diagram. " +
+      "El JSON es el documento v5 del editor (mismos defaults, ids y revisión que crearlo con author_document): se puede guardar como .fluyo.json, seguir editando con author_document o exportar con export_diagram. " +
+      "Colores: nombre de list_colors o HEX. Valen las reglas y límites de author_document (HEX, catálogos, auto-lazo, capabilities.limits, página 1–80): si algo no cumple se rechaza TODO con errores estructurados (code, field, input = nodes[i]/edges[j]) y sin documento. " +
       "Usa list_icons para ver íconos válidos y list_templates si el patrón ya existe como plantilla.",
     inputSchema: CreateDiagramInputShape,
   },
   async (input) => {
     try {
-      const project = createDiagram(input);
-      return ok(summarizeWithLink(project), JSON.stringify(project, null, 2));
+      return createdOrRejected(createDiagramResult(input));
     } catch (err) {
       return fail(err);
     }
@@ -280,7 +289,7 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Instancia uno de los templates de list_templates como un documento Fluyo completo, con auto-layout aplicado. " +
-      "Se pueden personalizar los labels de los nodos vía 'labelOverrides' (mapa key -> nuevo texto). " +
+      "Se pueden personalizar los labels de los nodos vía 'labelOverrides' (mapa key -> nuevo texto). Sigue la misma ruta y reglas que create_diagram (documento v5 del editor). " +
       "La respuesta trae un enlace fluyo.space/#d=… que abre el diagrama animado en la app.",
     inputSchema: {
       templateId: z.string(),
@@ -291,23 +300,7 @@ server.registerTool(
   },
   async ({ templateId, pageName, theme, labelOverrides }) => {
     try {
-      const tpl = getTemplate(templateId);
-      assertOverridableKeys(tpl, labelOverrides);
-      const { nodes, edges, suggestedTheme, suggestedPageName } = tpl.build(labelOverrides);
-      const project = createDiagram({
-        pageName: pageName ?? suggestedPageName,
-        theme: theme ?? suggestedTheme,
-        grid: true,
-        build: false,
-        autoLayout: true,
-        speed: 0.5,
-        dots: 3,
-        stagger: 0.45,
-        single: false,
-        nodes,
-        edges,
-      });
-      return ok(summarizeWithLink(project), JSON.stringify(project, null, 2));
+      return createdOrRejected(createFromTemplateResult({ templateId, pageName, theme, labelOverrides }));
     } catch (err) {
       return fail(err);
     }

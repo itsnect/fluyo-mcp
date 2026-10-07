@@ -10,7 +10,7 @@ No necesita backend. Es una capa delgada sobre el modelo de documento de Fluyo, 
 
 | Tool | Para qué |
 |---|---|
-| `create_diagram` | Texto → diagrama. Nodos y aristas; si no das `x`/`y`, aplica auto-layout por capas. |
+| `create_diagram` | Texto → diagrama. Nodos y aristas; si no das `x`/`y`, aplica auto-layout por capas. Devuelve el documento **v5 del editor** (mismas reglas que `author_document`; ver «create_diagram y create_from_template por el dominio»). |
 | `edit_diagram` | Modifica un documento existente con operaciones (añadir, actualizar, borrar, cambiar tema, recalcular layout). |
 | `export_diagram` | Renderiza una página a SVG estático. |
 | `list_templates` / `create_from_template` | Instancia patrones de arquitectura predefinidos (Kafka, RAG, microservicios) con reemplazo de etiquetas. |
@@ -187,7 +187,37 @@ El modelo llamará a `create_diagram` con algo así:
 
 El resultado es un `.fluyo.json` completo, y el resumen de la respuesta trae un enlace
 `fluyo.space/#d=…` que lo abre **ya animado** en la app, sin guardar ningún archivo. También se
-puede guardar el JSON y abrirlo con el botón **Abrir**, o seguir editándolo con `edit_diagram`.
+puede guardar el JSON y abrirlo con el botón **Abrir**, o seguir editándolo con `author_document`
+(la `revision` sale de `describe_document`).
+
+### `create_diagram` y `create_from_template` por el dominio (FLUYO-018.9)
+
+Las dos tools son **adaptadores de entrada**: no construyen el documento. Traducen su contrato
+(`key` → refs del lote, nombres de color → HEX, auto-layout para los nodos sin `x`/`y`) a operaciones
+de `author_document` (`rename_page`, `set_theme`, `create_node`, `create_connection`) sobre el
+**documento en blanco del editor** (con los ajustes pedidos, normalizados por la carga del editor) y
+las aplica `FluyoAuthoring` —las mismas funciones que el editor— en lotes de ≤200 encadenados.
+
+- **Salida:** documento **v5** canónico, el mismo byte a byte (y con la misma `revision`) que construir
+  ese diagrama con `author_document`. Sin `meta.generator` (nada lo leía y el editor lo descartaba al
+  guardar), sin claves heredadas (`fs`, `lineColor`, `dotColor` solo si se piden) y con los defaults del
+  dominio (p. ej. `code` nace con el SQL de ejemplo y `lang`, `keywords`, `kwBg`, `kwColor`).
+- **Colores:** los nombres de `list_colors` (sin distinguir mayúsculas ni acentos) solo existen en la
+  entrada de estas dos tools y se traducen a HEX antes del dominio; cualquier otro valor lo valida el
+  kernel (`#rgb`, `#rrggbb`, `#rrggbbaa`; `fill` admite `"none"`). El documento solo contiene HEX.
+- **Reglas y límites del dominio** (más estrictos que antes): auto-lazo (`SELF_LOOP`), 300 nodos y 600
+  conexiones por página, `|x|,|y| ≤ 100000`, `w/h` entre 10 y 5000 (`LIMIT_EXCEEDED`), nombre de página
+  de 1 a 80 caracteres (`INVALID_NAME`), HEX inválido o `customBg` que no es HEX (`INVALID_FIELD`),
+  icono/GIF desconocido. Nada se recorta en silencio.
+- **Ajustes:** `speed` 0,2–2 y `stagger` 0,2–1,2 (los rangos de los controles del editor; fuera, el
+  schema rechaza); una tipografía global que el editor no conoce es `INVALID_FIELD font`. Lo omitido
+  (página, tema, ajustes) toma el valor del documento en blanco del editor.
+- **Errores estructurados** como los de `author_document`: `[resumen, JSON {ok:false, valid:false,
+  errors:[{code, message, field, input, key?…}]}]`, `isError`, sin documento. `input` señala la entrada
+  (`nodes[i]`, `edges[j]`, `pageName`, `customBg`, `font`…). Las `key` repetidas son `DUPLICATE_REF` y
+  una arista hacia una `key` inexistente `UNKNOWN_REF`; en `create_from_template`, `TEMPLATE_NOT_FOUND`
+  e `INVALID_FIELD` (`labelOverrides.<clave>`).
+- Los campos desconocidos de la entrada se siguen ignorando, como antes.
 
 ---
 
@@ -516,7 +546,8 @@ test/
   tools.test.ts     # Flujo extremo a extremo de las 11 tools
   render.test.ts    # El SVG cuadra con el que produce la app
   http.test.ts      # Handshake por HTTP, paridad con stdio, seguridad y privacidad del log
-  link.test.ts      # Formato del enlace, tope de tamaño y firma meta.generator
+  link.test.ts      # Formato del enlace, tope de tamaño; lo creado ya no lleva meta.generator (018.9)
+  fluyo-018-9.test.ts # create_diagram/create_from_template = dominio (golden, reglas, errores, stdio)
   fixtures/         # Copias de fluyo/ejemplos/ (datos y previews de referencia)
 ```
 

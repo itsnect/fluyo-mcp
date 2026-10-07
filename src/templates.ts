@@ -121,24 +121,25 @@ const microservicesGateway: TemplateDef = {
 
 export const TEMPLATES: TemplateDef[] = [eventDrivenPipeline, ragChatbot, microservicesGateway];
 
-export function getTemplate(id: string): TemplateDef {
-  const t = TEMPLATES.find(t => t.id === id);
-  if (!t) throw new Error(`Template desconocido: "${id}". Usa list_templates para ver los disponibles.`);
-  return t;
+export function findTemplate(id: string): TemplateDef | undefined {
+  return TEMPLATES.find(t => t.id === id);
 }
 
 /**
  * Una clave mal escrita en `labelOverrides` se ignoraba en silencio: el modelo
  * creía haber personalizado el diagrama y devolvía los labels por defecto. Como
  * `overridableKeys` ya existe, no hay excusa para no comprobarlo.
+ * (FLUYO-018.9: create_from_template lo devuelve como error estructurado INVALID_FIELD.)
  */
-export function assertOverridableKeys(tpl: TemplateDef, labelOverrides: Record<string, string>): void {
-  const desconocidas = Object.keys(labelOverrides).filter(k => !tpl.overridableKeys.includes(k));
-  if (!desconocidas.length) return;
+export function unknownOverrideKeys(tpl: TemplateDef, labelOverrides: Record<string, string>): string[] {
+  return Object.keys(labelOverrides).filter(k => !tpl.overridableKeys.includes(k));
+}
+
+export function unknownOverridesMessage(tpl: TemplateDef, desconocidas: string[]): string {
   const plural = desconocidas.length > 1;
-  throw new Error(
+  return (
     `${plural ? "Las claves" : "La clave"} ${desconocidas.map(k => `"${k}"`).join(", ")} de labelOverrides ` +
-      `no ${plural ? "existen" : "existe"} en el template "${tpl.id}". ` +
-      `Claves personalizables: ${tpl.overridableKeys.join(", ")}.`
+    `no ${plural ? "existen" : "existe"} en el template "${tpl.id}". ` +
+    `Claves personalizables: ${tpl.overridableKeys.join(", ")}.`
   );
 }

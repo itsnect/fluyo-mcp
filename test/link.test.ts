@@ -239,14 +239,16 @@ describe("el enlace en la respuesta de las tools", () => {
 /* ===================== Firma del generador ===================== */
 
 describe("meta.generator", () => {
-  it("lo que se CREA aquí queda firmado", async () => {
+  /** FLUYO-018.9 (D2): nada en Fluyo lo leía y el editor lo descartaba al guardar. Lo creado aquí es el
+   *  documento v5 del dominio, que no lleva `meta`. */
+  it("lo que se CREA aquí ya no se firma: es el documento v5 del dominio", async () => {
     const doc = documentOf(await h.client.callTool({ name: "create_diagram", arguments: DIAGRAMA_BASE }));
-    assert.deepEqual(doc.meta, { generator: "fluyo-mcp" });
+    assert.equal("meta" in doc, false);
 
     const tpl = documentOf(await h.client.callTool({
       name: "create_from_template", arguments: { templateId: "event_driven_pipeline" },
     }));
-    assert.deepEqual(tpl.meta, { generator: "fluyo-mcp" });
+    assert.equal("meta" in tpl, false);
   });
 
   /** Editar no es crear. Un documento que llega sin marca sale sin marca: lo
@@ -260,11 +262,10 @@ describe("meta.generator", () => {
     assert.equal("meta" in documentOf(res), false);
   });
 
-  /** Pero si venía firmado, la marca sobrevive: es el `.passthrough()` de los
-   *  schemas haciendo su trabajo, y es lo que permite que un create + edit
-   *  siga contando como diagrama nacido aquí. */
+  /** Pero si venía firmado (un documento creado antes de FLUYO-018.9), la marca sobrevive: es el
+   *  `.passthrough()` de los schemas de edit_diagram (legacy, sin cambios) haciendo su trabajo. */
   it("y si venía firmado, la marca sobrevive a edit_diagram", async () => {
-    const doc = documentOf(await h.client.callTool({ name: "create_diagram", arguments: DIAGRAMA_BASE }));
+    const doc = { ...documentOf(await h.client.callTool({ name: "create_diagram", arguments: DIAGRAMA_BASE })), meta: { generator: "fluyo-mcp" } };
     const res = await h.client.callTool({
       name: "edit_diagram",
       arguments: { document: doc, operations: [{ op: "rename_page", name: "Editado" }] },

@@ -378,7 +378,7 @@ describe("propose_layout: los lotes se aplican tal cual con author_document", ()
     assert.deepStrictEqual(out0.doc.pages[1], out1.doc.pages[1]);
   });
 
-  it("páginas vacías, de un nodo, nodos sueltos, ciclos y documentos v3 (create_diagram)", async () => {
+  it("páginas vacías, de un nodo, nodos sueltos, ciclos y documentos v3 (la salida v5 de create_diagram con version:3)", async () => {
     const emptyP = await proposeJson(empty());
     assert.deepEqual([emptyP.ok, emptyP.summary.nodes, emptyP.batches, emptyP.positions], [true, 0, [], []]);
     assert.equal(emptyP.summary.bounds.before, null);
@@ -388,8 +388,9 @@ describe("propose_layout: los lotes se aplican tal cual con author_document", ()
     const pc = await proposeJson(cyc);
     assert.equal(pc.ok, true);
     assert.equal((await applyBatches(cyc, pc)).doc.pages[0].nodes.length, 4);
-    const v3 = createDiagram({ pageName: "v3", theme: "dark", grid: true, build: false, autoLayout: true, speed: 1, dots: 3, stagger: 0.4, single: false, nodes: [{ key: "a", shape: "rect", x: 1, y: 1 }, { key: "b", shape: "rect", x: 2, y: 2 }] as any, edges: [{ from: "a", to: "b" }] as any });
-    assert.equal((v3 as any).version, 3);
+    const v5 = createDiagram({ pageName: "v3", theme: "dark", grid: true, build: false, autoLayout: true, speed: 1, dots: 3, stagger: 0.4, single: false, nodes: [{ key: "a", shape: "rect", x: 1, y: 1 }, { key: "b", shape: "rect", x: 2, y: 2 }] as any, edges: [{ from: "a", to: "b" }] as any });
+    assert.equal((v5 as any).version, 5);
+    const v3 = { ...v5, version: 3 } as any;
     const p3 = await proposeJson(v3);
     assert.equal(p3.ok, true);
     assert.equal(rev((await applyBatches(v3, p3))), p3.finalRevision);

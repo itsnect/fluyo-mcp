@@ -90,6 +90,21 @@ function normalizeColorName(value: string): string {
   return value.normalize("NFD").replace(/\p{Diacritic}/gu, "").trim().toLowerCase();
 }
 
+/** El hex de un nombre semántico de la paleta (sin distinguir mayúsculas ni acentos), o null si no lo es. */
+export function paletteHexOf(name: string): string | null {
+  const target = normalizeColorName(name);
+  return PALETTE.find(p => normalizeColorName(p.name) === target)?.hex ?? null;
+}
+
+/**
+ * Entrada de create_diagram / create_from_template (FLUYO-018.9): un nombre de la paleta se traduce a su HEX;
+ * cualquier otro valor pasa TAL CUAL al kernel, que es quien decide si es un color válido (regla HEX de autoría).
+ * Aquí no se valida nada: solo se traduce el azúcar de entrada de estas dos tools.
+ */
+export function colorNameToHex<T>(value: T): T | string {
+  return typeof value === "string" ? paletteHexOf(value) ?? value : value;
+}
+
 /**
  * Acepta un hex (`#6a9fb5`) o un nombre semántico de la paleta de Fluyo, sin
  * distinguir mayúsculas ni acentos. Cualquier otra cosa es un error con la lista
@@ -99,9 +114,8 @@ export function resolveColor(input: string | undefined, fallback = PALETTE[0].he
   if (!input) return fallback;
   const trimmed = input.trim();
   if (/^#[0-9a-fA-F]{3,8}$/.test(trimmed)) return trimmed;
-  const target = normalizeColorName(trimmed);
-  const byName = PALETTE.find(p => normalizeColorName(p.name) === target);
-  if (byName) return byName.hex;
+  const byName = paletteHexOf(trimmed);
+  if (byName) return byName;
   throw new Error(
     `Color "${input}" no reconocido. Usa un hex (#6a9fb5) o uno de: ${PALETTE.map(p => p.name).join(", ")}.`
   );

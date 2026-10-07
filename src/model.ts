@@ -217,10 +217,10 @@ export type FluyoProject = z.infer<typeof FluyoProjectSchema>;
 const commonNodeFields = {
   key: z.string().describe("Identificador temporal usado solo dentro de esta llamada para que las aristas referencien este nodo (ej: 'gateway', 'kafka')."),
   shape: CreatableShapeSchema,
-  /** Sin default: si se omite, buildNode aplica el mismo que `newNode()` en la app
-   *  ("Nodo" en una forma, "Texto" en un texto, vacío en iconos y GIFs). */
+  /** Sin default: si se omite, el del dominio (createNodeIn): "Nodo", "Texto" en un texto, el SQL de ejemplo en `code`, vacío en
+   *  iconos y GIFs. (En add_node de edit_diagram, legacy, lo pone buildNode.) */
   label: z.string().optional(),
-  color: z.string().optional().describe("Nombre semántico (usa list_colors) o hex (#6a9fb5)."),
+  color: z.string().optional().describe("Nombre de list_colors o HEX (#rgb, #rrggbb, #rrggbbaa)."),
   icon: z.string().optional().describe("Solo si shape='icon'. Usa list_icons para ver claves válidas (kafka, gke, cloudsql, lambda, s3, azvm, etc)."),
   anim: z.string().optional().describe("Solo si shape='anim'. Usa list_anims para ver claves válidas (spinner, progress, check, etc)."),
   tint: z.boolean().optional().describe("Solo si shape='icon'. Tiñe la pastilla del ícono con `color` en vez de dejarle el suyo. Por defecto false: los íconos conservan su color de marca."),
@@ -281,18 +281,21 @@ const commonEdgeFields = {
 export const EdgeSpecSchema = z.object(commonEdgeFields);
 export type EdgeSpec = z.infer<typeof EdgeSpecSchema>;
 
+/* FLUYO-018.9: sin `.default()` en página, tema ni ajustes: lo omitido toma el valor del documento en blanco del editor (model.js), no
+   una copia aquí. Los rangos de speed/stagger/dots son los de los controles del editor y de su carga (settingsFromProjectData); un test
+   comprueba que el kernel no recorta nada dentro de ellos y sí fuera. */
 export const CreateDiagramInputShape = {
-  pageName: z.string().default("Página 1"),
-  theme: ThemeSchema.default("dark"),
-  grid: z.boolean().default(true),
-  build: z.boolean().default(false).describe("Si es true, los nodos aparecen escalonados según 'order' al reproducir la animación."),
+  pageName: z.string().optional().describe("1 a 80 caracteres. Por defecto, el del editor."),
+  theme: ThemeSchema.optional().describe("Por defecto, el del editor."),
+  grid: z.boolean().optional(),
+  build: z.boolean().optional().describe("Si es true, los nodos aparecen escalonados según 'order' al reproducir la animación."),
   autoLayout: z.boolean().default(true).describe("Si es true, calcula x/y de los nodos que no las traigan explícitas, en capas de izquierda a derecha según el grafo de aristas."),
-  speed: z.number().min(0.05).max(5).default(0.5).describe("Velocidad del flujo animado."),
-  dots: z.number().int().min(1).max(6).default(3).describe("Cuántos puntos recorren cada arista."),
-  stagger: z.number().min(0).max(5).default(0.45).describe("Segundos entre la aparición de un nodo y el siguiente cuando build=true."),
-  single: z.boolean().default(false).describe("Modo 'pelota única por ruta': en vez de puntos por flecha, una sola pelota recorre el diagrama y se parte en cada bifurcación."),
-  font: z.string().optional().describe("Tipografía global del diagrama. Usa list_fonts; si se omite, Georgia."),
-  customBg: z.string().optional().describe("Color de fondo (hex) que sobrescribe el del tema."),
+  speed: z.number().min(0.2).max(2).optional().describe("Velocidad del flujo animado (rango del editor)."),
+  dots: z.number().int().min(1).max(6).optional().describe("Cuántos puntos recorren cada arista."),
+  stagger: z.number().min(0.2).max(1.2).optional().describe("Segundos entre la aparición de un nodo y el siguiente cuando build=true (rango del editor)."),
+  single: z.boolean().optional().describe("Modo 'pelota única por ruta': en vez de puntos por flecha, una sola pelota recorre el diagrama y se parte en cada bifurcación."),
+  font: z.string().optional().describe("Tipografía global: la familia CSS completa de list_fonts (otra se rechaza). Por defecto, la del editor."),
+  customBg: z.string().optional().describe("Fondo HEX (#rgb, #rrggbb, #rrggbbaa) que sobrescribe el del tema; \"\" = el del tema."),
   nodes: z.array(NodeSpecSchema).min(1),
   edges: z.array(EdgeSpecSchema).default([]),
 };

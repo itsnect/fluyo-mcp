@@ -52,7 +52,7 @@ const MUTATIONS: Mutation[] = [
     ["const spec = Object.assign(withRef(op, op.spec===undefined ? {} : diagramSpec(op)), {source, target});",
      "const spec = Object.assign({fromSide:\"e\", toSide:\"w\"}, withRef(op, op.spec===undefined ? {} : diagramSpec(op)), {source, target});"]),
   K("la ref se persiste en el nodo", MODEL,
-    ["pg.nodes.length }, spec, [\"ref\",\"id\"]);", "pg.nodes.length }, spec, [\"id\"]);"]),
+    [": {}), spec, [\"ref\",\"id\"]);", ": {}), spec, [\"id\"]);"]),
 
   /* ── MCP (TypeScript) */
   M("ignorar baseRevision", TS,

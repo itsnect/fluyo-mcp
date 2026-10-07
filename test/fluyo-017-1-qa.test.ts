@@ -208,15 +208,18 @@ describe("describe_document: auditoría de contrato", () => {
     assert.deepEqual(r.steps.map((s: any) => s.outcome.status), ["completed", "narrated", "completed"]);
   });
 
-  it("los 8 ejemplos publicados y la salida de create_diagram (v3) se leen sin errores", async () => {
+  it("los 8 ejemplos publicados y la salida de create_diagram (v5 desde 018.9; también como v3) se leen sin errores", async () => {
     for (const f of readdirSync(join(ROOT, "test", "fixtures")).filter(n => n.endsWith(".fluyo.json"))) {
       const d = await describeDoc(loadFixture(f));
       assert.equal(d.valid, true, f);
     }
     const created = documentOf(await call("create_diagram", { pageName: "P", nodes: [{ key: "a", shape: "rect", label: "A" }, { key: "b", shape: "rect", label: "B" }], edges: [{ from: "a", to: "b" }] }));
     const d = await describeDoc(created);
-    assert.equal(d.sourceSchemaVersion, 3);
+    assert.equal(d.sourceSchemaVersion, 5);
     assert.deepEqual(d.pages[0].connections.map((c: any) => [c.fromLabel, c.toLabel]), [["A", "B"]]);
+    const v3 = await describeDoc({ ...created, version: 3 });
+    assert.equal(v3.sourceSchemaVersion, 3);
+    assert.deepEqual(v3.pages[0].connections.map((c: any) => [c.fromLabel, c.toLabel]), [["A", "B"]]);
   });
 });
 
