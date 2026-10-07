@@ -210,7 +210,7 @@ describe("servidor real por stdio: 16 tools y el flujo de punta a punta", () => 
     const { tools } = await client.listTools();
     assert.equal(tools.length, 16);
     for (const n of ["set_theme", "reorder_nodes", "duplicate_node"]) assert.ok(tools.some(t => t.name === n), n);
-    assert.ok(JSON.stringify(tools).length < 70_000);
+    assert.ok(JSON.stringify(tools).length < 72_000);   // 018.7c: +delete_page
     const d0 = documentOf(await client.callTool({ name: "describe_document", arguments: { document: golden.document } }));
     const t = documentOf(await client.callTool({ name: "set_theme", arguments: { document: golden.document, baseRevision: d0.revision, theme: "crema", customBg: "#f4eee1" } }));
     const z = documentOf(await client.callTool({ name: "reorder_nodes", arguments: { document: t.document, baseRevision: t.resultRevision, pageIndex: 0, nodes: [{ id: 1 }], to: "front" } }));

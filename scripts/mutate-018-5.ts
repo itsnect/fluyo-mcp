@@ -36,12 +36,15 @@ const MUTATIONS: Mutation[] = [
   K("el nombre no tiene tope de longitud", MODEL, ["!name.trim() || name.length>PAGE_NAME_MAX)", "!name.trim())"]),
   K("un nombre de solo espacios se acepta", MODEL, ["|| !name.trim() || name.length>PAGE_NAME_MAX)", "|| name.length>PAGE_NAME_MAX)"]),
   K("renamePageIn renombra otra página", MODEL, ["page=d.pages[pageIndex], from=page.name;", "page=d.pages[0], from=page.name;"]),
-  K("renamePageIn acepta un índice fuera de rango", MODEL, [" || pageIndex<0 || pageIndex>=d.pages.length) throw projectDataError(\"page_not_found\"", " || pageIndex<0) throw projectDataError(\"page_not_found\""]),
+  /* 018.7c: rename_page valida antes el índice DEL LOTE (pageOf) y el dominio repite la comprobación: quitar solo la del dominio ya no es
+     observable desde MCP (la batería Fluyo 018.5, P8, sigue cubriéndola). Misma intención, en la capa que la aplica para MCP: un índice
+     fuera de rango se acepta y renombra la última página. */
+  K("rename_page acepta un índice fuera de rango (renombra la última)", AUTH, ["      pageOf(ctx, op);\n      let r;\n      try{ r = renamePageIn(ctx.d, liveIndexOf(ctx, op.pageIndex), op.name); }", "      let r;\n      try{ r = renamePageIn(ctx.d, liveIndexOf(ctx, op.pageIndex) < 0 ? ctx.d.pages.length-1 : liveIndexOf(ctx, op.pageIndex), op.name); }"]),
   /* ── authoring: páginas (kernel) */
   K("create_page se declara de alcance «page»", AUTH, ["create_page:\"document\", rename_page:\"document\",", "create_page:\"page\", rename_page:\"document\","]),
   K("create_page ignora el nombre", AUTH, ["r = createPageIn(ctx.d, op.name);", "r = createPageIn(ctx.d);"]),
-  K("rename_page renombra siempre la página 0", AUTH, ["r = renamePageIn(ctx.d, op.pageIndex, op.name);", "r = renamePageIn(ctx.d, 0, op.name);"]),
-  K("create_page no informa del pageIndex creado", AUTH, ["return {entityKind:\"page\", entityId:r.pageIndex, pageIndex:r.pageIndex, created:true,", "return {entityKind:\"page\", entityId:0, pageIndex:0, created:true,"]),
+  K("rename_page renombra siempre la página 0", AUTH, ["r = renamePageIn(ctx.d, liveIndexOf(ctx, op.pageIndex), op.name);", "r = renamePageIn(ctx.d, 0, op.name);"]),   // 018.7c: ancla actualizada; misma intención
+  K("create_page no informa del pageIndex creado", AUTH, ["return {entityKind:\"page\", entityId:pageIndex, pageIndex, created:true,", "return {entityKind:\"page\", entityId:0, pageIndex:0, created:true,"]),   // 018.7c: ancla actualizada; misma intención
   /* ── reglas de entrada (kernel) */
   K("el color HEX acepta cualquier longitud", AUTH, ["const HEX_COLOR = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;", "const HEX_COLOR = /^#[0-9a-fA-F]+$/;"]),
   K("el icono no se busca en el catálogo", AUTH, ["if(typeof spec[k]!==\"string\" || !projectOwn(catalog, spec[k]))", "if(typeof spec[k]!==\"string\")"]),

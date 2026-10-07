@@ -101,7 +101,8 @@ describe("lo que ve un cliente en tools/list", () => {
     // 018.3: update_node/update_connection/delete_node/delete_connection (parches de campos) y refs en destinos: de 50 000 a 60 000.
     // 018.6: propose_layout (≈2,5 KB): de 60 000 a 62 000.
     // 018.7a: set_theme, reorder_nodes y duplicate_node (tools de una operación, ≈2 KB cada una) y sus operaciones en author_document: de 62 000 a 70 000.
-    assert.ok(bytes < 70_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
+    // 018.7c: operación delete_page de author_document (esquema + descripción, ≈1 KB): de 70 000 a 72 000.
+    assert.ok(bytes < 72_000, `tools/list ocupa ${bytes} caracteres, demasiado para enviarlo en cada conexión`);
   });
 });
 

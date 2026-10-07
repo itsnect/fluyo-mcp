@@ -27,7 +27,7 @@ const AUTH = "js/story-authoring.js", MODEL = "js/model.js", TS = "src/authoring
 const MUTATIONS: Mutation[] = [
   /* ── B2 y validación final (kernel) */
   K("B2 saltado: se devuelve el documento aunque deje una Historia inválida", AUTH,
-    ["if(regress.length) return failure(explainRemovals(ctx, regress, d));", "if(false) return failure(explainRemovals(ctx, regress, d));"]),
+    ["if(regress.length) return failure(explainRemovals(ctx, regress));", "if(false) return failure(explainRemovals(ctx, regress));"]),
   K("el nodo eliminado no se atribuye (REFERENCED_ENTITY pierde la entidad)", AUTH,
     ["ctx.deleted.push({kind:\"node\", pageIndex:op.pageIndex, id, label:r.node.label,", "ctx.deleted.concat({kind:\"node\", pageIndex:op.pageIndex, id, label:r.node.label,"]),
   K("se salta la validación del estado final", AUTH,

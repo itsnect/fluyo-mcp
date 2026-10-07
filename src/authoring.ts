@@ -222,6 +222,12 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("delete_connection"), scope: page, pageIndex: PageIndex, connection: Endpoint.describe("Rechazado (REFERENCED_ENTITY) si alguna Historia la usa en el estado final.") }),
   z.strictObject({ op: z.literal("create_page"), scope: documentScope, name: z.string().min(1).max(80).optional().describe("1 a 80 caracteres; sin nombre, el del editor («Página N»). Se añade siempre al final y NO cambia la página activa.") }),
   z.strictObject({ op: z.literal("rename_page"), scope: documentScope, pageIndex: PageIndex, name: z.string().min(1).max(80) }),
+  z.strictObject({
+    op: z.literal("delete_page"),
+    scope: documentScope,
+    pageIndex: PageIndex,
+    expectedName: z.string().describe("Obligatorio: el nombre ACTUAL y exacto de esa página (describe_document); si no coincide, PAGE_MISMATCH."),
+  }),
   z.strictObject({ op: z.literal("set_theme"), scope: documentScope, ...ThemeFields }),
   z.strictObject({ op: z.literal("reorder_nodes"), scope: page, pageIndex: PageIndex, nodes: z.array(Endpoint).min(1).max(100), to: ZPlacement }),
   z.strictObject({
@@ -262,6 +268,7 @@ interface KernelApply {
   changes?: Array<Record<string, unknown>>;
   refs?: Array<{ ref: string; type: "node" | "connection"; pageIndex: number; id: number }>;
   touched?: Array<{ pageIndex: number; storyId: number }>;
+  pageMap?: Array<{ from: number; to: number | null }>;
   validation?: { valid: boolean; preexistingErrors: number };
   errors?: Array<Record<string, unknown>>;
 }
@@ -313,6 +320,8 @@ export function authorDocument(input: AuthorInput) {
     changes: result.changes ?? [],
     refs: result.refs ?? [],
     touchedStories: result.touched ?? [],
+    /* FLUYO-018.7c: solo si el lote eliminó páginas. Índice del lote (from) → índice en el documento resultante (to; null = eliminada). */
+    ...(result.pageMap ? { pageMap: result.pageMap } : {}),
     validation: result.validation ?? { valid: true, preexistingErrors: 0 },
     unmodeled: UNMODELED,
     ...(input.dryRun ? {} : { document: result.project }),
@@ -328,7 +337,9 @@ export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string
   const count = (kind: string, flag: "created" | "updated" | "deleted") => r.changes.filter(c => c.entityKind === kind && c[flag] === true).length;
   const part = (flag: "created" | "updated" | "deleted", word: string) =>
     count("node", flag) + count("connection", flag) > 0 ? `${count("node", flag)} elemento(s) y ${count("connection", flag)} conexión(es) ${word}. ` : "";
-  const diagram = part("created", "creados") + part("updated", "modificados") + part("deleted", "eliminados");
+  const pagesDeleted = r.changes.filter(c => c.operation === "delete_page").length;
+  const diagram = part("created", "creados") + part("updated", "modificados") + part("deleted", "eliminados") +
+    (pagesDeleted ? `${pagesDeleted} página(s) eliminada(s): los índices de página del documento nuevo están en pageMap. ` : "");
   return (
     `${r.dryRun ? "Simulación (dryRun): " : ""}${n} operación(es) aplicada(s) sobre una copia; ` +
     diagram +
