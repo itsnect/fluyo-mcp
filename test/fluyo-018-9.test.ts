@@ -263,7 +263,7 @@ describe("create_diagram: documento v5 canónico", () => {
     const d = await createJson({ nodes: [{ key: "t", shape: "text" }, { key: "i", shape: "icon", icon: "kafka" }, { key: "r", shape: "rect" }], edges: [{ from: "r", to: "t" }] });
     const [t, i, r] = d.doc.pages[0].nodes;
     assert.deepEqual([t.label, i.label, r.label, i.tint], ["Texto", "", "Nodo", false]);
-    assert.deepEqual([r.color, r.fill, r.border, r.lblPos, r.textBg, r.textColor, r.font, r.bold, r.pulse], [PALETTE[0].hex, null, "solid", "center", null, null, null, false, false]);
+    assert.deepEqual([r.color, r.fill, r.border, r.lblPos, r.textBg, r.textColor, r.font, r.bold, r.pulse], ["#857F6C", null, "solid", "center", null, null, null, false, false]);   // DEFAULT_NODE_COLOR de fluyo/js/config.js (FLUYO-018.15); «Servicio» sigue siendo PALETTE[0]
     assert.deepEqual(d.doc.pages[0].edges[0], { id: 4, from: 3, to: 1, fromSide: null, toSide: null, route: "straight", waypoints: [], label: "", font: null, bold: false, animated: true, dashed: false, startArrow: false, endArrow: true, flowDir: "normal" });
   });
 

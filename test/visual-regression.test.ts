@@ -33,11 +33,11 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
-import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, drawnContentBox, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels } from "../src/svg.js";
+import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, codeFont, codeTokenWeight, cylinderSegments, drawnContentBox, edgeStroke, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels, segmentsToSVGPath } from "../src/svg.js";
 import { CODE_ADV, CODE_LANGS, DEFAULT_LANG, DEFAULT_SIZES, FONTS, THEMES } from "../src/generated/config.js";
 import { FluyoEdge, FluyoNode, FluyoPage } from "../src/model.js";
 import { layeredLayout } from "../src/layout.js";
-import { FIXTURES_DIR, packageRoot } from "./helpers.js";
+import { FIXTURES_DIR, loadFixtures, packageRoot } from "./helpers.js";
 
 /* ===================== Documentos bajo prueba ===================== */
 
@@ -666,6 +666,13 @@ interface AppGeometry {
   codeBlockLayout: (n: FluyoNode) => unknown;
   codeColors: (n: FluyoNode, theme: string) => unknown;
   labelLayout: (n: FluyoNode, measure: (fs: number) => number) => unknown;
+  /* FLUYO-018.14a */
+  codeFont: (n: FluyoNode) => string;
+  codeTokenWeight: (n: FluyoNode, kw: boolean) => number;
+  cylinderSegments: (n: FluyoNode) => unknown;
+  segmentsToSVGPath: (segs: unknown) => string;
+  /* FLUYO-018.16 */
+  edgeStroke: (e: FluyoEdge, pts: { x: number; y: number }[]) => { line: unknown[]; heads: unknown[][] };
   setPage: (page: FluyoPage) => void;
 }
 
@@ -696,18 +703,25 @@ function loadAppGeometry(fluyoPath: string): AppGeometry {
     /* Las constantes se le inyectan desde el codegen, que las extrae de
        js/config.js. Así esta suite mide el ALGORITMO de maquetación y no si las
        constantes están sincronizadas, que es trabajo de `check:config`. */
-    CODE_ADV, CODE_LANGS, DEFAULT_LANG, THEMES, FONTS, DEFAULT_SIZES,
+    CODE_ADV, CODE_LANGS, DEFAULT_LANG, THEMES, DEFAULT_SIZES,
+    /* geometry.js lee FONTS con la forma de js/config.js ({n, f}); el codegen la expone como {name, family}. */
+    FONTS: FONTS.map(f => ({ n: f.name, f: f.family })),
   };
   const ctx = createContext(sandbox);
   // El valor de la última expresión es lo que devuelve runInContext: es la forma
   // de sacar del script unas funciones declaradas con `function`/`const`, que no
   // se cuelgan del objeto de contexto.
-  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels, codeBlockLayout, codeColors, labelLayout});", ctx) as {
+  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels, codeBlockLayout, codeColors, labelLayout, codeFont, codeTokenWeight, cylinderSegments, segmentsToSVGPath, edgeStroke});", ctx) as {
     edgePoints: AppGeometry["edgePoints"];
     placeEdgeLabels: AppGeometry["placeEdgeLabels"];
     codeBlockLayout: AppGeometry["codeBlockLayout"];
     codeColors: AppGeometry["codeColors"];
     labelLayout: AppGeometry["labelLayout"];
+    codeFont: AppGeometry["codeFont"];
+    codeTokenWeight: AppGeometry["codeTokenWeight"];
+    cylinderSegments: AppGeometry["cylinderSegments"];
+    segmentsToSVGPath: AppGeometry["segmentsToSVGPath"];
+    edgeStroke: AppGeometry["edgeStroke"];
   };
   return {
     ...api,
@@ -726,6 +740,56 @@ const EXIGE_APP = process.env.REQUIRE_FLUYO === "1";
 
 describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => {
   let app: AppGeometry;
+
+  it("code y cilindro (FLUYO-018.14a): respaldos, datos explícitos y geometría idénticos en los tres temas", { skip: hayApp ? false : "sin fluyo/ al lado" }, () => {
+    const base = { id: 1, shape: "code", x: 200, y: 120, w: 300, h: 150, label: "SELECT a\nFROM t", color: "#6a9fb5", bold: false } as unknown as FluyoNode;
+    const casos: Partial<FluyoNode>[] = [
+      {}, { fill: "none" }, { fill: "#112233" }, { textBg: "#000000" }, { textColor: "#ff0000" }, { kwBg: "#a8b34a" }, { kwColor: "#123456" },
+      { font: "Georgia, serif" }, { bold: true }, { color: "#abc" } as Partial<FluyoNode>, { color: "red" } as Partial<FluyoNode>,
+    ];
+    for (const theme of ["dark", "crema", "claro"]) for (const c of casos) {
+      const n = { ...base, ...c } as FluyoNode;
+      assert.deepEqual(plano(app.codeColors(n, theme)), plano(codeColors(n, theme as never)), `codeColors ${theme} ${JSON.stringify(c)}`);
+      assert.equal(app.codeFont(n), codeFont(n), `codeFont ${JSON.stringify(c)}`);
+    }
+    for (const [w, h] of [[150, 90], [60, 40], [400, 300], [150, 20]]) {
+      const n = { id: 2, shape: "cylinder", x: 10.5, y: -3.25, w, h } as unknown as FluyoNode;
+      const a = app.cylinderSegments(n) as { outline: unknown; lip: unknown }, b = cylinderSegments(n);
+      assert.deepEqual(plano(a), plano(b), `segmentos ${w}×${h}`);
+      assert.equal(app.segmentsToSVGPath(a.outline) + "|" + app.segmentsToSVGPath(a.lip), segmentsToSVGPath(b.outline) + "|" + segmentsToSVGPath(b.lip), `d ${w}×${h}`);
+    }
+  });
+
+  it("trazo de las conexiones (FLUYO-018.16): edgeStroke y su `d` idénticos en el corpus y en los casos límite", { skip: hayApp ? false : "sin fluyo/ al lado" }, () => {
+    let n = 0;
+    for (const fx of loadFixtures()) for (const page of (fx.doc as { doc: { pages: FluyoPage[] } }).doc.pages) {
+      app.setPage(page);
+      const geo = pageEdgeGeometry(page);
+      for (const e of page.edges) {
+        const pts = geo.get(e.id) ?? [];
+        for (const flags of [{}, { endArrow: false }, { startArrow: true }, { endArrow: false, startArrow: true }]) {
+          const ee = { ...e, ...flags } as FluyoEdge;
+          const a = plano(app.edgeStroke(ee, pts)) as { line: unknown[]; heads: unknown[][] }, b = plano(edgeStroke(ee, pts));
+          assert.deepEqual(a, b, `${fx.name} e${e.id} ${JSON.stringify(flags)}`);
+          assert.equal(app.segmentsToSVGPath(a.line), segmentsToSVGPath(b.line as never), `d de la línea ${fx.name} e${e.id}`);
+          n++;
+        }
+      }
+    }
+    assert.ok(n > 100, `se compararon ${n} trazos`);
+    /* casos límite: tramo final de longitud cero (waypoint repetido), tramo más corto que la punta, diagonal, un solo tramo */
+    const raros: { x: number; y: number }[][] = [
+      [{ x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 0 }],
+      [{ x: 0, y: 0 }, { x: 0, y: 40 }, { x: 6, y: 40 }],
+      [{ x: 0, y: 0 }, { x: 33.3, y: 71.7 }, { x: 140.25, y: 12.5 }],
+      [{ x: 10, y: 10 }, { x: 10.5, y: 10.2 }],
+      [{ x: 0, y: 0 }, { x: 0, y: 0 }],
+    ];
+    for (const pts of raros) for (const flags of [{}, { startArrow: true }]) {
+      const e = { id: 1, from: 1, to: 2, ...flags } as unknown as FluyoEdge;
+      assert.deepEqual(plano(app.edgeStroke(e, pts)), plano(edgeStroke(e, pts)), `caso ${JSON.stringify(pts)} ${JSON.stringify(flags)}`);
+    }
+  });
 
   before(function () {
     if (!hayApp) return;
@@ -761,6 +825,18 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
             plano(app.codeColors(nodo, d.theme)), plano(codeColors(nodo, d.theme as never)),
             `colores del bloque de código del nodo ${nodo.id} en ${d.name}`
           );
+          assert.equal(app.codeFont(nodo), codeFont(nodo), `tipografía del bloque de código del nodo ${nodo.id} en ${d.name}`);
+          for (const kw of [true, false]) assert.equal(app.codeTokenWeight(nodo, kw), codeTokenWeight(nodo, kw), `peso del token (kw=${kw}) del nodo ${nodo.id}`);
+        }
+
+        /* FLUYO-018.14a: el cilindro es UNA geometría; la app (lienzo y SVG) y el MCP
+           tienen que producir los mismos segmentos y el mismo `d`. */
+        for (const nodo of page.nodes) {
+          if (nodo.shape !== "cylinder") continue;
+          const a = app.cylinderSegments(nodo) as { outline: unknown; lip: unknown }, b = cylinderSegments(nodo);
+          assert.deepEqual(plano(a), plano(b), `segmentos del cilindro ${nodo.id} en ${d.name}`);
+          assert.equal(app.segmentsToSVGPath(a.outline), segmentsToSVGPath(b.outline), `contorno SVG del cilindro ${nodo.id}`);
+          assert.equal(app.segmentsToSVGPath(a.lip), segmentsToSVGPath(b.lip), `labio SVG del cilindro ${nodo.id}`);
         }
 
         /* Maquetación de la etiqueta. Se le pasa a la app el MISMO medidor

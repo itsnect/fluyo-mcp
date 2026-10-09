@@ -46,11 +46,19 @@ function instanciasDibujadas(svg: string): number {
   return count(sinDefs, /<image /g) + count(sinDefs, /<use /g);
 }
 
+/** Cuántas conexiones se DIBUJAN, sea cual sea el mecanismo. Los previews de referencia
+ *  son de un exportador anterior a FLUYO-018.16, que pintaba cada conexión como un
+ *  `<polyline>` con `<marker>`; desde 018.16 es un `<path>` de trazo (stroke-width 1.5)
+ *  más las puntas rellenas. Igual que con los dibujos, se mide lo que se pinta. */
+function conexionesDibujadas(svg: string): number {
+  return count(svg, /<polyline /g) + count(svg, /<path d="[^"]*" fill="none" stroke="[^"]*" stroke-width="1\.5"/g);
+}
+
 const ELEMENTOS: Array<[string, (s: string) => number]> = [
   ["<g> por nodo", s => count(s, /<g id="node-/g)],
   ["dibujos pintados (<image> fuera de defs + <use>)", instanciasDibujadas],
   ["<text>", s => count(s, /<text /g)],
-  ["<polyline>", s => count(s, /<polyline /g)],
+  ["conexiones dibujadas", conexionesDibujadas],
 ];
 
 function renderFixture(doc: unknown): string {
@@ -231,4 +239,38 @@ describe("los estilos de nodo llegan al SVG", () => {
     roto.doc.pages[0].nodes[2].anim = "no-existe";
     assert.throws(() => renderFixture(roto), /no-existe[\s\S]*list_anims/);
   });
+});
+
+/* FLUYO-018.14a — `code` y cilindro en el SVG que emite export_diagram: la MISMA salida que el
+   exportador de la app (los segmentos y colores los vigila la paridad de visual-regression; aquí,
+   que pageToSVG los use de verdad). */
+describe("FLUYO-018.14a: code y cilindro en el SVG de export_diagram", () => {
+  const N = (o: Record<string, unknown>) => ({ fill: null, border: "solid", lblPos: "center", textBg: null, font: null, bold: false, pulse: false, order: 0, color: "#6a9fb5", label: "", ...o });
+  const doc = (theme: string, nodes: unknown[]) => ({ version: 3, app: "fluyo", doc: { theme, customBg: "", cur: 0, pages: [{ name: "P", nodes, edges: [], nextId: 10 }] }, settings: { speed: 0.5, dots: 3, build: false, stagger: 0.45, grid: true, snap: false, font: "Georgia, serif", single: false } });
+  const cyl = N({ id: 1, shape: "cylinder", x: 200, y: 200, w: 150, h: 90, label: "BD" });
+  const codeAuto = N({ id: 2, shape: "code", x: 600, y: 200, w: 300, h: 150, label: "SELECT a\nFROM t", lang: "sql", keywords: null, kwBg: null, kwColor: null });
+  const codeKw = N({ id: 3, shape: "code", x: 600, y: 500, w: 300, h: 150, label: "SELECT b", lang: "sql", keywords: null, kwBg: "#a8b34a", kwColor: null, font: "Georgia, serif" });
+
+  for (const theme of ["dark", "crema", "claro"]) {
+    const svg = renderFixture(doc(theme, [cyl, codeAuto, codeKw]));
+    /* trozo del SVG desde el <g> del nodo hasta el siguiente nodo o el final (los <g> de code anidan) */
+    const nodo = (id: number) => { const i = svg.indexOf(`<g id="node-${id}"`); const j = svg.indexOf(`<g id="node-`, i + 1); return i < 0 ? "" : svg.slice(i, j < 0 ? undefined : j); };
+    it(`${theme}: el cilindro es un contorno + un labio de arcos reales, sin segunda elipse`, () => {
+      const c = nodo(1);
+      assert.equal(count(c, /<ellipse/g), 0, "sin <ellipse>");
+      assert.equal(count(c, /<path /g), 2, "contorno + labio");
+      assert.ok(!/ C /.test(c), "sin Bézier");
+      assert.equal(count(c, / A /g), 3, "base, tapa trasera y labio");
+    });
+    it(`${theme}: code sin kwBg no pinta cajas de palabra clave; con kwBg sí; Plex Mono por defecto`, () => {
+      const a = nodo(2), b = nodo(3);
+      assert.ok(!/#a8b34a/i.test(a), "sin la caja verde por defecto");
+      assert.equal(count(a, /<rect /g), 3, "solo el recorte, el panel y el bloque: ninguna caja de palabra clave");
+      assert.ok(!/#101010/i.test(a), "sin el bloque negro por defecto");
+      assert.match(a, /font-family="&apos;IBM Plex Mono&apos;/, "Plex Mono como fuente por defecto del bloque");
+      assert.match(a, /font-weight="500"/, "la palabra clave se distingue por peso");
+      assert.match(b, /<rect[^>]*fill="#a8b34a"/, "kwBg explícito: su caja se respeta");
+      assert.match(b, /font-family="Georgia, serif"/, "font explícito: se respeta");
+    });
+  }
 });

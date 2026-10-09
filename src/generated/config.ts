@@ -9,7 +9,7 @@
    está mal, arréglalo en Fluyo o en scripts/sync-config.ts.
 
    `npm run check:config` falla si este archivo no coincide con Fluyo.
-   Sincronizado desde la revisión 1bc0613 de fluyo/.
+   Sincronizado desde la revisión 604b344 de fluyo/.
    ════════════════════════════════════════════════════════════════════════ */
 
 /* ===================== Lienzo ===================== */
@@ -79,9 +79,9 @@ export interface ThemeDef {
 }
 
 export const THEMES: Record<ThemeName, ThemeDef> = {
-  dark: { bg: "#161616", grid: "rgba(255,255,255,.045)", text: "#ededed", edge: "#777", edgeLbl: "#bdbdbd", lblBg: "#161616", codeBg: "#101010", codeText: "#e8e8e8", codeKwBg: "#a8b34a", codeKwText: "#0c0a09" },
-  crema: { bg: "#f4eee1", grid: "rgba(0,0,0,.06)", text: "#2b2620", edge: "#8a8275", edgeLbl: "#6b6457", lblBg: "#f4eee1", codeBg: "#e7ddc9", codeText: "#1a1a1a", codeKwBg: "#a8b34a", codeKwText: "#0c0a09" },
-  claro: { bg: "#ffffff", grid: "rgba(0,0,0,.05)", text: "#111111", edge: "#888888", edgeLbl: "#444444", lblBg: "#ffffff", codeBg: "#101010", codeText: "#e8e8e8", codeKwBg: "#a8b34a", codeKwText: "#0c0a09" },
+  dark: { bg: "#161616", grid: "rgba(255,255,255,.045)", text: "#ededed", edge: "#777", edgeLbl: "#bdbdbd", lblBg: "#161616", codeBg: "rgba(0,0,0,.32)", codeText: "#e8e1d3", codeKwBg: "", codeKwText: "#c3cda4" },
+  crema: { bg: "#f4eee1", grid: "rgba(0,0,0,.06)", text: "#2b2620", edge: "#8a8275", edgeLbl: "#6b6457", lblBg: "#f4eee1", codeBg: "rgba(22,21,15,.055)", codeText: "#16150f", codeKwBg: "", codeKwText: "#4e5a3f" },
+  claro: { bg: "#ffffff", grid: "rgba(0,0,0,.05)", text: "#111111", edge: "#888888", edgeLbl: "#444444", lblBg: "#ffffff", codeBg: "rgba(22,21,15,.045)", codeText: "#16150f", codeKwBg: "", codeKwText: "#4e5a3f" },
 };
 
 /* ===================== Anclas ===================== */
@@ -117,6 +117,8 @@ export const FONTS: readonly FontDef[] = [
   { name: "Courier", family: "'Courier New', Courier, monospace" },
   { name: "Impact", family: "Impact, Haettenschweiler, sans-serif" },
   { name: "Comic Sans", family: "'Comic Sans MS', 'Comic Sans', cursive" },
+  { name: "Playfair Display", family: "'Playfair Display', Georgia, serif" },
+  { name: "IBM Plex Mono", family: "'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace" },
   { name: "Mono", family: "ui-monospace, SFMono-Regular, Menlo, Consolas, \"Liberation Mono\", monospace" },
 ];
 

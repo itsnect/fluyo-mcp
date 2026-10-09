@@ -743,19 +743,139 @@ export function codeBlockLayout(n: FluyoNode): CodeLayout {
   return { lines, fs, adv, lh, blockH, bx, by, bw, x0, rows };
 }
 
+/* Port de codePanelTint/codeColors de fluyo/js/geometry.js (FLUYO-018.14a): el panel
+   por defecto es el tinte del color del nodo (como el relleno automático de las demás
+   formas); `fill:"none"` conserva el fondo del tema; `codeKwBg:""` = sin caja. Lo explícito
+   del nodo manda. El test de paridad (visual-regression) compara esta función con la de la app. */
+function codePanelTint(color: string | undefined, theme: ThemeName): string | null {
+  if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) return null;
+  const v = parseInt(color.slice(1), 16);
+  return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${theme === "crema" ? 0.16 : 0.18})`;
+}
 export function codeColors(n: FluyoNode, theme: ThemeName) {
   const T = THEMES[theme];
   return {
-    panel: n.fill && n.fill !== "none" ? n.fill : (T.lblBg || "#161616"),
+    panel: n.fill && n.fill !== "none" ? n.fill : (n.fill === "none" ? (T.lblBg || "#161616") : (codePanelTint(n.color, theme) || T.lblBg || "#161616")),
     paper: n.textBg || T.codeBg,
     text: n.textColor || T.codeText,
-    kwBg: n.kwBg || T.codeKwBg,
+    kwBg: n.kwBg || T.codeKwBg || "",
     kwText: n.kwColor || T.codeKwText,
   };
 }
 
-function codeFont(n: FluyoNode): string {
-  return n.font || FONTS[FONTS.length - 1].family;
+/* Port de codeFont/CODE_DEFAULT_FONT: sin `font` propio, IBM Plex Mono (cuya pila acaba en «Mono»). */
+const CODE_DEFAULT_FONT = (FONTS.find(f => f.name === "IBM Plex Mono") || FONTS[FONTS.length - 1]).family;
+export function codeFont(n: FluyoNode): string {
+  return n.font || CODE_DEFAULT_FONT;
+}
+/* Port de codeTokenWeight: negrita del nodo (todo lo que no sea bold:false) = 700; si no, 500 la palabra clave y 400 el resto. */
+export function codeTokenWeight(n: FluyoNode, kw: boolean): number {
+  return n.bold === false ? (kw ? 500 : 400) : 700;
+}
+
+/* ===================== Cilindro (port de cylinderGeom/cylinderSegments/segmentsToSVGPath) =====================
+   La MISMA construcción que fluyo/js/geometry.js: arcos de elipse reales, la tapa una sola
+   vez (mitad trasera en el contorno, mitad delantera como labio), laterales tangentes. El
+   test de paridad compara los segmentos y el `d` con los de la app. */
+export type CylSeg =
+  | { op: "M" | "L"; x: number; y: number }
+  | { op: "Q"; cx: number; cy: number; x: number; y: number }
+  | { op: "A"; cx: number; cy: number; rx: number; ry: number; a0: number; a1: number; ccw: boolean }
+  | { op: "Z" };
+export function cylinderSegments(n: { x: number; y: number; w: number; h: number }): { outline: CylSeg[]; lip: CylSeg[] } {
+  const ry = Math.min(16, n.h * 0.18), cx = n.x, rx = n.w / 2, top = n.y - n.h / 2, bot = n.y + n.h / 2;
+  const L = cx - rx, R = cx + rx, capY = top + ry, baseY = bot - ry;
+  return {
+    outline: [
+      { op: "M", x: L, y: capY },
+      { op: "L", x: L, y: baseY },
+      { op: "A", cx, cy: baseY, rx, ry, a0: Math.PI, a1: 0, ccw: true },
+      { op: "L", x: R, y: capY },
+      { op: "A", cx, cy: capY, rx, ry, a0: 0, a1: Math.PI, ccw: true },
+      { op: "Z" },
+    ],
+    lip: [
+      { op: "M", x: R, y: capY },
+      { op: "A", cx, cy: capY, rx, ry, a0: 0, a1: Math.PI, ccw: false },
+    ],
+  };
+}
+export function segmentsToSVGPath(segs: CylSeg[]): string {
+  const f = (v: number) => (+v).toFixed(2);
+  return segs.map(s => {
+    if (s.op === "M" || s.op === "L") return `${s.op} ${f(s.x)} ${f(s.y)}`;
+    if (s.op === "Q") return `Q ${f(s.cx)} ${f(s.cy)} ${f(s.x)} ${f(s.y)}`;
+    if (s.op === "A") return `A ${f(s.rx)} ${f(s.ry)} 0 0 ${s.ccw ? 0 : 1} ${f(s.cx + s.rx * Math.cos(s.a1))} ${f(s.cy + s.ry * Math.sin(s.a1))}`;
+    return "Z";
+  }).join(" ");
+}
+
+/* ===================== Trazo de una conexión (port de edgeStroke, FLUYO-018.16) =====================
+   La MISMA gramática que fluyo/js/geometry.js: línea de EDGE_W, esquinas redondeadas con una
+   cuadrática cuyo control es el vértice, sin marca en el origen y una aguja con muesca cuya punta
+   queda a EDGE_GAP del ancla; la línea termina en la muesca. Sustituye a los <marker> de antes
+   (20×16 frente al 12×12 del lienzo, con `context-stroke` de SVG 2). El test de paridad compara
+   los segmentos con los de la app sobre el corpus. */
+export const EDGE_W = 1.5, EDGE_CORNER = 8, EDGE_GAP = 3, EDGE_HEAD_LEN = 11, EDGE_HEAD_HALF = 4, EDGE_HEAD_NOTCH = 2.8;
+function strokeDir(pts: Pt[], fromStart: boolean): { x: number; y: number; L: number } | null {
+  const n = pts.length;
+  for (let k = 1; k < n; k++) {
+    const a = fromStart ? pts[k] : pts[n - 1 - k], b = fromStart ? pts[k - 1] : pts[n - k];
+    const L = Math.hypot(b.x - a.x, b.y - a.y);
+    if (L > 0.01) return { x: (b.x - a.x) / L, y: (b.y - a.y) / L, L };
+  }
+  return null;
+}
+function edgeHeadSegs(tip: Pt, u: { x: number; y: number }): CylSeg[] {
+  const nx = -u.y, ny = u.x, bx = tip.x - u.x * EDGE_HEAD_LEN, by = tip.y - u.y * EDGE_HEAD_LEN, k = EDGE_HEAD_LEN - EDGE_HEAD_NOTCH;
+  return [
+    { op: "M", x: tip.x, y: tip.y },
+    { op: "L", x: bx + nx * EDGE_HEAD_HALF, y: by + ny * EDGE_HEAD_HALF },
+    { op: "L", x: tip.x - u.x * k, y: tip.y - u.y * k },
+    { op: "L", x: bx - nx * EDGE_HEAD_HALF, y: by - ny * EDGE_HEAD_HALF },
+    { op: "Z" },
+  ];
+}
+export function edgeStroke(e: { endArrow?: boolean; startArrow?: boolean }, pts: Pt[]): { line: CylSeg[]; heads: CylSeg[][] } {
+  const out: { line: CylSeg[]; heads: CylSeg[][] } = { line: [], heads: [] };
+  if (!pts || pts.length < 2) return out;
+  const line = pts.map(p => ({ x: p.x, y: p.y }));
+  const trim = (i: number, j: number, d: number) => {
+    const a = line[j], b = line[i], L = Math.hypot(b.x - a.x, b.y - a.y);
+    if (L <= 0.01) return;
+    const k = Math.min(d, Math.max(0, L - 1));
+    b.x -= (b.x - a.x) / L * k; b.y -= (b.y - a.y) / L * k;
+  };
+  const n = line.length;
+  if (e.endArrow !== false) {
+    const u = strokeDir(pts, false);
+    if (u) {
+      const z = pts[n - 1], tip = { x: z.x - u.x * EDGE_GAP, y: z.y - u.y * EDGE_GAP };
+      out.heads.push(edgeHeadSegs(tip, u));
+      trim(n - 1, n - 2, EDGE_GAP + EDGE_HEAD_LEN - EDGE_HEAD_NOTCH);
+    }
+  }
+  if (e.startArrow) {
+    const u = strokeDir(pts, true);
+    if (u) {
+      const z = pts[0], tip = { x: z.x - u.x * EDGE_GAP, y: z.y - u.y * EDGE_GAP };
+      out.heads.push(edgeHeadSegs(tip, u));
+      trim(0, 1, EDGE_GAP + EDGE_HEAD_LEN - EDGE_HEAD_NOTCH);
+    }
+  }
+  out.line.push({ op: "M", x: line[0].x, y: line[0].y });
+  for (let i = 1; i < n - 1; i++) {
+    const a = line[i - 1], b = line[i], c = line[i + 1];
+    const l1 = Math.hypot(b.x - a.x, b.y - a.y), l2 = Math.hypot(c.x - b.x, c.y - b.y);
+    const k = Math.min(EDGE_CORNER, l1 / 2, l2 / 2);
+    // Sin giro (vértice colineal, frecuente en orthoRoute) no hay esquina que redondear.
+    const giro = l1 > 0 && l2 > 0 ? Math.abs((b.x - a.x) * (c.y - b.y) - (b.y - a.y) * (c.x - b.x)) / (l1 * l2) : 0;
+    if (k < 0.5 || giro < 1e-6) { out.line.push({ op: "L", x: b.x, y: b.y }); continue; }
+    out.line.push({ op: "L", x: b.x - (b.x - a.x) / l1 * k, y: b.y - (b.y - a.y) / l1 * k });
+    out.line.push({ op: "Q", cx: b.x, cy: b.y, x: b.x + (c.x - b.x) / l2 * k, y: b.y + (c.y - b.y) / l2 * k });
+  }
+  out.line.push({ op: "L", x: line[n - 1].x, y: line[n - 1].y });
+  return out;
 }
 
 function hexPointsSVG(n: FluyoNode): string {
@@ -840,10 +960,10 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, sym
       break;
 
     case "cylinder": {
-      const { x, y, w, h } = n, ry = Math.min(16, h * 0.18), top = y - h / 2, bot = y + h / 2;
-      const d = `M ${(x - w / 2).toFixed(2)} ${(top + ry).toFixed(2)} L ${(x - w / 2).toFixed(2)} ${(bot - ry).toFixed(2)} C ${(x - w / 2).toFixed(2)} ${(bot + ry * 0.8).toFixed(2)} ${(x + w / 2).toFixed(2)} ${(bot + ry * 0.8).toFixed(2)} ${(x + w / 2).toFixed(2)} ${(bot - ry).toFixed(2)} L ${(x + w / 2).toFixed(2)} ${(top + ry).toFixed(2)} C ${(x + w / 2).toFixed(2)} ${(top - ry * 0.8).toFixed(2)} ${(x - w / 2).toFixed(2)} ${(top - ry * 0.8).toFixed(2)} ${(x - w / 2).toFixed(2)} ${(top + ry).toFixed(2)} Z`;
-      parts.push(`<path d="${d}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
-      parts.push(`<ellipse cx="${x}" cy="${(top + ry).toFixed(2)}" rx="${(w / 2).toFixed(2)}" ry="${ry.toFixed(2)}" fill="none" stroke="${stroke}" stroke-width="2.5"/>`);
+      /* FLUYO-018.14a: los mismos segmentos que el lienzo y el exportador de la app */
+      const seg = cylinderSegments(n);
+      parts.push(`<path d="${segmentsToSVGPath(seg.outline)}" fill="${fill}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
+      parts.push(`<path d="${segmentsToSVGPath(seg.lip)}" fill="none" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
       parts.push(svgLabelLines(n, theme, globalFont));
       break;
     }
@@ -855,7 +975,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, sym
          caracteres a 16px mide 35.19px natural y 38.40 exactos con textLength. */
       const L = codeBlockLayout(n), col = codeColors(n, theme);
       const x = n.x - n.w / 2, y = n.y - n.h / 2;
-      const fam = escapeXML(codeFont(n)), peso = n.bold === false ? "" : ' font-weight="700"';
+      const fam = escapeXML(codeFont(n));
       const clip = `code-clip-${n.id}`;
       parts.push(`<clipPath id="${clip}"><rect x="${(x + 2).toFixed(2)}" y="${(y + 2).toFixed(2)}" width="${(n.w - 4).toFixed(2)}" height="${(n.h - 4).toFixed(2)}" rx="9" ry="9"/></clipPath>`);
       parts.push(`<rect x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${n.w}" height="${n.h}" rx="10" ry="10" fill="${escapeXML(col.panel)}" stroke="${stroke}" stroke-width="2.5"${dash}/>`);
@@ -863,8 +983,9 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, sym
       parts.push(`<rect x="${L.bx.toFixed(2)}" y="${L.by.toFixed(2)}" width="${L.bw.toFixed(2)}" height="${L.blockH.toFixed(2)}" rx="6" ry="6" fill="${escapeXML(col.paper)}"/>`);
       for (const row of L.rows) {
         for (const tk of row.tokens) {
-          if (tk.kw) parts.push(`<rect x="${(tk.x - 2).toFixed(2)}" y="${(row.ly - L.fs / 2 - 2).toFixed(2)}" width="${(tk.w + 4).toFixed(2)}" height="${(L.fs + 6).toFixed(2)}" fill="${escapeXML(col.kwBg)}"/>`);
-          parts.push(`<text x="${tk.x.toFixed(2)}" y="${row.ly.toFixed(2)}" font-family="${fam}" font-size="${L.fs.toFixed(2)}"${peso} fill="${escapeXML(tk.kw ? col.kwText : col.text)}" dominant-baseline="middle" textLength="${tk.w.toFixed(3)}" lengthAdjust="spacing">${escapeXML(tk.t)}</text>`);
+          if (tk.kw && col.kwBg) parts.push(`<rect x="${(tk.x - 2).toFixed(2)}" y="${(row.ly - L.fs / 2 - 2).toFixed(2)}" width="${(tk.w + 4).toFixed(2)}" height="${(L.fs + 6).toFixed(2)}" fill="${escapeXML(col.kwBg)}"/>`);
+          const peso = codeTokenWeight(n, tk.kw), wAttr = peso === 400 ? "" : ` font-weight="${peso}"`;
+          parts.push(`<text x="${tk.x.toFixed(2)}" y="${row.ly.toFixed(2)}" font-family="${fam}" font-size="${L.fs.toFixed(2)}"${wAttr} fill="${escapeXML(tk.kw ? col.kwText : col.text)}" dominant-baseline="middle" textLength="${tk.w.toFixed(3)}" lengthAdjust="spacing">${escapeXML(tk.t)}</text>`);
         }
       }
       parts.push("</g>");
@@ -917,11 +1038,9 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
   const T = THEMES[theme];
   const lineCol = escapeXML(e.lineColor || T.edge);
   const dash = e.dashed ? ' stroke-dasharray="8 7"' : "";
-  let markers = "";
-  if (e.endArrow !== false) markers += ' marker-end="url(#fluyo-arrow-end)"';
-  if (e.startArrow) markers += ' marker-start="url(#fluyo-arrow-start)"';
-  const ptsStr = pts.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(" ");
-  const parts = [`<polyline points="${ptsStr}" fill="none" stroke="${lineCol}" stroke-width="2" stroke-linejoin="round"${dash}${markers}/>`];
+  const stroke = edgeStroke(e, pts);
+  const parts = [`<path d="${segmentsToSVGPath(stroke.line)}" fill="none" stroke="${lineCol}" stroke-width="${EDGE_W}" stroke-linejoin="round"${dash}/>`];
+  for (const h of stroke.heads) parts.push(`<path d="${segmentsToSVGPath(h)}" fill="${lineCol}"/>`);
 
   if (e.label) {
     const m = labelPos.get(e.id) ?? pointAt(pts, 0.5);
@@ -937,16 +1056,7 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
   return parts.join("\n");
 }
 
-function buildDefs(): string {
-  return `<defs>
-  <marker id="fluyo-arrow-end" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto" markerUnits="strokeWidth">
-    <path d="M 0 0 L 10 4 L 0 8 z" fill="context-stroke"/>
-  </marker>
-  <marker id="fluyo-arrow-start" markerWidth="10" markerHeight="8" refX="1" refY="4" orient="auto-start-reverse" markerUnits="strokeWidth">
-    <path d="M 0 0 L 10 4 L 0 8 z" fill="context-stroke"/>
-  </marker>
-</defs>`;
-}
+/* FLUYO-018.16: ya no hay <defs> de marcadores; las puntas son <path> explícitos (edgeStroke). */
 
 /** Caja que envuelve el contenido, con 40 px de aire. Port de `getBounds()`. */
 function pageBounds(page: FluyoPage, nodeById: Map<number, FluyoNode>) {
@@ -1005,7 +1115,6 @@ export function pageToSVG(
   const parts = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="${width}" height="${height}" viewBox="${viewBox}">`,
-    buildDefs(),
   ];
   // Sin rectángulo de fondo: el SVG que exporta la app es transparente.
   const labelPos = placeEdgeLabels(page);
