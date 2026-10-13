@@ -279,6 +279,8 @@ server.registerTool(
       "páginas con sus elementos (id, nombre, forma, x/y = centro, w/h) y conexiones (id, origen, destino, ruta, lados y waypoints si los hay; sin estilos), los 'bounds' que ocupa cada página, disponibilidad inicial, la biblioteca de eventos " +
       "(id, nombre, frase, símbolo, primitiva, acción, a qué se aplica —conexión o elemento—, presentación distinta del defecto y dónde se usa: Historias y pasos; " +
       "es lo que responde «¿qué eventos puedo usar?») y las Historias con sus pasos agrupados por momento, su evento, objetivo y frase. " +
+      "Si una Historia tiene dependencias de llegada: arrivalDependencies (lo guardado), inactiveArrivalDependencies (lo guardado que no aplica, con su razón), " +
+      "waitsForArrivalOf en cada paso y waitsFor en cada momento (solo lo que aplica al reproducir). " +
       "También valida la integridad del documento (referencias a elementos, conexiones y eventos) con la misma regla que el motor de Fluyo, " +
       "indica la versión de schema y de motor, y declara lo que el modelo NO representa. No modifica nada. " +
       "Usa los ids numéricos que devuelve (los storyId son por página) para pedir run_story. " +
@@ -336,7 +338,7 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Aplica un LOTE ATÓMICO de operaciones de Historia y de eventos sobre una COPIA del documento y devuelve un documento nuevo que Fluyo puede ejecutar tal cual (el original no se modifica). " +
-      "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait (alcance 'story'); " +
+      "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait, set_arrival_dependencies (alcance 'story'); " +
       "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection, reorder_nodes, duplicate_node (alcance 'page'); create_page, rename_page, delete_page, set_theme (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
       "Un evento se define con name, primitive (FLOW=conexión, OCCURRENCE=elemento, SET_AVAILABILITY=elemento que cambia su disponibilidad con availability UP|DOWN), sentence (marcadores {source} {target} {name}), symbol, motion (sólo FLOW) y presentation ({connectionEffects}|{nodeEffects}, parche); la acción de los pasos la sigue decidiendo el evento. " +
       "Las reglas son las del editor: un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) y no se elimina (REFERENCED_ENTITY, con las Historias y pasos que lo usan; quita antes esos pasos); cambiar nombre, frase, símbolo o presentación es global y no toca pasos, tiempos ni objetivos. Puedes usar {ref} de un evento creado en el lote en add_step. " +
@@ -359,6 +361,10 @@ server.registerTool(
       "LÍMITES (capabilities.limits de describe_document): |x|,|y| ≤ coordMax, w/h entre sizeMin y sizeMax, ≤ maxNodesPerPage nodos y ≤ maxConnectionsPerPage conexiones por página; se evalúan sobre el ESTADO FINAL del lote (puedes crear y borrar dentro del mismo lote) y solo sobre lo que el lote escribe: un documento antiguo que ya los exceda se abre y se edita igual. Si se superan se rechaza TODO con LIMIT_EXCEEDED {limit, actual, field}. " +
       "El tiempo es narrativo: add_step añade al final tras 'waitMs' (o 'al mismo tiempo' con placement) y set_wait fija la espera de un momento " +
       "(no se escribe el tiempo absoluto). Eliminar y duplicar siguen la política de la app (eliminar colapsa la espera; duplicar entra en el mismo momento). " +
+      "DEPENDENCIAS DE LLEGADA (explícitas, nunca se infieren de las conexiones): add_step {waitsForArrivalOf:[stepId|{ref}]} o set_arrival_dependencies {stepId, waitsForArrivalOf} (reemplaza; [] las quita) declaran que el MOMENTO de ese paso no empieza, al reproducir en Fluyo, hasta que llegue el token de esos envíos (pasos SEND de la misma Historia en un momento ANTERIOR); " +
+      "el momento es atómico, lo independiente no se retrasa y el Trace del motor no cambia. Se guardan en la Historia (arrivalDependencies), no en el paso. Una dependencia inválida (no existe, no es SEND, mismo momento o posterior, sí misma, ciclo, otra Historia) se rechaza con INVALID_ARRIVAL_DEPENDENCY {stepId, sendId, reason}. " +
+      "remove_step quita las dependencias del paso y las que lo esperaban (changes[].cascade.arrivalDependencies); duplicate_step copia las válidas a la copia y no redirige las que esperan al original; duplicate_story las copia con los mismos ids de paso. " +
+      "Si move_step/set_wait dejan una dependencia sin efecto, se conserva y se avisa en 'warnings' (ARRIVAL_DEPENDENCY_INACTIVE). " +
       "Requiere 'baseRevision': la 'revision' que devolvió describe_document para ESTE documento; si no coincide se rechaza. " +
       "Con dryRun:true se valida y se devuelven los cambios sin documento. " +
       "waitMs: add_step por defecto 1000 (el primero 0); set_wait lo cuenta desde el momento anterior y desplaza los posteriores; move_step {direction}|{to:{gapIndex}|{sameMomentAs,after}}. " +

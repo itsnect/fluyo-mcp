@@ -34,7 +34,8 @@ interface ValidationReport {
 
 /** Lo que el modelo NO representa. Se devuelve siempre: es lo que impide que el agente lo invente. */
 export const UNMODELED: readonly string[] = [
-  "reintentos, colas, timeouts ni dependencias causales entre pasos: un paso se ejecuta aunque uno anterior no se haya completado",
+  "reintentos, colas ni timeouts: el motor ejecuta cada paso aunque uno anterior no se haya completado",
+  "las dependencias de llegada (arrivalDependencies) solo deciden CUÁNDO SE VE un momento al reproducir en Fluyo (espera a que llegue el token de un envío anterior): no cambian el Trace, no son latencia ni se infieren de las conexiones",
   "lógica interna de ningún elemento (procesar un pago, el funcionamiento de Kafka, etc.)",
   "latencia: los tiempos (at, ms) son virtuales; la duración visual del viaje es sólo presentación",
   "un acontecimiento OCCURRENCE es narrado: el motor lo registra aunque el elemento no esté disponible y no prueba que ocurriera nada real",
@@ -101,6 +102,12 @@ interface KernelModel {
       name: string;
       engineVersion: number;
       stepCount: number;
+      /** FLUYO-018.22: lo ALMACENADO (forma canónica), lo que aplica al reproducir (por paso) y lo ignorado con su razón. */
+      arrival: {
+        stored: Array<{ stepId: number; waitsForArrivalOf: number[] }> | null;
+        waits: Array<[number, number[]]>;
+        ignored: Array<{ stepId: number | null; sendId: number | null; reason: string }>;
+      };
       groups: Array<{
         at: number;
         steps: Array<{
@@ -145,6 +152,7 @@ const READ_MODEL = `(function(){
       behaviors: pg.behaviors,
       stories: pg.scenarios.map(sc => ({
         id: sc.id, name: sc.name, engineVersion: sc.engineVersion, stepCount: sc.steps.length,
+        arrival: (function(){ const a = arrivalDependencies(sc); return {stored: arrivalCanonical(arrivalRawMap(sc)), waits: [...a.waits], ignored: a.ignored}; })(),
         groups: storyboardGroups(sc.steps).map(g => ({at: g.at, steps: g.steps.map(s => ({
           id: s.id, action: s.action, eventTypeId: s.eventTypeId, nodeId: s.nodeId, edgeId: s.edgeId, state: s.state,
           sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId))}))}))
@@ -244,6 +252,7 @@ export function describeDocument(input: DescribeInput) {
         initialUnavailable: pg.behaviors.filter(b => b.initialState === "DOWN").map(b => b.nodeId),
         stories: pg.stories.map(sc => {
           const last = sc.groups.length ? sc.groups[sc.groups.length - 1].at : 0;
+          const waits = new Map(sc.arrival.waits);
           return {
             storyId: sc.id,
             name: sc.name,
@@ -251,10 +260,17 @@ export function describeDocument(input: DescribeInput) {
             stepCount: sc.stepCount,
             durationMs: last,
             executable: executable.get(`${pageIndex}:${sc.id}`) ?? false,
+            /* FLUYO-018.22: dato almacenado tal cual (canónico) y, aparte, lo almacenado que NO aplica al reproducir. Sin dependencias, nada. */
+            ...(sc.arrival.stored ? { arrivalDependencies: sc.arrival.stored } : {}),
+            ...(sc.arrival.ignored.length ? { inactiveArrivalDependencies: sc.arrival.ignored } : {}),
             ...(includeSteps
               ? {
-                  moments: sc.groups.map(g => ({
+                  moments: sc.groups.map(g => {
+                    // El momento es atómico: espera la unión de lo que esperan sus pasos (solo dependencias válidas).
+                    const momentWaits = [...new Set(g.steps.flatMap(s => waits.get(s.id) ?? []))];
+                    return {
                     at: g.at,
+                    ...(momentWaits.length ? { waitsFor: momentWaits } : {}),
                     steps: g.steps.map(s => {
                       const et = s.eventTypeId === undefined ? undefined : etById.get(s.eventTypeId);
                       return {
@@ -265,9 +281,11 @@ export function describeDocument(input: DescribeInput) {
                         ...(s.state ? { state: s.state } : {}),
                         target: target(s),
                         sentence: s.sentence,
+                        ...(waits.get(s.id)?.length ? { waitsForArrivalOf: waits.get(s.id) } : {}),
                       };
                     }),
-                  })),
+                    };
+                  }),
                 }
               : {}),
           };

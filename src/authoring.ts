@@ -166,6 +166,14 @@ const Endpoint = z
   .describe("{ref} de algo creado antes en el lote (misma página) o {id} existente.");
 const storyRef = { pageIndex: PageIndex, storyId: IdOrRef };
 const stepRef = { ...storyRef, stepId: IdOrRef };
+/* FLUYO-018.22: dependencias de llegada. Solo la forma; la validez (SEND de la misma Historia en un momento anterior) la decide el kernel. */
+const WaitsForArrivalOf = z
+  .array(IdOrRef)
+  .max(1000)
+  .describe(
+    "Ids (o {ref} del lote) de pasos SEND de la MISMA Historia en un momento ANTERIOR cuya llegada espera este paso: su momento no empieza (al reproducir en Fluyo) hasta que llegue el token de ese envío. " +
+      "Se guarda en la Historia (arrivalDependencies), no en el paso. Lo inválido se rechaza (INVALID_ARRIVAL_DEPENDENCY). Nunca se infiere de las conexiones."
+  );
 
 
 /* FLUYO-018.7a: forma de set_theme / reorder_nodes / duplicate_node. Se reutiliza en las operaciones de author_document y en las tools de una sola operación. */
@@ -194,6 +202,7 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
     placement: z
       .strictObject({ sameMomentAs: IdOrRef, position: z.enum(["before", "after"]).optional() })
       .optional(),
+    waitsForArrivalOf: WaitsForArrivalOf.optional(),
     ref: z.string().min(1).max(40).optional(),
   }),
   z.strictObject({ op: z.literal("remove_step"), scope: story, ...stepRef }),
@@ -207,6 +216,12 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("duplicate_step"), scope: story, ...stepRef, ref: z.string().min(1).max(40).optional() }),
   z.strictObject({ op: z.literal("retarget_step"), scope: story, ...stepRef, target: Target }),
   z.strictObject({ op: z.literal("set_wait"), scope: story, ...stepRef, waitMs: Wait }),
+  z.strictObject({
+    op: z.literal("set_arrival_dependencies"),
+    scope: story,
+    ...stepRef,
+    waitsForArrivalOf: WaitsForArrivalOf.describe("Lista COMPLETA de envíos que espera el paso (reemplaza la anterior); [] = ya no espera nada."),
+  }),
   z.strictObject({ op: z.literal("create_node"), scope: page, pageIndex: PageIndex, spec: NodeSpec, ref: LocalRef.optional().describe("Nombre del lote (no se guarda): luego {ref} vale como source/target en la misma página.") }),
   z.strictObject({ op: z.literal("create_connection"), scope: page, pageIndex: PageIndex, source: Endpoint, target: Endpoint, spec: ConnectionSpec.optional(), ref: LocalRef.optional() }),
   z.strictObject({ op: z.literal("update_node"), scope: page, pageIndex: PageIndex, node: Endpoint, spec: NodePatch }),
@@ -271,6 +286,7 @@ interface KernelApply {
   touched?: Array<{ pageIndex: number; storyId: number }>;
   pageMap?: Array<{ from: number; to: number | null }>;
   validation?: { valid: boolean; preexistingErrors: number };
+  warnings?: Array<Record<string, unknown>>;
   errors?: Array<Record<string, unknown>>;
 }
 
@@ -327,6 +343,8 @@ export function authorDocument(input: AuthorInput) {
     /* FLUYO-018.7c: solo si el lote eliminó páginas. Índice del lote (from) → índice en el documento resultante (to; null = eliminada). */
     ...(result.pageMap ? { pageMap: result.pageMap } : {}),
     validation: result.validation ?? { valid: true, preexistingErrors: 0 },
+    /* FLUYO-018.22: dependencias de llegada que el lote dejó sin efecto (se conservan y se ignoran al reproducir). Solo si hay. */
+    ...(result.warnings?.length ? { warnings: result.warnings } : {}),
     unmodeled: UNMODELED,
     ...(link === null ? {} : link.ok ? { editorUrl: link.url } : { editorUrlError: { code: link.code, chars: link.chars, maxChars: link.maxChars, message: link.message } }),
     ...(input.dryRun ? {} : { document: result.project }),
@@ -349,6 +367,7 @@ export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string
     `${r.dryRun ? "Simulación (dryRun): " : ""}${n} operación(es) aplicada(s) sobre una copia; ` +
     diagram +
     `${r.touchedStories.length} Historia(s) creada(s)/editada(s), todas ejecutables. ` +
+    ("warnings" in r && r.warnings?.length ? `Aviso: ${r.warnings.length} dependencia(s) de llegada sin efecto (ver warnings). ` : "") +
     `${r.dryRun ? "No se devuelve documento." : "Documento nuevo en el 2.º bloque."} resultRevision ${r.resultRevision.slice(0, 19)}…` +
     ("editorUrl" in r && r.editorUrl ? `\n${openLinkLine({ ok: true, url: r.editorUrl }, "Ábrelo en Fluyo")}` : "") +
     ("editorUrlError" in r && r.editorUrlError ? `\n${r.editorUrlError.message}` : "")
