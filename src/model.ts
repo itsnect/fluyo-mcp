@@ -111,6 +111,8 @@ export const FluyoEdgeSchema = z
     /** Número de puntos propio; solo manda si `dotsGlobal` es false. */
     dots: z.number().nullable().optional(),
     dotsGlobal: z.boolean().optional(),
+    /** FLUYO-018.27: tamaño de las puntas (1 = el de siempre; la app acota en [1, 2]). Ausente = 1, sin migrar. */
+    arrowSize: z.number().nullable().optional(),
   })
   .passthrough();
 
@@ -273,6 +275,7 @@ const commonEdgeFields = {
   speedFac: z.number().min(1).max(4).optional().describe("Multiplica la velocidad de los puntos de esta arista (1–4)."),
   dots: z.number().int().min(1).max(6).optional().describe("Número de puntos propio de esta arista. Requiere dotsGlobal=false."),
   dotsGlobal: z.boolean().optional().describe("Si es false, esta arista usa su propio 'dots' en vez del global."),
+  arrowSize: z.number().min(1).max(2).optional().describe("Tamaño de las puntas de esta conexión: 1 (el de siempre, 11×8 px), 1.5 o 2. Solo cambia el dibujo de la punta, no la ruta."),
 };
 
 export const EdgeSpecSchema = z.object(commonEdgeFields);

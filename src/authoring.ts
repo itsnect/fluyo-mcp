@@ -126,6 +126,7 @@ const ConnectionSpec = z
     speedFac: z.number().optional(),
     dots: z.number().int().optional(),
     dotsGlobal: z.boolean().optional(),
+    arrowSize: z.number().nullable().optional().describe("FLUYO-018.27: tamaño de las puntas (1 = el de siempre, 1.5, 2; el kernel acota en [1, 2]; null = quitarlo). Solo dibujo: la ruta no cambia."),
   })
   .describe("Campos opcionales de la conexión (lados, ruta, etiqueta, estilo); sin ellos, los defaults del editor. 'ref', 'source' y 'target' NO van aquí.");
 /* Modificar (018.3): un PARCHE con solo las claves que la UI del editor escribe (lista cerrada en model.js). id, icon, anim e img no se modifican;

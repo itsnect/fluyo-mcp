@@ -805,7 +805,8 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
       const geo = pageEdgeGeometry(page);
       for (const e of page.edges) {
         const pts = geo.get(e.id) ?? [];
-        for (const flags of [{}, { endArrow: false }, { startArrow: true }, { endArrow: false, startArrow: true }]) {
+        /* FLUYO-018.27: también con cada tamaño de punta (ausente, 1, 1,5, 2 y uno fuera de rango que se acota) */
+        for (const flags of [{}, { endArrow: false }, { startArrow: true }, { endArrow: false, startArrow: true }, { arrowSize: 1 }, { arrowSize: 1.5 }, { arrowSize: 2 }, { arrowSize: 2, startArrow: true }, { arrowSize: 1.5, endArrow: false, startArrow: true }, { arrowSize: 5 }]) {
           const ee = { ...e, ...flags } as FluyoEdge;
           const a = plano(app.edgeStroke(ee, pts)) as { line: unknown[]; heads: unknown[][] }, b = plano(edgeStroke(ee, pts));
           assert.deepEqual(a, b, `${fx.name} e${e.id} ${JSON.stringify(flags)}`);
@@ -823,7 +824,7 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
       [{ x: 10, y: 10 }, { x: 10.5, y: 10.2 }],
       [{ x: 0, y: 0 }, { x: 0, y: 0 }],
     ];
-    for (const pts of raros) for (const flags of [{}, { startArrow: true }]) {
+    for (const pts of raros) for (const flags of [{}, { startArrow: true }, { arrowSize: 2 }, { arrowSize: 1.5, startArrow: true }]) {
       const e = { id: 1, from: 1, to: 2, ...flags } as unknown as FluyoEdge;
       assert.deepEqual(plano(app.edgeStroke(e, pts)), plano(edgeStroke(e, pts)), `caso ${JSON.stringify(pts)} ${JSON.stringify(flags)}`);
     }

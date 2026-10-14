@@ -933,6 +933,13 @@ export function segmentsToSVGPath(segs: CylSeg[]): string {
    (20×16 frente al 12×12 del lienzo, con `context-stroke` de SVG 2). El test de paridad compara
    los segmentos con los de la app sobre el corpus. */
 export const EDGE_W = 1.5, EDGE_CORNER = 8, EDGE_GAP = 3, EDGE_HEAD_LEN = 11, EDGE_HEAD_HALF = 4, EDGE_HEAD_NOTCH = 2.8;
+/* FLUYO-018.27 (port): `arrowSize` escala la aguja entera (largo, ancho, muesca) y el recorte de la línea; la punta sigue a
+   EDGE_GAP del ancla. Ausente o 1 = la de siempre; acotado en [1, 2] como en la app (model.js lo normaliza, geometry.js lo acota). */
+export const ARROW_SIZE_MIN = 1, ARROW_SIZE_MAX = 2;
+export function edgeArrowSize(e: { arrowSize?: number | null } | null | undefined): number {
+  const k = e ? +(e.arrowSize as number) : NaN;
+  return Number.isFinite(k) ? Math.min(ARROW_SIZE_MAX, Math.max(ARROW_SIZE_MIN, k)) : 1;
+}
 function strokeDir(pts: Pt[], fromStart: boolean): { x: number; y: number; L: number } | null {
   const n = pts.length;
   for (let k = 1; k < n; k++) {
@@ -942,17 +949,18 @@ function strokeDir(pts: Pt[], fromStart: boolean): { x: number; y: number; L: nu
   }
   return null;
 }
-function edgeHeadSegs(tip: Pt, u: { x: number; y: number }): CylSeg[] {
-  const nx = -u.y, ny = u.x, bx = tip.x - u.x * EDGE_HEAD_LEN, by = tip.y - u.y * EDGE_HEAD_LEN, k = EDGE_HEAD_LEN - EDGE_HEAD_NOTCH;
+function edgeHeadSegs(tip: Pt, u: { x: number; y: number }, size: number): CylSeg[] {
+  const s = size || 1, len = EDGE_HEAD_LEN * s, half = EDGE_HEAD_HALF * s, k = (EDGE_HEAD_LEN - EDGE_HEAD_NOTCH) * s;
+  const nx = -u.y, ny = u.x, bx = tip.x - u.x * len, by = tip.y - u.y * len;
   return [
     { op: "M", x: tip.x, y: tip.y },
-    { op: "L", x: bx + nx * EDGE_HEAD_HALF, y: by + ny * EDGE_HEAD_HALF },
+    { op: "L", x: bx + nx * half, y: by + ny * half },
     { op: "L", x: tip.x - u.x * k, y: tip.y - u.y * k },
-    { op: "L", x: bx - nx * EDGE_HEAD_HALF, y: by - ny * EDGE_HEAD_HALF },
+    { op: "L", x: bx - nx * half, y: by - ny * half },
     { op: "Z" },
   ];
 }
-export function edgeStroke(e: { endArrow?: boolean; startArrow?: boolean }, pts: Pt[]): { line: CylSeg[]; heads: CylSeg[][] } {
+export function edgeStroke(e: { endArrow?: boolean; startArrow?: boolean; arrowSize?: number | null }, pts: Pt[]): { line: CylSeg[]; heads: CylSeg[][] } {
   const out: { line: CylSeg[]; heads: CylSeg[][] } = { line: [], heads: [] };
   if (!pts || pts.length < 2) return out;
   const line = pts.map(p => ({ x: p.x, y: p.y }));
@@ -962,21 +970,21 @@ export function edgeStroke(e: { endArrow?: boolean; startArrow?: boolean }, pts:
     const k = Math.min(d, Math.max(0, L - 1));
     b.x -= (b.x - a.x) / L * k; b.y -= (b.y - a.y) / L * k;
   };
-  const n = line.length;
+  const n = line.length, size = edgeArrowSize(e), cut = EDGE_GAP + (EDGE_HEAD_LEN - EDGE_HEAD_NOTCH) * size;
   if (e.endArrow !== false) {
     const u = strokeDir(pts, false);
     if (u) {
       const z = pts[n - 1], tip = { x: z.x - u.x * EDGE_GAP, y: z.y - u.y * EDGE_GAP };
-      out.heads.push(edgeHeadSegs(tip, u));
-      trim(n - 1, n - 2, EDGE_GAP + EDGE_HEAD_LEN - EDGE_HEAD_NOTCH);
+      out.heads.push(edgeHeadSegs(tip, u, size));
+      trim(n - 1, n - 2, cut);
     }
   }
   if (e.startArrow) {
     const u = strokeDir(pts, true);
     if (u) {
       const z = pts[0], tip = { x: z.x - u.x * EDGE_GAP, y: z.y - u.y * EDGE_GAP };
-      out.heads.push(edgeHeadSegs(tip, u));
-      trim(0, 1, EDGE_GAP + EDGE_HEAD_LEN - EDGE_HEAD_NOTCH);
+      out.heads.push(edgeHeadSegs(tip, u, size));
+      trim(0, 1, cut);
     }
   }
   out.line.push({ op: "M", x: line[0].x, y: line[0].y });
