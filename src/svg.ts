@@ -76,22 +76,113 @@ const DIR = {
    geometría queda intacta. */
 const PARALLEL_SEP = 28;
 
-function parallelKey(e: FluyoEdge): string {
-  return e.from < e.to ? `${e.from}-${e.to}` : `${e.to}-${e.from}`;
+/* FLUYO-018.25 — carriles por CANAL, estables (port de trackKey/trackSiblings/parallelLane de
+   fluyo/js/geometry.js). Comparten carril solo las aristas del mismo par de nodos que salen y
+   llegan por los mismos lados (lados sin correr, en el marco canónico del par ordenado por id);
+   dentro del canal manda el id: la primera se queda en el carril 0 y las siguientes se apartan
+   hacia fuera (+SEP, −SEP, +2·SEP…; en una U, k·SEP más afuera). Antes el abanico era simétrico
+   sobre el par entero: una directa se apartaba por una U que no compartía nada con ella y añadir
+   una hermana movía la que ya estaba. */
+function trackKey(e: FluyoEdge, nodeById: Map<number, FluyoNode>): string | null {
+  const b = baseAnchors(e, nodeById);
+  if (!b) return null;
+  return e.from < e.to ? `${e.from}:${b.s1}|${e.to}:${b.s2}` : `${e.to}:${b.s2}|${e.from}:${b.s1}`;
 }
 
-/** El carril de esta arista: `off` es su desplazamiento y `half` el semiancho del
- *  abanico completo del grupo, que hace falta para reservarle sitio en el lado
- *  del nodo antes de mover nada. */
-function parallelLane(e: FluyoEdge, edges: readonly FluyoEdge[]): { off: number; half: number } {
-  const none = { off: 0, half: 0 };
-  if ((e.waypoints || []).length) return none;
-  const key = parallelKey(e);
-  const sib = edges.filter(o => !(o.waypoints || []).length && parallelKey(o) === key);
+/** Las aristas del canal de `e`, por id. Primero el filtro de enteros y solo para esas la geometría. */
+function trackSiblings(e: FluyoEdge, edges: readonly FluyoEdge[], nodeById: Map<number, FluyoNode>): FluyoEdge[] {
+  if ((e.waypoints || []).length) return [e];
+  const par: FluyoEdge[] = [];
+  for (const o of edges) {
+    if ((o.waypoints || []).length) continue;
+    if ((o.from === e.from && o.to === e.to) || (o.from === e.to && o.to === e.from)) par.push(o);
+  }
+  if (par.length < 2) return par;
+  const k = trackKey(e, nodeById);
+  return par.filter(o => o === e || trackKey(o, nodeById) === k).sort((a, b) => a.id - b.id);
+}
+
+/** El carril de esta arista: `k` es su puesto en el canal (0 = la primera) y `off` su
+ *  desplazamiento entre caras que se miran (0, +SEP, −SEP, +2·SEP…). */
+interface Lane { off: number; half: number; k: number; clamp?: boolean }
+function parallelLane(e: FluyoEdge, edges: readonly FluyoEdge[], nodeById: Map<number, FluyoNode>): Lane {
+  const none: Lane = { off: 0, half: 0, k: 0 };
+  const sib = trackSiblings(e, edges, nodeById);
   if (sib.length < 2) return none;
-  const i = sib.findIndex(o => o.id === e.id);
-  if (i < 0) return none;
-  return { off: (i - (sib.length - 1) / 2) * PARALLEL_SEP, half: ((sib.length - 1) / 2) * PARALLEL_SEP };
+  const k = sib.indexOf(e);
+  if (k < 0) return none;
+  const b = baseAnchors(sib[0], nodeById);
+  if (!b || b.s1 === b.s2) return k ? { off: 0, half: 0, k } : none;   // U: anidadas en edgePoints
+  const L = laneLayout(sib, b, nodeById);
+  return { off: L.offs[k], half: L.half || 0, k, clamp: !!L.clamp };
+}
+
+/* ===================== Carriles: estabilidad cuando cabe, recolocación mínima cuando no =====================
+   Port idéntico de laneLayout de fluyo/js/geometry.js (FLUYO-018.25). Candidatas: ESTABLE (la primera en 0, las
+   demás alternando ±g con el mayor g ≤ SEP que cabe y nunca menor que LANE_MIN, también en espejo) y RECOLOCADA (el
+   mismo orden con la separación razonable g = LANE_MIN, corrido el mínimo que hace caber a todas). Gana la de menos defectos
+   —penetración en cualquier nodo, retroceso, diagonal, cruce entre hermanas— y, a igualdad, la estable, la de menor
+   movimiento y la orientación +. Sin ninguna que quepa, el abanico de antes (recortado). */
+const LANE_MIN = PARALLEL_SEP / 2, LANE_INSET = 10;
+function laneRange(n0: FluyoNode, side: "n" | "s" | "e" | "w", p: Pt): [number, number] {
+  const n = anchorBox(n0), horiz = side === "n" || side === "s", c = horiz ? n.x : n.y;
+  const lim = Math.max(0, (horiz ? n.w / 2 : n.h / 2) - LANE_INSET), v = horiz ? p.x : p.y;
+  return [c - lim - v, c + lim - v];
+}
+function laneShift(p: Pt, side: "n" | "s" | "e" | "w", o: number): Pt {
+  return side === "n" || side === "s" ? { x: p.x + o, y: p.y } : { x: p.x, y: p.y + o };
+}
+function laneLayout(sib: FluyoEdge[], b: BaseAnchors, nodeById: Map<number, FluyoNode>): { offs: number[]; half?: number; clamp?: boolean } {
+  const n = sib.length, A = nodeById.get(sib[0].from)!, B = nodeById.get(sib[0].to)!;
+  const r1 = laneRange(A, b.s1, b.p1), r2 = laneRange(B, b.s2, b.p2);
+  const lo = Math.max(r1[0], r2[0]), hi = Math.min(r1[1], r2[1]);
+  const alt = (k: number) => (k % 2 ? 1 : -1) * Math.ceil(k / 2);
+  const cajas = [...nodeById.values()].map(obstBox);
+  const ruta = (e: FluyoEdge, o: number): Pt[] => {
+    const mismo = e.from === sib[0].from;
+    const s = mismo ? [b.s1, b.s2] : [b.s2, b.s1], q = mismo ? [b.p1, b.p2] : [b.p2, b.p1];
+    const a = laneShift(q[0], s[0], o), z = laneShift(q[1], s[1], o);
+    return e.route === "ortho" ? orthoRoute(a, DIR[s[0]], z, DIR[s[1]], o, nodeById.get(e.from), nodeById.get(e.to)) : [a, z];
+  };
+  const defectos = (offs: number[]): number => {
+    const rs = sib.map((e, k) => ruta(e, offs[k]));
+    let d = 0;
+    for (const r of rs) {
+      if (pathInBoxes(r, cajas) >= OBST_MIN) d++;
+      for (let i = 2; i < r.length; i++) { const a = r[i - 2], m = r[i - 1], c = r[i];
+        if ((m.x - a.x) * (c.x - m.x) + (m.y - a.y) * (c.y - m.y) < -1 && Math.abs((m.x - a.x) * (c.y - m.y) - (m.y - a.y) * (c.x - m.x)) < 1) d++; }
+      for (let i = 1; i < r.length; i++) if (Math.abs(r[i].x - r[i - 1].x) > 1.5 && Math.abs(r[i].y - r[i - 1].y) > 1.5) d++;
+    }
+    for (let i = 0; i < rs.length; i++) for (let j = i + 1; j < rs.length; j++) d += laneCrossings(rs[i], rs[j]);
+    return d;
+  };
+  const cands: Array<{ fam: number; mov: number; sg: number; offs: number[]; def?: number }> = [];
+  for (const sg of [1, -1]) {
+    let g = PARALLEL_SEP;
+    for (let k = 1; k < n; k++) { const a = sg * alt(k); g = Math.min(g, a > 0 ? hi / a : lo / a); }
+    if (g >= LANE_MIN - 1e-9) cands.push({ fam: 0, mov: 0, sg, offs: sib.map((e, k) => (k ? sg * alt(k) * g : 0)) });
+  }
+  if (hi >= lo) {
+    const g = n > 1 ? Math.min(LANE_MIN, (hi - lo) / (n - 1)) : 0;   // movimiento mínimo: la separación razonable, no la máxima
+    for (const sg of [1, -1]) {
+      const st = sib.map((e, k) => sg * alt(k) * g), t0 = Math.min(...st);
+      const t = clamp(t0, lo, hi - (n - 1) * g);
+      cands.push({ fam: 1, mov: Math.abs(t - t0), sg, offs: st.map(v => v - t0 + t) });
+    }
+  }
+  if (!cands.length) return { offs: sib.map((e, k) => (k - (n - 1) / 2) * PARALLEL_SEP), half: ((n - 1) / 2) * PARALLEL_SEP, clamp: true };
+  for (const c of cands) c.def = defectos(c.offs);
+  cands.sort((a, b) => a.def! - b.def! || a.fam - b.fam || a.mov - b.mov || b.sg - a.sg);
+  return { offs: cands[0].offs };
+}
+function laneCrossings(p: Pt[], q: Pt[]): number {
+  const o = (P0: Pt, Q: Pt, R: Pt) => Math.sign((Q.x - P0.x) * (R.y - P0.y) - (Q.y - P0.y) * (R.x - P0.x));
+  let n = 0;
+  for (let i = 1; i < p.length; i++) for (let j = 1; j < q.length; j++) {
+    const a = p[i - 1], b = p[i], c = q[j - 1], d = q[j];
+    if (o(a, b, c) * o(a, b, d) < 0 && o(c, d, a) * o(c, d, b) < 0) n++;
+  }
+  return n;
 }
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
@@ -122,15 +213,9 @@ function portKey(nodeId: number, side: string, p: Pt): string {
   return `${nodeId}:${side}:${Math.round(p.x)},${Math.round(p.y)}`;
 }
 
-/** Cuántas aristas unen el mismo par que `e`. Comparación de enteros y sin
- *  construir claves: esto corre dentro del bucle de render de la app. */
-function siblingCount(e: FluyoEdge, edges: readonly FluyoEdge[]): number {
-  let n = 0;
-  for (const o of edges) {
-    if ((o.waypoints || []).length) continue;
-    if ((o.from === e.from && o.to === e.to) || (o.from === e.to && o.to === e.from)) n++;
-  }
-  return n;
+/** Cuántas aristas comparten el CANAL de `e` (FLUYO-018.25: antes, el par de nodos). */
+function siblingCount(e: FluyoEdge, edges: readonly FluyoEdge[], nodeById: Map<number, FluyoNode>): number {
+  return trackSiblings(e, edges, nodeById).length;
 }
 
 /** El reparto es por extremo, no por arista: una arista puede compartir puerto en
@@ -154,13 +239,13 @@ function portLane(
     vecinas.push(o);
   }
   if (vecinas.length < 2) return none;
-  if (siblingCount(e, edges) > 1) return none;
+  if (siblingCount(e, edges, nodeById) > 1) return none;
   const me = baseAnchors(e, nodeById);
   if (!me) return none;
   const key = portKey(nodeId, which === "from" ? me.s1 : me.s2, which === "from" ? me.p1 : me.p2);
   const grupo: Array<{ id: number; sent: "entra" | "sale" }> = [];
   for (const o of vecinas) {
-    if (siblingCount(o, edges) > 1) continue;
+    if (siblingCount(o, edges, nodeById) > 1) continue;
     const b = baseAnchors(o, nodeById);
     if (!b) continue;
     if (o.from === nodeId && portKey(nodeId, b.s1, b.p1) === key) grupo.push({ id: o.id, sent: "sale" });
@@ -257,7 +342,13 @@ function orthoRoute(
   p1: Pt, d1: { x: number; y: number }, p2: Pt, d2: { x: number; y: number }, off = 0,
   A?: FluyoNode, B?: FluyoNode
 ): Pt[] {
-  const pad = 28;
+  // FLUYO-018.25 — caras que se miran muy cerca: el pasillo de `pad` px no cabe cuando el hueco
+  // es menor que 2·pad. Los dos pasillos se cruzaban y la ruta avanzaba, retrocedía y volvía a
+  // avanzar sobre la misma línea. Ahí cada pasillo mide la mitad del hueco (monótona en su eje).
+  let pad = 28;
+  const deFrente = d1.x === -d2.x && d1.y === -d2.y;
+  const hueco = (p2.x - p1.x) * d1.x + (p2.y - p1.y) * d1.y;
+  if (deFrente && hueco > 0 && hueco < 2 * pad) pad = hueco / 2;
   const s = { x: p1.x + d1.x * pad, y: p1.y + d1.y * pad };
   const t = { x: p2.x + d2.x * pad, y: p2.y + d2.y * pad };
   const armar = (mids: Pt[]): Pt[] => {
@@ -277,8 +368,21 @@ function orthoRoute(
   let mids: Pt[];
   // El tramo central también se aparta: separar solo las anclas dejaría las dos
   // rutas compartiendo el canal largo del medio, que es donde va la etiqueta.
-  if (d1.x !== 0 && d2.x !== 0) { mids = zx((s.x + t.x) / 2 + off); }
-  else if (d1.y !== 0 && d2.y !== 0) { mids = zy((s.y + t.y) / 2 + off); }
+  //
+  // FLUYO-018.25 — la U. Con los dos lados en el MISMO sentido `u` (n/n, s/s, e/e, w/w) el
+  // canal no va ENTRE los pasillos sino más allá de los dos. El punto medio solo vale cuando
+  // los lados se miran: en una U caía por dentro del pasillo más exterior (pasillos desiguales,
+  // o el carril de un par paralelo hacia los nodos) y la ruta salía, volvía y cruzaba —un muñón
+  // FUERA de los nodos que el guardián no ve—. El canal va al pasillo exterior; el carril k de una
+  // U llega como off = u·k·SEP, siempre hacia fuera (edgePoints).
+  //
+  // Entre caras que se miran de frente, el canal del carril se queda ENTRE los dos pasillos: un
+  // carril más ancho que el hueco lo dejaría más allá del pasillo de destino y la ruta volvería
+  // atrás. Con hueco de sobra, (s+t)/2+off como siempre. Port idéntico de fluyo/js/geometry.js.
+  const enU = (u: number, a: number, b: number) => (u > 0 ? Math.max(a, b) : Math.min(a, b)) + off;
+  const medio = (a: number, b: number) => { const c = (a + b) / 2 + off; return deFrente && hueco > 0 ? clamp(c, Math.min(a, b), Math.max(a, b)) : c; };
+  if (d1.x !== 0 && d2.x !== 0) { mids = zx(d1.x === d2.x ? enU(d1.x, s.x, t.x) : medio(s.x, t.x)); }
+  else if (d1.y !== 0 && d2.y !== 0) { mids = zy(d1.y === d2.y ? enU(d1.y, s.y, t.y) : medio(s.y, t.y)); }
   else if (d1.x !== 0) { mids = [{ x: t.x, y: s.y }]; }
   else { mids = [{ x: s.x, y: t.y }]; }
   const actual = armar(mids);
@@ -329,8 +433,20 @@ function edgePoints(e: FluyoEdge, nodeById: Map<number, FluyoNode>, edges: reado
   // no debe cambiar por qué cara sale la flecha.
   const s1 = e.fromSide || inferSide(A, p1);
   const s2 = e.toSide || inferSide(B, p2);
-  const { off, half } = parallelLane(e, edges);
-  if (off) { p1 = slideAnchor(A, s1, p1, off, half); p2 = slideAnchor(B, s2, p2, off, half); }
+  const lane = parallelLane(e, edges, nodeById), off = lane.off, k = lane.k;
+  let canal = off;
+  if (k && s1 === s2) {
+    // U (FLUYO-018.25): el carril k va k·SEP más afuera y sus anclas se apartan del otro
+    // extremo, así que las U de un canal se anidan sin cruzarse.
+    const ax = DIR[s1].x !== 0 ? "y" : "x", d = Math.sign(p1[ax] - p2[ax]) || 1, m = k * PARALLEL_SEP;
+    p1 = slideAnchor(A, s1, p1, d * m, m); p2 = slideAnchor(B, s2, p2, -d * m, m);
+    canal = (DIR[s1].x || DIR[s1].y) * m;
+  }
+  else if (off) {
+    // Carril de laneLayout: cabe en los dos lados por construcción (o, sin sitio, el abanico recortado de antes).
+    if (lane.clamp) { p1 = slideAnchor(A, s1, p1, off, lane.half); p2 = slideAnchor(B, s2, p2, off, lane.half); }
+    else { p1 = laneShift(p1, s1, off); p2 = laneShift(p2, s2, off); }
+  }
   else {
     // El reparto por puerto es por extremo y no toca el canal central: en el caso
     // ortogonal el canal ya sale de las anclas, así que se mueve solo.
@@ -339,7 +455,7 @@ function edgePoints(e: FluyoEdge, nodeById: Map<number, FluyoNode>, edges: reado
     if (o2.off) p2 = slideAnchor(B, s2, p2, o2.off, o2.half);
   }
   if (e.route === "ortho" && wps.length === 0) {
-    return orthoRoute(p1, DIR[s1], p2, DIR[s2], off, A, B);
+    return orthoRoute(p1, DIR[s1], p2, DIR[s2], canal, A, B);
   }
   return [p1, ...wps, p2];
 }

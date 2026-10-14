@@ -760,6 +760,44 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
     }
   });
 
+  /* FLUYO-018.25: el corpus no tiene ninguna U en un par paralelo, así que la paridad de arriba no ejercitaba el canal de
+     una U. Este barrido sí: 750 páginas (10 posiciones × 25 lados × sola / par en el mismo sentido / par opuesto). */
+  it("rutas en U, carriles por canal y caras cercanas (FLUYO-018.25): edgePoints idénticos vértice a vértice en 812 páginas", { skip: hayApp ? false : "sin fluyo/ al lado" }, () => {
+    const rect = (id: number, x: number, y: number) => ({ id, shape: "rect", x, y, w: 180, h: 70, label: "" });
+    const edge = (id: number, from: number, to: number, fs: string | null, ts: string | null) =>
+      ({ id, from, to, route: "ortho", fromSide: fs, toSide: ts, waypoints: [], label: "", animated: true, dashed: false, startArrow: false, endArrow: true, flowDir: "normal" });
+    const S5 = [null, "n", "e", "s", "w"];
+    const POS = [[800, 500], [800, 300], [400, 200], [0, 300], [0, 500], [0, 700], [400, 800], [800, 700], [800, 507], [807, 300]];
+    const pages: FluyoPage[] = [{ name: "captura", nodes: [rect(1, 300, 300), rect(2, 700, 300)], edges: [edge(3, 1, 2, "e", null), edge(4, 2, 1, "n", "n")], nextId: 9 } as unknown as FluyoPage];
+    for (const mode of ["sola", "parMismoSentido", "parOpuesto"]) for (const [bx, by] of POS) for (const fs of S5) for (const ts of S5) {
+      const es = [edge(3, 1, 2, fs, ts)];
+      if (mode === "parMismoSentido") es.push(edge(4, 1, 2, fs, ts));
+      if (mode === "parOpuesto") es.push(edge(4, 2, 1, ts, fs));
+      pages.push({ name: `${mode} B(${bx},${by}) ${fs}/${ts}`, nodes: [rect(1, 400, 500), rect(2, bx, by)], edges: es, nextId: 9 } as unknown as FluyoPage);
+    }
+    /* carriles por canal: varias hermanas, U anidadas y un documento cuyo orden no es el de los ids */
+    const dos = [rect(1, 300, 300), rect(2, 700, 300)];
+    pages.push({ name: "tres directas", nodes: dos, edges: [edge(3, 1, 2, "e", null), edge(4, 1, 2, "e", null), edge(5, 1, 2, "e", null)], nextId: 9 } as unknown as FluyoPage);
+    pages.push({ name: "dos U n/n", nodes: dos, edges: [edge(3, 1, 2, "n", "n"), edge(4, 1, 2, "n", "n")], nextId: 9 } as unknown as FluyoPage);
+    pages.push({ name: "orden ≠ id", nodes: dos, edges: [edge(9, 1, 2, "e", null), edge(4, 1, 2, "e", null)], nextId: 10 } as unknown as FluyoPage);
+    /* caras muy cercanas: pasillos que se acortan y canal acotado entre los dos */
+    for (const orient of ["horizontal", "vertical"]) for (const gap of [120, 72, 60, 56, 39, 20, 5]) for (const mode of ["sola", "par", "parOpuesto", "z"]) {
+      const B = orient === "horizontal" ? rect(2, 300 + 180 + gap, mode === "z" ? 340 : 300) : rect(2, mode === "z" ? 340 : 300, 300 + 70 + gap);
+      const fs = orient === "horizontal" ? "e" : "s", ts = orient === "horizontal" ? "w" : "n";
+      const es = [edge(3, 1, 2, fs, mode === "z" ? ts : null)];
+      if (mode === "par") es.push(edge(4, 1, 2, fs, null));
+      if (mode === "parOpuesto") es.push(edge(4, 2, 1, null, fs));
+      pages.push({ name: `${orient} hueco ${gap} ${mode}`, nodes: [rect(1, 300, 300), B], edges: es, nextId: 9 } as unknown as FluyoPage);
+    }
+    let n = 0;
+    for (const pg of pages) {
+      app.setPage(pg);
+      const mcp = pageEdgeGeometry(pg);
+      for (const e of pg.edges) { assert.deepEqual(plano(app.edgePoints(e)), plano(mcp.get(e.id)), `${pg.name} e${e.id}`); n++; }
+    }
+    assert.equal(n, 1343);
+  });
+
   it("trazo de las conexiones (FLUYO-018.16): edgeStroke y su `d` idénticos en el corpus y en los casos límite", { skip: hayApp ? false : "sin fluyo/ al lado" }, () => {
     let n = 0;
     for (const fx of loadFixtures()) for (const page of (fx.doc as { doc: { pages: FluyoPage[] } }).doc.pages) {
