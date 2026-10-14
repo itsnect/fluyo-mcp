@@ -120,8 +120,37 @@ describe_document (revision) ──▶ author_document (baseRevision + operacion
 - **Atómico**: o se aplica todo el lote o nada; el documento recibido nunca se modifica. `dryRun:true` valida y devuelve los `changes` sin documento.
 - **Revisión optimista, sin estado**: `baseRevision` es la `revision` que anunció `describe_document` (sha256 del JSON canónico del documento normalizado). Si no coincide → `REVISION_MISMATCH`. `resultRevision` es determinista.
 - **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId}` / `{from,to}` para conexiones; `{nodeId}` para elementos; o `{ref}` de lo creado en el lote; los ids de `edgeId`/`nodeId`/`from`/`to` también admiten `{ref}`). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
-- **Tiempo narrativo**: `waitMs` al añadir al final o `set_wait` por momento; «al mismo tiempo» con `placement.sameMomentAs`. Eliminar colapsa la espera; duplicar entra en el mismo momento.
+- **Tiempo narrativo**: `waitMs` al añadir al final o `set_wait` por momento; «al mismo tiempo» con `placement.sameMomentAs`. Eliminar colapsa la espera; duplicar entra en el mismo momento. `waitMs` se cuenta desde el **inicio del momento anterior** y no incluye ni espera el viaje visual del token de un `SEND` (presentación: `motion` fast/normal/slow = 500/1100/1800 ms; no sirve para calcular esperas).
 - **Dependencias de llegada** (explícitas, nunca inferidas de las conexiones): `add_step` con `waitsForArrivalOf` o `set_arrival_dependencies` (reemplaza; `[]` las quita) declaran que el momento de un paso no empieza, al reproducir en Fluyo, hasta que llegue el token de envíos (`SEND`) anteriores de la misma Historia. Se guardan en la Historia (`arrivalDependencies`), no en el paso; el Trace no cambia. Lo inválido se rechaza con `INVALID_ARRIVAL_DEPENDENCY` y su razón.
+  **Patrón** (FLUYO-018.28): todo paso que narre la recepción, el procesamiento o la consecuencia de un envío declara `waitsForArrivalOf` de ese `SEND`; lo que no dependa de una llegada (otro nodo cae, otro envío) lleva solo `waitMs` y no se retrasa; un paso sobre el nodo destino sin dependencia **no es una recepción** (Fluyo no la deduce). Un envío fallido (destino caído) también «llega»: el momento que lo espera empieza cuando se ve el fallo en el destino.
+
+  Incorrecto —el error habitual: usar `waitMs` como si fuera «lo que tarda en llegar el mensaje»; con un viaje normal (1100 ms), «B procesa» se ve a los 500 ms, 600 ms **antes** de que llegue el token—:
+
+  ```json
+  [
+    {"op":"create_story","scope":"story","pageIndex":0,"ref":"cadena","name":"A → B → C"},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m1","eventTypeId":1,"target":{"edgeId":5},"waitMs":0},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m2","eventTypeId":2,"target":{"nodeId":2},"waitMs":500},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m3","eventTypeId":1,"target":{"edgeId":6},"waitMs":500},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m4","eventTypeId":2,"target":{"nodeId":3},"waitMs":500}
+  ]
+  ```
+
+  Se ve: 0 → 500 → 1000 → 1500, con el token A→B llegando en 1100 y el de B→C en 2100.
+
+  Correcto —los mismos `waitMs`; cada recepción declara el envío que espera—:
+
+  ```json
+  [
+    {"op":"create_story","scope":"story","pageIndex":0,"ref":"cadena","name":"A → B → C"},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m1","eventTypeId":1,"target":{"edgeId":5},"waitMs":0},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m2","eventTypeId":2,"target":{"nodeId":2},"waitMs":500,"waitsForArrivalOf":[{"ref":"m1"}]},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m3","eventTypeId":1,"target":{"edgeId":6},"waitMs":500},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"cadena"},"ref":"m4","eventTypeId":2,"target":{"nodeId":3},"waitMs":500,"waitsForArrivalOf":[{"ref":"m3"}]}
+  ]
+  ```
+
+  Se ve: 0 → 1100 → 1600 → 2700. El Trace del motor es el mismo en los dos casos: solo cambia cuándo se ve cada momento. `describe_document` lo muestra en `waitsFor` de cada momento.
 - **B2**: si el estado final dejaría una Historia inválida, se rechaza el lote con `REFERENCED_ENTITY` (entidad, Historias y pasos afectados). Retargetear y borrar en el mismo lote es válido. (El editor de Fluyo aplica la misma detección pero **confirma** en lugar de rechazar —una persona ve el resultado y tiene Undo—; ninguno de los dos borra Steps ni Historias en silencio.)
 - **EventTypes** (scope `eventType`, globales al documento, sin `pageIndex`): `create_event_type` (`name`, `primitive` FLOW | OCCURRENCE | SET_AVAILABILITY, `sentence` con `{source}`/`{target}`/`{name}`, `symbol?`, `motion?` sólo FLOW, `availability` sólo y obligatoria en SET_AVAILABILITY, `presentation?` como parche, `ref?`), `update_event_type` y `delete_event_type`. Un evento creado en el lote se usa con `{ref}` en `add_step`. La acción del paso la deriva la primitiva (FLOW→SEND, OCCURRENCE→OCCURRENCE, SET_AVAILABILITY→SET_STATE); nunca se escribe.
 - **Reglas del editor, las mismas**: de un evento **usado** no cambian `primitive` ni `availability` (`EVENT_TYPE_LOCKED`, con el campo y los usos) y no se elimina (`REFERENCED_ENTITY` con el EventType, las Historias y los Steps afectados). Nombre, frase, símbolo, movimiento y presentación sí cambian y se ven en todos sus usos; los Steps y el Trace no cambian. Un nombre repetido se acepta y se avisa (`DUPLICATE_EVENT_TYPE_NAME`). `describe_document` lista cada evento con `usedBy` y `usedIn` (página, Historia, Steps).
@@ -305,6 +334,7 @@ Importa ser preciso aquí, porque una versión anterior de este README prometía
 - **No se leen documentos del formato v1.** La app los migra al abrirlos; ábrelo y vuelve a guardarlo.
 - **El auto-layout es un Sugiyama simplificado.** Va muy bien en pipelines y arquitecturas convencionales; para grafos muy ramificados conviene dar coordenadas o retocar lo que propone `propose_layout`.
 - **`author_document` reenvía el documento entero** en la entrada y en la salida. En sesiones de edición largas sobre diagramas grandes eso consume bastante contexto.
+- **El tiempo de una Historia lo decide el autor, no el motor.** Fluyo no calcula latencia, no mantiene colas, no reintenta ni entrega más tarde un envío fallido, y no deduce que un mensaje «llegó»: `waitMs` solo separa momentos, y la única forma de que un momento empiece cuando llega un envío es declararlo con `waitsForArrivalOf`.
 
 ---
 

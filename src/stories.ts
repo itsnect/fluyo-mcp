@@ -35,7 +35,7 @@ interface ValidationReport {
 /** Lo que el modelo NO representa. Se devuelve siempre: es lo que impide que el agente lo invente. */
 export const UNMODELED: readonly string[] = [
   "reintentos, colas ni timeouts: el motor ejecuta cada paso aunque uno anterior no se haya completado",
-  "las dependencias de llegada (arrivalDependencies) solo deciden CUÁNDO SE VE un momento al reproducir en Fluyo (espera a que llegue el token de un envío anterior): no cambian el Trace, no son latencia ni se infieren de las conexiones",
+  "las dependencias de llegada (arrivalDependencies) solo deciden CUÁNDO SE VE un momento al reproducir en Fluyo (espera a que llegue el token de un envío anterior): no cambian el Trace, no son latencia ni se infieren de las conexiones; sin ellas, waitMs no espera al token y un paso sobre el nodo destino no es una recepción",
   "lógica interna de ningún elemento (procesar un pago, el funcionamiento de Kafka, etc.)",
   "latencia: los tiempos (at, ms) son virtuales; la duración visual del viaje es sólo presentación",
   "un acontecimiento OCCURRENCE es narrado: el motor lo registra aunque el elemento no esté disponible y no prueba que ocurriera nada real",

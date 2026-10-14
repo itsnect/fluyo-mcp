@@ -22,7 +22,16 @@ const Id = z.number().int().min(1);
 const Ref = z.strictObject({ ref: z.string().min(1).max(40) });
 const IdOrRef = z.union([Id, Ref]);
 const PageIndex = z.number().int().min(0);
-const Wait = z.number().int().min(0).max(86_400_000);
+/* FLUYO-018.28: la espera es narrativa. Un agente que solo lee el schema tiene que saber que NO es «lo que tarda en llegar el mensaje». */
+const Wait = z
+  .number()
+  .int()
+  .min(0)
+  .max(86_400_000)
+  .describe(
+    "Espera NARRATIVA en ms contada desde el INICIO del momento anterior (no desde que termine nada): no incluye ni espera el viaje visual del token de un envío. " +
+      "Si el paso narra la recepción, el procesamiento o la consecuencia de un SEND anterior, declara la dependencia (waitsForArrivalOf en add_step; set_arrival_dependencies después) en vez de calcular la espera."
+  );
 const Target = z
   .union([
     z.strictObject({ edgeId: IdOrRef }),
@@ -173,6 +182,7 @@ const WaitsForArrivalOf = z
   .max(1000)
   .describe(
     "Ids (o {ref} del lote) de pasos SEND de la MISMA Historia en un momento ANTERIOR cuya llegada espera este paso: su momento no empieza (al reproducir en Fluyo) hasta que llegue el token de ese envío. " +
+      "Úsalo siempre que el paso narre la recepción, el procesamiento o la consecuencia de ese envío: waitMs NO espera al token (se cuenta desde el inicio del momento anterior) y, sin esta lista, un paso sobre el nodo destino se ve a su hora aunque el token siga en vuelo; Fluyo no deduce recepciones. " +
       "Se guarda en la Historia (arrivalDependencies), no en el paso. Lo inválido se rechaza (INVALID_ARRIVAL_DEPENDENCY). Nunca se infiere de las conexiones."
   );
 
