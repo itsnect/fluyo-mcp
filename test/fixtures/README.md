@@ -36,3 +36,14 @@ npm run sync:fixtures        # requiere fluyo/ al lado, o FLUYO_PATH
 
 Si un cambio en Fluyo hace fallar el contrato tras refrescar, **el fallo es real**:
 significa que el formato creció y el servidor todavía no lo soporta.
+
+## Fixtures compartidos con Fluyo (no son ejemplos)
+
+Los archivos `fluyo-0xx-*` los genera el test de una tarea de Fluyo y se copian aquí **byte a byte**. Fluyo los compara con estos cuando los dos repos están al lado. `loadFixtures()` (`test/helpers.ts`) y `visual-regression.test.ts` los excluyen del corpus de ejemplos. No se regeneran aquí: si cambian, cambian en Fluyo.
+
+| Archivo | Tarea | Qué fija |
+|---|---|---|
+| `fluyo-018-15-colores.json`, `fluyo-018-16-conexiones*.json` | 018.15, 018.16 | colores del documento, trazo de las conexiones |
+| `fluyo-019-1-skin.json` | 019.1 | capas de la piel por pieza y tema (`skinNode`, `skinExtent`, `skinEdgeLanding`) |
+| `fluyo-019-2-skin.fluyo.json` + `fluyo-019-2-skin-svg.json` | 019.2 | documento con `settings.skin:"built"` y las líneas de la piel del SVG del editor real (`skinSvgLines`) |
+| `fluyo-019-3-colores.json` | 019.3 | regla de color de la piel (`skinColor`, `skinTones`, `skinNode` con `#rgb`, `#rrggbb`, `#rrggbbaa` e ilegibles) |

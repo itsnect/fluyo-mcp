@@ -32,7 +32,9 @@ export interface Fixture {
 }
 
 export function loadFixtures(): Fixture[] {
-  const files = readdirSync(FIXTURES_DIR).filter(f => f.endsWith(".fluyo.json")).sort();
+  /* Solo los ejemplos publicados (copias de fluyo/ejemplos/data). Los fixtures compartidos de una tarea (`fluyo-0xx-*`, p. ej. el
+     documento con la piel de FLUYO-019.2) viven en el mismo directorio porque fluyo los compara por esa ruta, pero no son ejemplos. */
+  const files = readdirSync(FIXTURES_DIR).filter(f => f.endsWith(".fluyo.json") && !f.startsWith("fluyo-")).sort();
   if (!files.length) throw new Error(`No hay fixtures en ${FIXTURES_DIR}`);
   return files.map(name => ({
     name,

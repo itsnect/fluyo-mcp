@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from "./schema.js";
-import { CreateDiagramInputShape, DocumentInputSchema, ThemeSchema } from "./model.js";
+import { CreateDiagramInputShape, DocumentInputSchema, ThemeSchema, projectSkin } from "./model.js";
 import { createDiagramResult, createFromTemplateResult, parseDocument, type CreateDiagramResult } from "./diagram.js";
 import type { FluyoProject } from "./model.js";
 import { pageToSVG } from "./svg.js";
@@ -109,7 +109,8 @@ server.registerTool(
       "Útil para pegar el diagrama en Notion/Confluence/Markdown o previsualizarlo sin abrir Fluyo. " +
       "No incluye animación (puntos de flujo ni aparición escalonada), igual que el SVG que exporta la app; " +
       "para el GIF animado hay que abrir el documento en Fluyo. PNG y GIF no están disponibles aquí: " +
-      "necesitan un renderer de canvas.",
+      "necesitan un renderer de canvas. Respeta el aspecto del documento: con settings.skin = \"built\" sale la piel " +
+      "«construido» (2.5D) de Present, el Viewer y la exportación de la app; sin la clave (o con cualquier otro valor), plano.",
     inputSchema: {
       document: DocumentInputSchema,
       pageIndex: z.number().optional().describe("Índice de página a exportar (por defecto, la página actual)."),
@@ -133,6 +134,9 @@ server.registerTool(
         scale,
         globalFont: project.settings.font ?? null,
         crop,
+        /* FLUYO-019.3: el aspecto del documento, con la lectura canónica del kernel (solo "built" pinta la piel) */
+        skin: projectSkin(project.settings),
+        customBg: project.doc.customBg ?? null,
       });
       return ok(`SVG de "${page.name}" (${page.nodes.length} nodos, ${page.edges.length} aristas).`, svg);
     } catch (err) {

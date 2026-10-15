@@ -1,5 +1,6 @@
 import { CANVAS, CODE_ADV, DEFAULT_SIZES, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, THEMES, animDataUri, iconDataUri, nodeIconTint } from "./schema.js";
 import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
+import { skinActive, skinEdgeLanding, skinEdgePort, skinLabelFont, skinNode, skinPaintOrder, type SkinLayer } from "./skin.js";
 
 /* ===================== Geometría de aristas (port de fluyo/js/geometry.js) ===================== */
 
@@ -54,7 +55,7 @@ function anchorPt(n: FluyoNode, side: "n" | "s" | "e" | "w" | null | undefined, 
   return side ? sidePoint(n, side) : autoAnchor(n, tx, ty);
 }
 
-function inferSide(n0: FluyoNode, p: Pt): "n" | "s" | "e" | "w" {
+export function inferSide(n0: FluyoNode, p: Pt): "n" | "s" | "e" | "w" {
   const n = anchorBox(n0);
   const dx = (p.x - n.x) / (n.w / 2 || 1), dy = (p.y - n.y) / (n.h / 2 || 1);
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? "e" : "w") : dy > 0 ? "s" : "n";
@@ -719,10 +720,12 @@ function svgDash(n: FluyoNode): string {
  *  textColor, font y bold. */
 const SVG_ANCHOR = { left: "start", right: "end", center: "middle" } as const;
 
-function svgLabelLines(n: FluyoNode, theme: ThemeName, globalFont: string): string {
+/* `fo` (FLUYO-019.3, port de 019.1): voz propuesta por la piel (skinLabelFont); cambia familia y peso, no el tamaño
+   (este renderer mide con approxTextWidth, sin familia: la divergencia de medidor conocida). */
+function svgLabelLines(n: FluyoNode, theme: ThemeName, globalFont: string, fo?: { family: string; weight: string } | null): string {
   if (!n.label) return "";
   const T = THEMES[theme];
-  const family = n.font || globalFont || DEFAULT_FONT;
+  const family = (fo && fo.family) || n.font || globalFont || DEFAULT_FONT;
   const bold = !!n.bold;
   const { lines, fs, lh, tx, align, baseY } = labelLayout(n, measureNodeLabel(n));
   const anchor = SVG_ANCHOR[align];
@@ -744,7 +747,7 @@ function svgLabelLines(n: FluyoNode, theme: ThemeName, globalFont: string): stri
       `<rect x="${bx.toFixed(2)}" y="${by.toFixed(2)}" width="${bw.toFixed(2)}" height="${bh.toFixed(2)}" rx="8" ry="8" fill="${escapeXML(n.textBg)}"/>`
     );
   }
-  const weight = bold ? ' font-weight="bold"' : "";
+  const weight = bold ? ' font-weight="bold"' : (fo && fo.weight ? ` font-weight="${fo.weight}"` : "");
   lines.forEach((l, i) => {
     parts.push(
       `<text x="${tx.toFixed(2)}" y="${(baseY + i * lh).toFixed(2)}" font-family="${escapeXML(family)}" font-size="${fs.toFixed(1)}"${weight} fill="${escapeXML(fill)}" text-anchor="${anchor}" dominant-baseline="middle">${escapeXML(l)}</text>`
@@ -898,6 +901,11 @@ export type CylSeg =
   | { op: "Q"; cx: number; cy: number; x: number; y: number }
   | { op: "A"; cx: number; cy: number; rx: number; ry: number; a0: number; a1: number; ccw: boolean }
   | { op: "Z" };
+/** Port de `cylinderGeom()` de fluyo/js/geometry.js: la caja del cilindro que usa la piel (FLUYO-019.3). */
+export function cylinderGeom(n: { x: number; y: number; w: number; h: number }): { cx: number; rx: number; ry: number; top: number; bot: number } {
+  const ry = Math.min(16, n.h * 0.18);
+  return { cx: n.x, rx: n.w / 2, ry, top: n.y - n.h / 2, bot: n.y + n.h / 2 };
+}
 export function cylinderSegments(n: { x: number; y: number; w: number; h: number }): { outline: CylSeg[]; lip: CylSeg[] } {
   const ry = Math.min(16, n.h * 0.18), cx = n.x, rx = n.w / 2, top = n.y - n.h / 2, bot = n.y + n.h / 2;
   const L = cx - rx, R = cx + rx, capY = top + ry, baseY = bot - ry;
@@ -1061,11 +1069,41 @@ function svgSymbols(): SvgSymbols {
   };
 }
 
-function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, syms: SvgSymbols): string {
+/* FLUYO-019.3 (port de `skinLayersToSVG` de fluyo/js/export.js): las capas de la piel como <path>, mismo orden de
+   atributos; un <clipPath id="skin-clip-{id}-{k}"> delante de cada capa que lo pide. */
+function skinLayersToSVG(layers: SkinLayer[], n: FluyoNode): string {
+  const out: string[] = []; let k = 0;
+  for (const L of layers) {
+    const st = `fill="${L.fill && L.fill !== "none" ? escapeXML(L.fill) : "none"}"${L.stroke ? ` stroke="${escapeXML(L.stroke)}" stroke-width="${L.sw || 1}"` : ""}${L.dash ? ` stroke-dasharray="${L.dash.join(" ")}"` : ""} stroke-linejoin="round"`;
+    if (L.clip) {
+      const id = `skin-clip-${n.id}-${k++}`;
+      out.push(`<clipPath id="${id}"><path d="${segmentsToSVGPath(L.clip)}"/></clipPath>`);
+      out.push(`<path d="${segmentsToSVGPath(L.segs)}" ${st} clip-path="url(#${id})"/>`);
+    } else out.push(`<path d="${segmentsToSVGPath(L.segs)}" ${st}/>`);
+  }
+  return out.join("\n");
+}
+
+/** `skinBg` (FLUYO-019.3): con la piel activa, el fondo sobre el que se mezclan los tonos (doc.customBg o el del tema);
+ *  null = plano, el SVG de siempre. */
+function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, syms: SvgSymbols, skinBg: string | null = null): string {
   const fill = svgNodeFill(n, theme);
   const stroke = escapeXML(n.color);
   const dash = svgDash(n);
   const parts: string[] = [`<g id="node-${n.id}">`];
+  /* con la piel, las mismas capas que la app; el glifo del icono y el rótulo, como siempre */
+  const sk = skinBg !== null ? skinNode(n, theme, skinBg) : null;
+  if (sk) {
+    const fo = skinLabelFont(n, globalFont);
+    parts.push(skinLayersToSVG(sk.layers, n));
+    if (n.shape === "icon") {
+      const s = Math.min(n.w, n.h - 26) * 0.78;
+      parts.push(syms.use(n.icon ? iconDataUri(n.icon, nodeIconTint(n)) : "", n.x - s / 2, n.y - n.h / 2 + 4, s));
+    }
+    parts.push(svgLabelLines(n, theme, globalFont, fo));
+    parts.push("</g>");
+    return parts.filter(Boolean).join("\n");
+  }
 
   switch (n.shape) {
     case "circle":
@@ -1154,17 +1192,23 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, sym
 
 /* ===================== Aristas ===================== */
 
-function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[], globalFont: string, labelPos: Map<number, Pt>): string {
+function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[], globalFont: string, labelPos: Map<number, Pt>, skinBg: string | null = null): string {
   const A = nodeById.get(e.from), B = nodeById.get(e.to);
   if (!A || !B) return "";
-  const pts = edgePoints(e, nodeById, edges);
+  let pts = edgePoints(e, nodeById, edges);
   if (pts.length < 2) return "";
+  /* FLUYO-019.3: el mismo aterrizaje que la app (copia; edgePoints no cambia) */
+  if (skinBg !== null) pts = skinEdgeLanding(pts, inferSide(B, pts[pts.length - 1]));
   const T = THEMES[theme];
   const lineCol = escapeXML(e.lineColor || T.edge);
   const dash = e.dashed ? ' stroke-dasharray="8 7"' : "";
   const stroke = edgeStroke(e, pts);
   const parts = [`<path d="${segmentsToSVGPath(stroke.line)}" fill="none" stroke="${lineCol}" stroke-width="${EDGE_W}" stroke-linejoin="round"${dash}/>`];
   for (const h of stroke.heads) parts.push(`<path d="${segmentsToSVGPath(h)}" fill="${lineCol}"/>`);
+  if (skinBg !== null && !e.startArrow) {
+    const port = skinEdgePort(pts[0], e.lineColor || T.edge, skinBg);
+    parts.push(`<path d="${segmentsToSVGPath(port.segs)}" fill="${escapeXML(port.fill)}" stroke="${escapeXML(port.stroke)}" stroke-width="${port.sw}"/>`);
+  }
 
   if (e.label) {
     const m = labelPos.get(e.id) ?? pointAt(pts, 0.5);
@@ -1205,6 +1249,13 @@ export interface PageToSVGOptions {
    * diagrama en un documento sin márgenes enormes.
    */
   crop?: boolean;
+  /**
+   * FLUYO-019.3: aspecto del documento (`settings.skin`, leído con `projectSkin`). "built" pinta la piel «construido»
+   * (2.5D) como «Exportar → SVG» de la app; ausente o cualquier otro valor, el SVG plano de siempre, byte a byte.
+   */
+  skin?: string | null;
+  /** FLUYO-019.3: fondo personalizado del documento (`doc.customBg`); vacío = el del tema. Solo lo usa la piel. */
+  customBg?: string | null;
 }
 
 /**
@@ -1224,7 +1275,9 @@ export function pageToSVG(
   theme: ThemeName,
   options: PageToSVGOptions = {}
 ): string {
-  const { scale = 1, globalFont = null, crop = false } = options;
+  const { scale = 1, globalFont = null, crop = false, skin = null, customBg = null } = options;
+  /* en SVG la escala del lienzo es 1: con "built" la piel siempre se pinta (skinActive), como buildSVGDocument */
+  const skinBg = skinActive(skin, 1) ? (customBg || THEMES[theme].bg) : null;
   const nodeById = new Map(page.nodes.map(n => [n.id, n] as const));
   const font = globalFont || DEFAULT_FONT;
 
@@ -1242,13 +1295,13 @@ export function pageToSVG(
   ];
   // Sin rectángulo de fondo: el SVG que exporta la app es transparente.
   const labelPos = placeEdgeLabels(page);
-  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos));
+  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos, skinBg));
   /* Los símbolos se recogen dibujando, así que el <defs> con los íconos solo se
      conoce al final. Se inserta antes de los nodos, no al cierre: un id se
      resuelve igual esté donde esté, pero declarar antes de usar es lo que abren
      sin quejarse los editores externos. */
   const syms = svgSymbols();
-  const nodos = page.nodes.map(n => renderNodeToSVG(n, theme, font, syms));
+  const nodos = (skinBg !== null ? skinPaintOrder(page.nodes) : page.nodes).map(n => renderNodeToSVG(n, theme, font, syms, skinBg));
   const defs = syms.defs();
   if (defs) parts.push(defs);
   parts.push(...nodos, "</svg>");

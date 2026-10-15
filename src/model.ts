@@ -135,6 +135,22 @@ export const FluyoDocSchema = z
   })
   .passthrough();
 
+/* FLUYO-019.3: aspecto del documento (`settings.skin`). La normalización canónica es la del kernel (`settingsFromProjectData`,
+   fluyo/js/model.js): solo "built" se conserva; ausente, "flat" o cualquier otro valor = plano y sin clave. Aquí el schema
+   DOCUMENTA la lista cerrada (tools/list publica el enum) pero NO rechaza: un valor fuera de lista se lee como ausente,
+   igual que lo abre el editor (regla 1 de arriba: liberal al leer). `projectSkin` es la misma lectura que la del kernel;
+   un test las compara valor a valor. */
+export const SKIN_VALUES = ["flat", "built"] as const;
+export type Skin = (typeof SKIN_VALUES)[number];
+export function projectSkin(settings: { skin?: unknown } | null | undefined): Skin {
+  return settings && settings.skin === "built" ? "built" : "flat";
+}
+export const SkinSchema = z
+  .enum(SKIN_VALUES)
+  .optional()
+  .catch(undefined)
+  .describe("Aspecto en Present, exportación y Viewer: \"built\" = piel «construido» (2.5D); \"flat\" o ausente = plano. El editor pinta plano siempre. Solo se guarda \"built\".");
+
 export const FluyoSettingsSchema = z
   .object({
     speed: z.number().default(0.5),
@@ -148,6 +164,8 @@ export const FluyoSettingsSchema = z
     font: z.string().optional(),
     /** Modo "pelota única por ruta" en vez de puntos por flecha. */
     single: z.boolean().optional(),
+    /** FLUYO-019.3: aspecto; ausente = plano. Fuera de lista se lee como ausente (sin rechazo). */
+    skin: SkinSchema,
   })
   .passthrough();
 
@@ -296,6 +314,7 @@ export const CreateDiagramInputShape = {
   single: z.boolean().optional().describe("Modo 'pelota única por ruta': en vez de puntos por flecha, una sola pelota recorre el diagrama y se parte en cada bifurcación."),
   font: z.string().optional().describe("Tipografía global: la familia CSS completa de list_fonts (otra se rechaza). Por defecto, la del editor."),
   customBg: z.string().optional().describe("Fondo HEX (#rgb, #rrggbb, #rrggbbaa) que sobrescribe el del tema; \"\" = el del tema."),
+  skin: SkinSchema,
   nodes: z.array(NodeSpecSchema).min(1),
   edges: z.array(EdgeSpecSchema).default([]),
 };

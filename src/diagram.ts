@@ -4,7 +4,7 @@ import { createKernel } from "./kernel.js";
 import { layeredLayout } from "./layout.js";
 import { revisionOfProject } from "./revision.js";
 import { findTemplate, unknownOverrideKeys, unknownOverridesMessage } from "./templates.js";
-import { FluyoProject, FluyoProjectSchema, NodeSpec, EdgeSpec, ThemeName } from "./model.js";
+import { FluyoProject, FluyoProjectSchema, NodeSpec, EdgeSpec, Skin, ThemeName, projectSkin } from "./model.js";
 
 /* ===================== Validación del documento ===================== */
 
@@ -39,6 +39,7 @@ export interface CreateDiagramInput {
   single?: boolean;
   font?: string;
   customBg?: string;
+  skin?: Skin;
   nodes: NodeSpec[];
   edges?: EdgeSpec[];
 }
@@ -58,7 +59,11 @@ interface KernelApply {
 
 /** Ajustes que fija create_diagram. No hay operación de ajustes en author_document (set_settings está fuera de alcance): van en el
  *  documento en blanco y los normaliza la carga del editor. */
-const SETTING_KEYS = ["speed", "dots", "build", "stagger", "grid", "single", "font"] as const;
+const SETTING_KEYS = ["speed", "dots", "build", "stagger", "grid", "single", "font", "skin"] as const;
+/* FLUYO-019.3: `skin` se compara por su lectura canónica (projectSkin): el kernel QUITA "flat" (plano = sin clave), así que
+   pedir "flat" da el mismo documento que no pedir nada, sin rechazo. El resto de ajustes, valor a valor (sin cambios). */
+const sameSetting = (k: string, normalized: unknown, wanted: unknown) =>
+  k === "skin" ? projectSkin({ skin: normalized }) === projectSkin({ skin: wanted }) : normalized === wanted;
 const NODE_COLOR_FIELDS = ["color", "fill", "textBg", "textColor", "kwBg", "kwColor"];
 const EDGE_COLOR_FIELDS = ["lineColor", "dotColor"];
 
@@ -173,7 +178,7 @@ export function createDiagramResult(input: CreateDiagramInput): CreateDiagramRes
   for (const k of SETTING_KEYS) if (input[k] !== undefined) wanted[k] = input[k];
   let project = kernel.call<{ settings: Record<string, unknown> }>("projectToSerializable(doc, settingsFromProjectData(Object.assign({}, settings, __a)))", wanted) as unknown;
   const normalized = (project as { settings: Record<string, unknown> }).settings;
-  const changed = Object.keys(wanted).find(k => normalized[k] !== wanted[k]);
+  const changed = Object.keys(wanted).find(k => !sameSetting(k, normalized[k], wanted[k]));
   if (changed) return rejection([settingError(changed, wanted[changed], normalized[changed])], kernel);
 
   const steps = planOf(input, edges);

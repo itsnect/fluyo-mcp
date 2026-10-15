@@ -33,8 +33,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
-import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, codeFont, codeTokenWeight, cylinderSegments, drawnContentBox, edgeStroke, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels, segmentsToSVGPath } from "../src/svg.js";
-import { CODE_ADV, CODE_LANGS, DEFAULT_LANG, DEFAULT_SIZES, FONTS, THEMES } from "../src/generated/config.js";
+import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, codeFont, codeTokenWeight, cylinderGeom, cylinderSegments, drawnContentBox, edgeStroke, inferSide, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels, segmentsToSVGPath } from "../src/svg.js";
+import * as Skin from "../src/skin.js";
+import { CODE_ADV, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, DEFAULT_SIZES, FONTS, THEMES } from "../src/generated/config.js";
 import { FluyoEdge, FluyoNode, FluyoPage } from "../src/model.js";
 import { layeredLayout } from "../src/layout.js";
 import { FIXTURES_DIR, loadFixtures, packageRoot } from "./helpers.js";
@@ -46,7 +47,8 @@ interface Doc { name: string; pages: FluyoPage[]; theme: string; }
 function loadDocs(): Doc[] {
   const out: Doc[] = [];
   const add = (dir: string) => {
-    for (const f of readdirSync(dir).filter(n => n.endsWith(".fluyo.json")).sort()) {
+    /* los fixtures compartidos de una tarea (fluyo-0xx-*) no son ejemplos ni regresiones: tienen sus propios tests */
+    for (const f of readdirSync(dir).filter(n => n.endsWith(".fluyo.json") && !n.startsWith("fluyo-")).sort()) {
       const proj = JSON.parse(readFileSync(join(dir, f), "utf8"));
       out.push({ name: f.replace(".fluyo.json", ""), pages: proj.doc.pages, theme: proj.doc.theme });
     }
@@ -929,4 +931,93 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
       }
     });
   }
+});
+
+/* ===================== Piel «construido» (FLUYO-019.3) =====================
+   El skin.js REAL de fluyo, con su config.js y su geometry.js reales, en un `vm`; el port (src/skin.ts y la parte de svg.ts
+   que lo usa) tiene que dar lo mismo, capa a capa y vértice a vértice, sobre los 8 ejemplos, las 3 regresiones y el documento
+   con la piel de 019.2, en los tres temas y con fondo personalizado. Aquí se usa el config.js real (no el codegen): si las
+   constantes de la piel o los temas derivaran, también salta. */
+type SkinApi = typeof Skin & { inferSide: typeof inferSide; cylinderGeom: typeof cylinderGeom; PALETTE0: string };
+function loadAppSkin(fluyoPath: string): SkinApi {
+  const read = (f: string) => readFileSync(join(fluyoPath, "js", f), "utf8");
+  const doc = { pages: [] as FluyoPage[], cur: 0, theme: "dark", customBg: "" };
+  const ctx = createContext({ doc, settings: { font: DEFAULT_FONT }, console,
+    lerp: (a: number, b: number, t: number) => a + (b - a) * t, clamp: (v: number, a: number, b: number) => Math.min(b, Math.max(a, v)) });
+  runInContext(read("config.js"), ctx);
+  runInContext("P=()=>doc.pages[doc.cur]; nodeById=id=>P().nodes.find(n=>n.id===id); edgeById=id=>P().edges.find(e=>e.id===id);", ctx);
+  runInContext(read("geometry.js"), ctx);
+  return runInContext(read("skin.js") + "\n;({skinActive, skinColor, skinTones, skinNode, skinExtent, skinPaintOrder, skinEdgeLanding, skinEdgePort, skinLabelFont, inferSide, cylinderGeom," +
+    " SKIN_DEPTH, SKIN_MIN_PX, SKIN_FRONT_R, SKIN_LED_R, SKIN_LED_IN, SKIN_PORT_R, SKIN_PLINTH_H, SKIN_PLINTH_PAD, SKIN_TONES, SKIN_FLAT_SHAPES: [...SKIN_FLAT_SHAPES], PALETTE0: PALETTE[0].c});", ctx) as SkinApi;
+}
+
+describe("paridad de la piel entre fluyo/js/skin.js y src/skin.ts (FLUYO-019.3)", () => {
+  let app: SkinApi;
+  before(function () { if (hayApp) app = loadAppSkin(FLUYO_PATH); });
+  const skip = hayApp ? false : "sin fluyo/ al lado";
+  const skinDocs = (): Doc[] => {
+    const d = JSON.parse(readFileSync(join(FIXTURES_DIR, "fluyo-019-2-skin.fluyo.json"), "utf8"));
+    return [...docs, { name: "fluyo-019-2-skin", pages: d.doc.pages, theme: d.doc.theme }];
+  };
+  const BGS = (theme: string) => [THEMES[theme as keyof typeof THEMES].bg, "#123456", "#abc", "#ffffff80", ""];
+
+  it("constantes y respaldo idénticos (profundidad, radios, peana, tonos, formas planas, PALETTE[0])", { skip }, () => {
+    const keys = ["SKIN_DEPTH", "SKIN_MIN_PX", "SKIN_FRONT_R", "SKIN_LED_R", "SKIN_LED_IN", "SKIN_PORT_R", "SKIN_PLINTH_H", "SKIN_PLINTH_PAD"] as const;
+    for (const k of keys) assert.equal((Skin as Record<string, unknown>)[k], (app as unknown as Record<string, unknown>)[k], k);
+    assert.deepEqual(plano(Skin.SKIN_TONES), plano(app.SKIN_TONES));
+    assert.deepEqual([...Skin.SKIN_FLAT_SHAPES].sort(), [...(app.SKIN_FLAT_SHAPES as unknown as string[])].sort());
+    assert.equal(app.PALETTE0, "#6a9fb5");
+  });
+
+  it("skinNode, skinExtent y skinLabelFont por nodo × tema × fondo, y skinPaintOrder por página, en todo el corpus", { skip }, () => {
+    let n = 0;
+    for (const d of skinDocs()) for (const page of d.pages) {
+      assert.deepEqual(Skin.skinPaintOrder(page.nodes).map(x => x.id), plano(app.skinPaintOrder(page.nodes)).map((x: { id: number }) => x.id), `${d.name}: orden de pintor`);
+      for (const node of page.nodes) {
+        for (const theme of ["dark", "crema", "claro"]) for (const bg of BGS(theme)) {
+          assert.deepEqual(plano(Skin.skinNode(node as Skin.SkinNodeInput, theme, bg)), plano(app.skinNode(node as Skin.SkinNodeInput, theme, bg)), `${d.name} #${node.id} ${node.shape} ${theme}/${bg}`);
+          n++;
+        }
+        assert.deepEqual(plano(Skin.skinExtent(node as Skin.SkinNodeInput)), plano(app.skinExtent(node as Skin.SkinNodeInput)), `${d.name} #${node.id} extent`);
+        for (const gf of [null, DEFAULT_FONT, "Arial, Helvetica, sans-serif"])
+          assert.deepEqual(plano(Skin.skinLabelFont(node as Skin.SkinNodeInput, gf)), plano(app.skinLabelFont(node as Skin.SkinNodeInput, gf)), `${d.name} #${node.id} voz ${gf}`);
+        if (node.shape === "cylinder") assert.deepEqual(plano(cylinderGeom(node)), plano(app.cylinderGeom(node)), `${d.name} #${node.id} cylinderGeom`);
+      }
+    }
+    assert.ok(n >= 1500, "capas comparadas: " + n);
+  });
+
+  it("aterrizaje de las conexiones: inferSide y skinEdgeLanding idénticos vértice a vértice en el corpus", { skip }, () => {
+    let n = 0;
+    for (const d of skinDocs()) for (const page of d.pages) {
+      const geo = pageEdgeGeometry(page), byId = new Map(page.nodes.map(x => [x.id, x] as const));
+      for (const e of page.edges) {
+        const pts = geo.get(e.id) ?? [], B = byId.get(e.to);
+        if (!B || pts.length < 2) continue;
+        const side = inferSide(B, pts[pts.length - 1]);
+        assert.equal(side, app.inferSide(B, pts[pts.length - 1]), `${d.name} e${e.id}: lado de llegada`);
+        for (const s of ["n", "e", "s", "w"]) assert.deepEqual(plano(Skin.skinEdgeLanding(pts, s)), plano(app.skinEdgeLanding(pts, s)), `${d.name} e${e.id} ${s}`);
+        const landed = Skin.skinEdgeLanding(pts, side);
+        assert.deepEqual(plano(edgeStroke(e, landed)), plano(edgeStroke(e, plano(app.skinEdgeLanding(pts, side)))), `${d.name} e${e.id}: trazo sobre la ruta posada`);
+        assert.deepEqual(plano(Skin.skinEdgePort(landed[0], e.lineColor || "#777", "#161616")), plano(app.skinEdgePort(landed[0], e.lineColor || "#777", "#161616")), `${d.name} e${e.id}: anillo`);
+        n++;
+      }
+    }
+    assert.ok(n > 50, "conexiones comparadas: " + n);
+  });
+
+  it("color: skinColor y skinTones idénticos en una batería de 1500 colores (#rgb, #rrggbb, #rrggbbaa, ilegibles) × fondos", { skip }, () => {
+    let seed = 19;
+    const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    const hx = (k: number) => Array.from({ length: k }, () => "0123456789abcdefABCDEF"[Math.floor(rnd() * 22)]).join("");
+    const colors: unknown[] = ["red", "#12345", "#abcd", "", " #6a9fb5cc ", null, undefined, 3, {}];
+    for (let i = 0; i < 500; i++) colors.push("#" + hx(3), "#" + hx(6), "#" + hx(8));
+    for (const c of colors) for (const theme of ["dark", "crema", "claro"]) for (const bg of BGS(theme)) {
+      const base = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(bg) ? bg : THEMES[theme as keyof typeof THEMES].bg;
+      assert.equal(Skin.skinColor(c, base), app.skinColor(c, base), `skinColor ${JSON.stringify(c)} / ${base}`);
+      assert.deepEqual(plano(Skin.skinTones(c, theme, bg)), plano(app.skinTones(c, theme, bg)), `skinTones ${JSON.stringify(c)} ${theme}/${bg}`);
+    }
+    for (const z of [0.2, 0.375, 0.374, 1, 3, NaN, -1]) for (const v of ["built", "flat", "BUILT", null])
+      assert.equal(Skin.skinActive(v, z), app.skinActive(v, z), `skinActive ${v} ${z}`);
+  });
 });
