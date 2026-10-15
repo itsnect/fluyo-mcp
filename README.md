@@ -234,6 +234,9 @@ las aplica `FluyoAuthoring` —las mismas funciones que el editor— en lotes de
 - **Colores:** los nombres de `list_colors` (sin distinguir mayúsculas ni acentos) solo existen en la
   entrada de estas dos tools y se traducen a HEX antes del dominio; cualquier otro valor lo valida el
   kernel (`#rgb`, `#rrggbb`, `#rrggbbaa`; `fill` admite `"none"`). El documento solo contiene HEX.
+  En `export_diagram`, el relleno automático (sin `fill`) es el color del nodo al 16 % en crema y al 18 % en
+  el resto, como en la app: un `#rrggbbaa` multiplica esa opacidad por su alfa y un `#rgb` se expande
+  (FLUYO-019.5).
 - **Reglas y límites del dominio** (más estrictos que antes): auto-lazo (`SELF_LOOP`), 300 nodos y 600
   conexiones por página, `|x|,|y| ≤ 100000`, `w/h` entre 10 y 5000 (`LIMIT_EXCEEDED`), nombre de página
   de 1 a 80 caracteres (`INVALID_NAME`), HEX inválido o `customBg` que no es HEX (`INVALID_FIELD`),

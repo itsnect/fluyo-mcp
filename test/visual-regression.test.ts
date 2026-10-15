@@ -33,7 +33,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
-import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, codeFont, codeTokenWeight, cylinderGeom, cylinderSegments, drawnContentBox, edgeStroke, inferSide, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels, segmentsToSVGPath } from "../src/svg.js";
+import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, codeFont, colorTint, codeTokenWeight, cylinderGeom, cylinderSegments, drawnContentBox, edgeStroke, inferSide, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels, segmentsToSVGPath } from "../src/svg.js";
 import * as Skin from "../src/skin.js";
 import { CODE_ADV, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, DEFAULT_SIZES, FONTS, THEMES } from "../src/generated/config.js";
 import { FluyoEdge, FluyoNode, FluyoPage } from "../src/model.js";
@@ -675,6 +675,8 @@ interface AppGeometry {
   segmentsToSVGPath: (segs: unknown) => string;
   /* FLUYO-018.16 */
   edgeStroke: (e: FluyoEdge, pts: { x: number; y: number }[]) => { line: unknown[]; heads: unknown[][] };
+  /* FLUYO-019.5 */
+  colorTint: (color: unknown, k: number) => string | null;
   setPage: (page: FluyoPage) => void;
 }
 
@@ -713,7 +715,7 @@ function loadAppGeometry(fluyoPath: string): AppGeometry {
   // El valor de la última expresión es lo que devuelve runInContext: es la forma
   // de sacar del script unas funciones declaradas con `function`/`const`, que no
   // se cuelgan del objeto de contexto.
-  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels, codeBlockLayout, codeColors, labelLayout, codeFont, codeTokenWeight, cylinderSegments, segmentsToSVGPath, edgeStroke});", ctx) as {
+  const api = runInContext(src + "\n;({edgePoints, placeEdgeLabels, codeBlockLayout, codeColors, labelLayout, codeFont, codeTokenWeight, cylinderSegments, segmentsToSVGPath, edgeStroke, colorTint});", ctx) as {
     edgePoints: AppGeometry["edgePoints"];
     placeEdgeLabels: AppGeometry["placeEdgeLabels"];
     codeBlockLayout: AppGeometry["codeBlockLayout"];
@@ -724,6 +726,7 @@ function loadAppGeometry(fluyoPath: string): AppGeometry {
     cylinderSegments: AppGeometry["cylinderSegments"];
     segmentsToSVGPath: AppGeometry["segmentsToSVGPath"];
     edgeStroke: AppGeometry["edgeStroke"];
+    colorTint: AppGeometry["colorTint"];
   };
   return {
     ...api,
@@ -743,11 +746,20 @@ const EXIGE_APP = process.env.REQUIRE_FLUYO === "1";
 describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => {
   let app: AppGeometry;
 
+  it("colorTint (FLUYO-019.5): la app y el port dan el mismo tinte para todo HEX del dominio y para lo ilegible", { skip: hayApp ? false : "sin fluyo/ al lado" }, () => {
+    const colores: unknown[] = ["#6a9fb5", "#6A9FB5", "#abc", "#ABC", "#6a9fb5cc", "#6a9fb500", "#6a9fb5ff", "#00000001", " #d08b5b80 ",
+      "red", "#12345", "#abcd", "", "rgb(1,2,3)", "#gggggg", null, undefined, 7];
+    for (let i = 0; i < 64; i++) colores.push("#" + ((i * 2654435761) >>> 0).toString(16).padStart(8, "0").slice(0, i % 3 === 0 ? 3 : i % 3 === 1 ? 6 : 8));
+    for (const c of colores) for (const k of [0.16, 0.18, 0.2, 0.15]) assert.equal(app.colorTint(c, k), colorTint(c, k), `colorTint ${JSON.stringify(c)} · ${k}`);
+  });
+
   it("code y cilindro (FLUYO-018.14a): respaldos, datos explícitos y geometría idénticos en los tres temas", { skip: hayApp ? false : "sin fluyo/ al lado" }, () => {
     const base = { id: 1, shape: "code", x: 200, y: 120, w: 300, h: 150, label: "SELECT a\nFROM t", color: "#6a9fb5", bold: false } as unknown as FluyoNode;
     const casos: Partial<FluyoNode>[] = [
       {}, { fill: "none" }, { fill: "#112233" }, { textBg: "#000000" }, { textColor: "#ff0000" }, { kwBg: "#a8b34a" }, { kwColor: "#123456" },
       { font: "Georgia, serif" }, { bold: true }, { color: "#abc" } as Partial<FluyoNode>, { color: "red" } as Partial<FluyoNode>,
+      /* FLUYO-019.5: #rrggbbaa y espacios en los extremos, con la misma regla del tinte */
+      { color: "#6a9fb5cc" } as Partial<FluyoNode>, { color: " #6A9FB580 " } as Partial<FluyoNode>, { color: "#12345" } as Partial<FluyoNode>,
     ];
     for (const theme of ["dark", "crema", "claro"]) for (const c of casos) {
       const n = { ...base, ...c } as FluyoNode;

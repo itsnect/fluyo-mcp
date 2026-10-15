@@ -1,4 +1,4 @@
-import { CANVAS, CODE_ADV, DEFAULT_SIZES, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, THEMES, animDataUri, iconDataUri, nodeIconTint } from "./schema.js";
+import { CANVAS, CODE_ADV, DEFAULT_SIZES, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, FONTS, PALETTE, THEMES, animDataUri, iconDataUri, nodeIconTint } from "./schema.js";
 import { FluyoNode, FluyoEdge, FluyoPage, ThemeName } from "./model.js";
 import { skinActive, skinEdgeLanding, skinEdgePort, skinLabelFont, skinNode, skinPaintOrder, type SkinLayer } from "./skin.js";
 
@@ -694,10 +694,23 @@ function escapeXML(value: unknown): string {
     .replaceAll("'", "&apos;");
 }
 
-function svgFillColor(hex: string, theme: ThemeName): string {
-  const v = parseInt(hex.slice(1), 16);
-  const a = theme === "crema" ? 0.16 : 0.18;
+/* FLUYO-019.5 — port literal de colorTint (fluyo/js/geometry.js): el tinte de un color de nodo (relleno automático, panel de
+   `code`) es ese color con opacidad k. Lee exactamente los HEX del dominio (HEX_COLOR), sin distinguir mayúsculas e ignorando los
+   espacios de los extremos: #rrggbb → rgba(r,g,b,k), el string de siempre; #rgb → expandido; #rrggbbaa → rgba(r,g,b,k·aa/255) con
+   4 decimales (aa=ff → k exacto); cualquier otro valor → null. La paridad con la app la mide visual-regression (vm). */
+export function colorTint(color: unknown, k: number): string | null {
+  const m = typeof color === "string" && /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.exec(color.trim());
+  if (!m) return null;
+  let s = m[1]; if (s.length === 3) s = s.split("").map(ch => ch + ch).join("");
+  const v = parseInt(s.slice(0, 6), 16);
+  const a = s.length === 8 ? Math.round(k * parseInt(s.slice(6), 16) / 255 * 1e4) / 1e4 : k;
   return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${a})`;
+}
+
+/* nodeTint de fluyo/js/render.js: un color ilegible tiñe con el respaldo histórico del documento, PALETTE[0]. */
+function svgFillColor(hex: string, theme: ThemeName): string {
+  const k = theme === "crema" ? 0.16 : 0.18;
+  return colorTint(hex, k) ?? (colorTint(PALETTE[0].hex, k) as string);
 }
 
 /** Relleno de la forma: `none` deja la caja hueca, un color explícito manda, y si
@@ -867,9 +880,7 @@ export function codeBlockLayout(n: FluyoNode): CodeLayout {
    formas); `fill:"none"` conserva el fondo del tema; `codeKwBg:""` = sin caja. Lo explícito
    del nodo manda. El test de paridad (visual-regression) compara esta función con la de la app. */
 function codePanelTint(color: string | undefined, theme: ThemeName): string | null {
-  if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) return null;
-  const v = parseInt(color.slice(1), 16);
-  return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${theme === "crema" ? 0.16 : 0.18})`;
+  return colorTint(color, theme === "crema" ? 0.16 : 0.18);   // FLUYO-019.5: la misma regla que el relleno automático
 }
 export function codeColors(n: FluyoNode, theme: ThemeName) {
   const T = THEMES[theme];
