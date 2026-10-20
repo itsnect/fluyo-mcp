@@ -105,6 +105,7 @@ fluyo/js (kernel)  ──sync:kernel──▶  src/generated/kernel-sources.ts  
 - **Validación única.** La integridad (referencias a elementos, conexiones y eventos, acciones compatibles con su evento, Behaviors, ids, versión de schema y de motor) la decide `FluyoIntegrity` de Fluyo, no este servidor.
 - **Un paso `OCCURRENCE` es siempre `narrated`**: el motor lo registra aunque el elemento esté no disponible; no prueba que ocurriera nada real. Reintentos, colas, timeouts y lógica interna de los elementos no están en el modelo y se declaran en `unmodeled`.
 - Si una Historia no es válida (p. ej. apunta a una conexión eliminada) no hay Trace: se devuelven los errores con su Historia y Step.
+- **Sentido del recorrido**: un paso que recorre su conexión al revés (`reverse:true`, ver la autoría) sale en `describe_document` y en `run_story` con `target.reverse:true`. `target.from`/`target.to` son siempre los de la **conexión**; `target.label`, la frase y el motivo de un fallo (`reasonNode`) van en el sentido del **recorrido**. Sus eventos del Trace (`send_started`, `send_succeeded`, `send_failed`) llevan `reverse:true` detrás de `edgeId`. Sin `reverse`, la salida es la de siempre, clave a clave.
 
 ---
 
@@ -119,7 +120,44 @@ describe_document (revision) ──▶ author_document (baseRevision + operacion
 
 - **Atómico**: o se aplica todo el lote o nada; el documento recibido nunca se modifica. `dryRun:true` valida y devuelve los `changes` sin documento.
 - **Revisión optimista, sin estado**: `baseRevision` es la `revision` del documento (sha256 del JSON canónico del documento normalizado): la que anuncia `describe_document`, la del resumen de `create_*` o el `resultRevision` de la autoría anterior. Si no coincide → `REVISION_MISMATCH` con la real en `actual`; si `actual` es la revisión del documento que devolvió la última llamada, basta reintentar con ella, sin releerlo. `resultRevision` es determinista.
-- **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId}` / `{from,to}` para conexiones; `{nodeId}` para elementos; o `{ref}` de lo creado en el lote; los ids de `edgeId`/`nodeId`/`from`/`to` también admiten `{ref}`). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
+- **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId, reverse?}` / `{from,to}` para conexiones; `{nodeId}` para elementos; o `{ref}` de lo creado en el lote; los ids de `edgeId`/`nodeId`/`from`/`to` también admiten `{ref}`). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
+- **Sentido de un paso FLOW** (`reverse`, contrato de Fluyo STEP-REVERSE): un `SEND` puede recorrer su conexión **de `to` a `from`**. Así la respuesta va por la **misma** conexión que la petición, sin dibujar la inversa. Formas de `target`:
+  - `{from, to}`: busca primero la conexión directa `from → to` (sentido normal); si no hay ninguna, la inversa `to → from` con `reverse:true`. Varias en el nivel que decide → `AMBIGUOUS_TARGET`; ninguna en ningún sentido → `TARGET_NOT_FOUND`. Con `{from, to}` no se escribe `reverse`: la forma ya dice el sentido.
+  - `{edgeId, reverse}` y `{ref, reverse}`: la forma explícita. `reverse` solo vale para una conexión (sobre un elemento, `TARGET_INCOMPATIBLE`).
+  - `reverse:false` es el sentido normal y **no se guarda**: en el documento la clave está ausente o vale `true`.
+  - `retarget_step`: el `target` describe el recorrido completo (sin `reverse` = normal). `{edgeId: la misma, reverse:true}` da la vuelta en el sitio. Su `changes[]` trae `reverse` y `previousReverse` solo si alguno es `true`. `add_step` y `duplicate_step` traen `reverse:true` cuando aplica.
+  - La conexión no cambia nunca. Si se reconecta, el paso sigue a la conexión. `engineVersion` sigue en 2 y el documento en v5. Un kernel anterior (o una app con caché antigua) **rechaza** el documento en vez de leerlo mal.
+
+  **Patrón petición/respuesta.** Diagrama: Cliente (1) → API (2) → DB (3), con las conexiones 4 (1→2) y 5 (2→3). Eventos: 1 «Petición» (`{source} pide a {target}`) y 2 «Respuesta» (`{source} responde a {target}`). Las respuestas usan las conexiones 5 y 4 al revés:
+
+  ```json
+  [
+    {"op":"create_story","scope":"story","pageIndex":0,"ref":"h","name":"Petición y respuesta"},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"h"},"eventTypeId":1,"target":{"from":1,"to":2},"waitMs":0},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"h"},"eventTypeId":1,"target":{"from":2,"to":3},"waitMs":500},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"h"},"eventTypeId":2,"target":{"from":3,"to":2},"waitMs":500},
+    {"op":"add_step","scope":"story","pageIndex":0,"storyId":{"ref":"h"},"eventTypeId":2,"target":{"edgeId":4,"reverse":true},"waitMs":500}
+  ]
+  ```
+
+  El tercer paso no tiene conexión 3 → 2, así que usa la 5 con `reverse:true`. El cuarto lo pide de forma explícita. Pasos guardados:
+
+  ```json
+  {"id":1,"at":0,"action":"SEND","edgeId":4,"eventTypeId":1}
+  {"id":2,"at":500,"action":"SEND","edgeId":5,"eventTypeId":1}
+  {"id":3,"at":1000,"action":"SEND","edgeId":5,"eventTypeId":2,"reverse":true}
+  {"id":4,"at":1500,"action":"SEND","edgeId":4,"eventTypeId":2,"reverse":true}
+  ```
+
+  Respuesta de `run_story` para el paso 3 con DB caída (`set_initial_availability` DOWN):
+
+  ```json
+  {"stepId":3,"target":{"kind":"connection","id":5,"from":2,"to":3,"reverse":true,"label":"DB → API"},
+   "sentence":"DB responde a API",
+   "outcome":{"status":"not_completed","reason":"source_down","reasonNode":{"id":3,"label":"DB"}}}
+  ```
+
+  En el Trace: `{"at":1000,"type":"send_failed","stepId":3,"edgeId":5,"reverse":true,"reason":"source_down"}`. Quien no puede responder es DB, el **origen** del recorrido. La petición del paso 2 falla en cambio con `target_down`, también sobre DB. El resultado es el mismo que con una conexión DB → API dibujada.
 - **Tiempo narrativo**: `waitMs` al añadir al final o `set_wait` por momento; «al mismo tiempo» con `placement.sameMomentAs`. Eliminar colapsa la espera; duplicar entra en el mismo momento. `waitMs` se cuenta desde el **inicio del momento anterior** y no incluye ni espera el viaje visual del token de un `SEND` (presentación: `motion` fast/normal/slow = 500/1100/1800 ms; no sirve para calcular esperas).
 - **Dependencias de llegada** (explícitas, nunca inferidas de las conexiones): `add_step` con `waitsForArrivalOf` o `set_arrival_dependencies` (reemplaza; `[]` las quita) declaran que el momento de un paso no empieza, al reproducir en Fluyo, hasta que llegue el token de envíos (`SEND`) anteriores de la misma Historia. Se guardan en la Historia (`arrivalDependencies`), no en el paso; el Trace no cambia. Lo inválido se rechaza con `INVALID_ARRIVAL_DEPENDENCY` y su razón.
   **Patrón** (FLUYO-018.28): todo paso que narre la recepción, el procesamiento o la consecuencia de un envío declara `waitsForArrivalOf` de ese `SEND`; lo que no dependa de una llegada (otro nodo cae, otro envío) lleva solo `waitMs` y no se retrasa; un paso sobre el nodo destino sin dependencia **no es una recepción** (Fluyo no la deduce). Un envío fallido (destino caído) también «llega»: el momento que lo espera empieza cuando se ve el fallo en el destino.

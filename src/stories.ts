@@ -116,6 +116,8 @@ interface KernelModel {
           eventTypeId?: number;
           nodeId?: number;
           edgeId?: number;
+          reverse?: true;
+          ends?: TraversalEnds;
           state?: string;
           sentence: string;
         }>;
@@ -124,10 +126,41 @@ interface KernelModel {
   }>;
 }
 
+/** FLUYO-MCP-STEP-REVERSE-001: extremos del RECORRIDO de un SEND ({source, target}), con la única regla del sentido del kernel
+ *  (traversalEnds de model.js, STEP-REVERSE-002 D3). `from`/`to` siguen siendo los de la conexión; la etiqueta se escribe en el
+ *  sentido del recorrido. Sin conexión (Historia inválida) no hay extremos; solo un SEND lleva edgeId (lo valida el kernel). */
+interface TraversalEnds { source: number; target: number }
+const SEND_ENDS = `const sendEnds = (pg, s) => {
+    const e = s.edgeId === undefined ? undefined : pg.edges.find(x => x.id === s.edgeId);
+    return e ? traversalEnds(e, s.reverse) : undefined;
+  };`;
+
+/** Etiqueta y forma del objetivo de un paso, igual en describe_document y run_story. `reverse` solo aparece si es true: un documento
+ *  sin sentido inverso da exactamente lo de antes. */
+function stepTarget(
+  s: { nodeId?: number; edgeId?: number; reverse?: true; ends?: TraversalEnds },
+  edgeById: Map<number, { from: number; to: number }>,
+  label: Map<number, string>
+) {
+  if (s.edgeId !== undefined) {
+    const e = edgeById.get(s.edgeId);
+    return {
+      kind: "connection" as const,
+      id: s.edgeId,
+      from: e?.from,
+      to: e?.to,
+      ...(s.reverse ? { reverse: true as const } : {}),
+      label: e && s.ends ? `${label.get(s.ends.source) ?? "?"} → ${label.get(s.ends.target) ?? "?"}` : "?",
+    };
+  }
+  return { kind: "element" as const, id: s.nodeId, label: label.get(s.nodeId as number) ?? "?" };
+}
+
 /** Proyección de lectura de lo que ya normalizó y calculó el kernel. Devuelve null si el documento no normaliza. */
 const READ_MODEL = `(function(){
   let d; try { d = projectFromProjectData(__a).doc; } catch (e) { return null; }
   doc = d;
+  ${SEND_ENDS}
   return {
     documentVersion: serializeProject().version,
     engineVersion: FluyoScenarios.ENGINE_VERSION,
@@ -154,7 +187,8 @@ const READ_MODEL = `(function(){
         id: sc.id, name: sc.name, engineVersion: sc.engineVersion, stepCount: sc.steps.length,
         arrival: (function(){ const a = arrivalDependencies(sc); return {stored: arrivalCanonical(arrivalRawMap(sc)), waits: [...a.waits], ignored: a.ignored}; })(),
         groups: storyboardGroups(sc.steps).map(g => ({at: g.at, steps: g.steps.map(s => ({
-          id: s.id, action: s.action, eventTypeId: s.eventTypeId, nodeId: s.nodeId, edgeId: s.edgeId, state: s.state,
+          id: s.id, action: s.action, eventTypeId: s.eventTypeId, nodeId: s.nodeId, edgeId: s.edgeId,
+          reverse: s.reverse === true || undefined, ends: sendEnds(pg, s), state: s.state,
           sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId))}))}))
       }))
     }))
@@ -214,13 +248,6 @@ export function describeDocument(input: DescribeInput) {
       const label = new Map(pg.nodes.map(n => [n.id, oneLine(n.label)]));
       const initial = new Map(pg.behaviors.map(b => [b.nodeId, b.initialState]));
       const edgeById = new Map(pg.edges.map(e => [e.id, e]));
-      const target = (s: { nodeId?: number; edgeId?: number }) => {
-        if (s.edgeId !== undefined) {
-          const e = edgeById.get(s.edgeId);
-          return { kind: "connection" as const, id: s.edgeId, from: e?.from, to: e?.to, label: e ? `${label.get(e.from) ?? "?"} → ${label.get(e.to) ?? "?"}` : "?" };
-        }
-        return { kind: "element" as const, id: s.nodeId, label: label.get(s.nodeId as number) ?? "?" };
-      };
       return {
         pageIndex,
         name: pg.name,
@@ -279,7 +306,7 @@ export function describeDocument(input: DescribeInput) {
                         event: et ? et.name : null,
                         action: s.action,
                         ...(s.state ? { state: s.state } : {}),
-                        target: target(s),
+                        target: stepTarget(s, edgeById, label),
                         sentence: s.sentence,
                         ...(waits.get(s.id)?.length ? { waitsForArrivalOf: waits.get(s.id) } : {}),
                       };
@@ -361,7 +388,7 @@ interface RunModel {
   nodes: Array<{ id: number; label: string }>;
   edges: Array<{ id: number; from: number; to: number }>;
   eventTypes: Array<{ id: number; name: string; symbol: string }>;
-  ordered: Array<{ id: number; sentence: string }>;
+  ordered: Array<{ id: number; sentence: string; ends?: TraversalEnds }>;
   run: { ok: true; trace: { engineVersion: number; scenarioId: number; events: Array<Record<string, unknown>> } } | { ok: false; errors: unknown[] };
   outcomes?: Array<Record<string, any>>;
   finalAvailability?: Record<string, string>;
@@ -377,6 +404,7 @@ const RUN_STORY = `(function(){
   if (!pg) return {error: "page_not_found", pageCount: d.pages.length};
   const sc = pg.scenarios.find(s => s.id === __a.storyId);
   if (!sc) return {error: "story_not_found", pageIndex, storyIds: pg.scenarios.map(s => s.id)};
+  ${SEND_ENDS}
   const run = FluyoStory.run(pg, sc);
   return {
     pageIndex, pageName: pg.name,
@@ -384,7 +412,7 @@ const RUN_STORY = `(function(){
     nodes: pg.nodes.map(n => ({id: n.id, label: n.label})),
     edges: pg.edges.map(e => ({id: e.id, from: e.from, to: e.to})),
     eventTypes: d.eventTypes.map(et => ({id: et.id, name: et.name, symbol: eventSymbol(et)})),
-    ordered: storyboardOrderedSteps(sc.steps).map(s => ({id: s.id, sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId))})),
+    ordered: storyboardOrderedSteps(sc.steps).map(s => ({id: s.id, sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId)), ends: sendEnds(pg, s)})),
     run,
     outcomes: run.ok ? FluyoStory.outcomes(run.trace, sc, pg) : undefined,
     finalAvailability: run.ok ? FluyoStory.finalAvailability(run.trace, pg) : undefined
@@ -437,14 +465,14 @@ export function runStory(input: RunStoryInput) {
   const edge = new Map(model.edges.map(e => [e.id, e]));
   const et = new Map(model.eventTypes.map(e => [e.id, e]));
   const sentence = new Map(model.ordered.map(s => [s.id, s.sentence]));
+  const ends = new Map(model.ordered.map(s => [s.id, s.ends]));
   const trace = model.run.trace;
 
   let moment = -1;
   let previousAt: number | undefined;
   const steps = model.outcomes.map(o => {
     if (o.at !== previousAt) { moment++; previousAt = o.at as number; }
-    const { stepId, at, action, eventTypeId, edgeId, nodeId, eventIndexes, status, reason, reasonNodeId, from, to, state, nodeAvailability, note } = o;
-    const e = edgeId === undefined ? undefined : edge.get(edgeId);
+    const { stepId, at, action, eventTypeId, edgeId, reverse, nodeId, eventIndexes, status, reason, reasonNodeId, from, to, state, nodeAvailability, note } = o;
     const type = eventTypeId === undefined ? undefined : et.get(eventTypeId);
     return {
       stepId,
@@ -452,10 +480,8 @@ export function runStory(input: RunStoryInput) {
       moment,
       event: type ? { id: type.id, name: type.name, symbol: type.symbol } : null,
       action,
-      target:
-        edgeId !== undefined
-          ? { kind: "connection", id: edgeId, from: e?.from, to: e?.to, label: e ? `${label.get(e.from) ?? "?"} → ${label.get(e.to) ?? "?"}` : "?" }
-          : { kind: "element", id: nodeId, label: label.get(nodeId) ?? "?" },
+      // FLUYO-MCP-STEP-REVERSE-001: `reverse` lo da FluyoStory.outcomes (solo si es true); el motivo (reasonNode) ya es del recorrido.
+      target: stepTarget({ edgeId, nodeId, reverse, ends: ends.get(stepId) }, edge, label),
       sentence: sentence.get(stepId) ?? "",
       outcome: {
         status,

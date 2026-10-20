@@ -342,6 +342,7 @@ server.registerTool(
       "es lo que responde «¿qué eventos puedo usar?») y las Historias con sus pasos agrupados por momento, su evento, objetivo y frase. " +
       "Si una Historia tiene dependencias de llegada: arrivalDependencies (lo guardado), inactiveArrivalDependencies (lo guardado que no aplica, con su razón), " +
       "waitsForArrivalOf en cada paso y waitsFor en cada momento (solo lo que aplica al reproducir). " +
+      "Un paso con target.reverse:true recorre su conexión de to a from: label y frase van en ese sentido (from/to son los de la conexión). " +
       "También valida la integridad del documento (referencias a elementos, conexiones y eventos) con la misma regla que el motor de Fluyo, " +
       "indica la versión de schema y de motor, y declara lo que el modelo NO representa. No modifica nada. " +
       "Usa los ids numéricos que devuelve (los storyId son por página) para pedir run_story. " +
@@ -373,6 +374,7 @@ server.registerTool(
       "state_changed, no_change o narrated), la frase de cada paso y las versiones de schema y motor. " +
       "Un paso OCCURRENCE es siempre 'narrated': el motor lo registra aunque el elemento esté no disponible y NO prueba que ocurriera nada real. " +
       "Si la Historia no es válida no hay Trace: se devuelven los errores. No modifica el documento. " +
+      "Un paso con target.reverse:true recorre su conexión de to a from: frase, reasonNode y Trace (reverse:true) van en ese sentido. " +
       "Pide antes describe_document para conocer pageIndex y storyId.",
     inputSchema: {
       document: DocumentInputSchema,
@@ -410,6 +412,7 @@ server.registerTool(
       "ELIMINAR: delete_node quita también sus conexiones y su disponibilidad inicial. " +
       "Las Historias mandan (B2): si el estado final del lote dejaría una Historia inválida (un paso apunta a lo eliminado) se rechaza TODO con REFERENCED_ENTITY (entidad eliminada, Historias y pasos afectados, operación y razón); nada se limpia en silencio. " +
       "Retargetear/quitar pasos y eliminar en el mismo lote es válido (se evalúa el estado final). Las {ref} valen también en update_*/delete_* y en los destinos de los pasos (target: {ref} | {edgeId:{ref}} | {nodeId:{ref}} | {from:{ref},to:{ref}}, nodeId de set_initial_availability). " +
+      "SENTIDO de un paso FLOW: target {edgeId|ref, reverse:true} recorre la conexión de to a from (la respuesta va por la MISMA conexión: no dibujes la inversa); retarget_step fija conexión y sentido (sin reverse = normal). " +
       "PÁGINAS: create_page añade SIEMPRE al final, no cambia la página activa; sin nombre usa el del editor; 1–80 caracteres. " +
       "create_page devuelve el pageIndex creado en changes[].pageIndex: las operaciones siguientes del MISMO lote ya pueden usarlo (create_node, create_connection, create_story…); las páginas no tienen id. " +
       "delete_page {pageIndex, expectedName}: expectedName = nombre ACTUAL exacto (si no, PAGE_MISMATCH); la página se va con sus elementos, conexiones, disponibilidad e Historias (changes[].affects); los eventos se conservan; nunca la única (CANNOT_DELETE_LAST_PAGE). " +

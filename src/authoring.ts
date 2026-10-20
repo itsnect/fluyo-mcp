@@ -32,16 +32,21 @@ const Wait = z
     "Espera NARRATIVA en ms contada desde el INICIO del momento anterior (no desde que termine nada): no incluye ni espera el viaje visual del token de un envío. " +
       "Si el paso narra la recepción, el procesamiento o la consecuencia de un SEND anterior, declara la dependencia (waitsForArrivalOf en add_step; set_arrival_dependencies después) en vez de calcular la espera."
   );
+/* FLUYO-MCP-STEP-REVERSE-001: el sentido de un SEND (contrato de fluyo STEP-REVERSE-002, D9). `reverse` solo existe en las formas de
+   conexión explícitas ({edgeId}, {ref}); {from,to} ya dice el sentido y la resolución directa → inversa la hace el kernel (targetOf).
+   `reverse:false` = normal y no se guarda. Que un {ref} sea un elemento (TARGET_INCOMPATIBLE) también lo decide el kernel. */
+const Reverse = z.boolean().optional();
 const Target = z
   .union([
-    z.strictObject({ edgeId: IdOrRef }),
+    z.strictObject({ edgeId: IdOrRef, reverse: Reverse }),
     z.strictObject({ nodeId: IdOrRef }),
     z.strictObject({ from: IdOrRef, to: IdOrRef }),
-    Ref,
+    z.strictObject({ ref: Ref.shape.ref, reverse: Reverse }),
   ])
   .describe(
     "{edgeId} o {from,to} si el evento es de conexión; {nodeId} si es de elemento; o {ref} de la conexión/elemento creado antes en el lote (el evento decide cuál). " +
-      "Los ids de edgeId/nodeId/from/to también admiten {ref}."
+      "Los ids de edgeId/nodeId/from/to también admiten {ref}. " +
+      "reverse:true (solo conexión) la recorre de to a from. {from,to}: la directa from→to o, si no hay, la inversa con reverse:true (sin poner reverse)."
   );
 const story = z.literal("story");
 const page = z.literal("page");
