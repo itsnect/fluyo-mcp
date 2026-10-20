@@ -119,6 +119,12 @@ const NodeSpec = z
     kwColor: Text(40).nullable().optional(),
   })
   .describe("Campos del elemento: shape, x, y obligatorios; el resto toma los defaults del editor. Colores SOLO en HEX (#rgb, #rrggbb, #rrggbbaa); icon/anim deben existir en el catálogo (list_icons, list_anims) y las formas icon/anim los exigen. Límites de entrada: |x|,|y| ≤ 100000; w,h entre 10 y 5000 (ver capabilities.limits). 'ref' NO va aquí: va en la operación.");
+/* SCENARIOS-SEMANTICS-001 FASE 5 (D9): la semántica de la conexión. Solo los dos valores que escribe la autoría del editor (EDGE_KINDS,
+   model.js; un test vigila la igualdad); null la quita (Conexión). Lo decide el autor: nunca se infiere. */
+const ConnectionKind = z
+  .enum(["FLOWS_TO", "REQUIRES"])
+  .nullable()
+  .describe("FLOWS_TO = Flujo (la ruta va de source a target) | REQUIRES = Requisito (source necesita a target) | null = genérica. No cambia la ejecución.");
 const ConnectionSpec = z
   .strictObject({
     id: Id.optional(),
@@ -141,6 +147,7 @@ const ConnectionSpec = z
     dots: z.number().int().optional(),
     dotsGlobal: z.boolean().optional(),
     arrowSize: z.number().nullable().optional().describe("FLUYO-018.27: tamaño de las puntas (1 = el de siempre, 1.5, 2; el kernel acota en [1, 2]; null = quitarlo). Solo dibujo: la ruta no cambia."),
+    kind: ConnectionKind.optional(),
   })
   .describe("Campos opcionales de la conexión (lados, ruta, etiqueta, estilo); sin ellos, los defaults del editor. 'ref', 'source' y 'target' NO van aquí.");
 /* Modificar (018.3): un PARCHE con solo las claves que la UI del editor escribe (lista cerrada en model.js). id, icon, anim e img no se modifican;
@@ -268,6 +275,13 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
     pageIndex: PageIndex,
     nodes: z.array(z.strictObject({ source: Endpoint, ref: LocalRef.optional().describe("Ref de la copia.") })).min(1).max(100),
     ...DuplicateFields,
+  }),
+  z.strictObject({
+    op: z.literal("set_observed_flow"),
+    scope: story,
+    ...storyRef,
+    source: IdOrRef.nullable(),
+    target: IdOrRef.nullable(),
   }),
   z.strictObject({ op: z.literal("set_initial_availability"), scope: page, pageIndex: PageIndex, nodeId: IdOrRef, state: z.enum(["UP", "DOWN"]) }),
   z.strictObject({ op: z.literal("create_event_type"), scope: eventType, ...EventFields, primitive: Primitive, ref: z.string().min(1).max(40).optional() }),

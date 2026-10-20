@@ -83,7 +83,9 @@ describe("MCP-STEP-REVERSE-001 · kernel y versiones", () => {
     const authoring = KERNEL_FILES.find(f => f.name === "story-authoring.js")!.source;
     assert.ok(authoring.includes("const back = pg.edges.filter(e=>e.from===to && e.to===from);"));
     const header = readFileSync(join(ROOT, "src", "generated", "kernel-sources.ts"), "utf8").split("\n", 6).join("\n");
-    assert.match(header, /Sincronizado desde la revisión 702f269 de fluyo\//);
+    /* SCENARIOS-SEMANTICS-001 FASE 5 resincroniza el kernel (set_observed_flow, avisos W2/W3): la cabecera nombra una revisión posterior
+       a 702f269; lo que vigila este test es el contenido de STEP-REVERSE (arriba y abajo), no la revisión. */
+    assert.match(header, /Sincronizado desde la revisión [0-9a-f]{7,} de fluyo\//);
   });
 
   it("engineVersion sigue en 2 y el documento en v5 (no hay v3): la autoría, describe y run_story lo dicen", () => {

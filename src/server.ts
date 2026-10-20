@@ -167,7 +167,8 @@ server.registerTool(
       "No incluye animación (puntos de flujo ni aparición escalonada), igual que el SVG que exporta la app; " +
       "para el GIF animado hay que abrir el documento en Fluyo. PNG y GIF no están disponibles aquí: " +
       "necesitan un renderer de canvas. Respeta el aspecto del documento: con settings.skin = \"built\" sale la piel " +
-      "«construido» (2.5D) de Present, el Viewer y la exportación de la app; sin la clave (o con cualquier otro valor), plano.",
+      "«construido» (2.5D) de Present, el Viewer y la exportación de la app; sin la clave (o con cualquier otro valor), plano. " +
+      "Con kind, las marcas de Flujo y Requisito, como la app.",
     inputSchema: {
       document: DocumentInputSchema,
       pageIndex: z.number().optional().describe("Índice de página a exportar (por defecto, la página actual)."),
@@ -343,6 +344,7 @@ server.registerTool(
       "Si una Historia tiene dependencias de llegada: arrivalDependencies (lo guardado), inactiveArrivalDependencies (lo guardado que no aplica, con su razón), " +
       "waitsForArrivalOf en cada paso y waitsFor en cada momento (solo lo que aplica al reproducir). " +
       "Un paso con target.reverse:true recorre su conexión de to a from: label y frase van en ese sentido (from/to son los de la conexión). " +
+      "Solo si los hay: connectionKind (FLOWS_TO|REQUIRES), observedFlow {source,target} de una Historia (sin él, la ruta automática; su disponibilidad no se calcula aquí) y warnings (extremo perdido, kind desconocido). " +
       "También valida la integridad del documento (referencias a elementos, conexiones y eventos) con la misma regla que el motor de Fluyo, " +
       "indica la versión de schema y de motor, y declara lo que el modelo NO representa. No modifica nada. " +
       "Usa los ids numéricos que devuelve (los storyId son por página) para pedir run_story. " +
@@ -401,7 +403,7 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Aplica un LOTE ATÓMICO de operaciones de Historia y de eventos sobre una COPIA del documento y devuelve un documento nuevo que Fluyo puede ejecutar tal cual (el original no se modifica). " +
-      "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait, set_arrival_dependencies (alcance 'story'); " +
+      "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait, set_arrival_dependencies, set_observed_flow (alcance 'story'); " +
       "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection, reorder_nodes, duplicate_node (alcance 'page'); create_page, rename_page, delete_page, set_theme (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
       "Un evento se define con name, primitive (FLOW=conexión, OCCURRENCE=elemento, SET_AVAILABILITY=elemento que cambia su disponibilidad con availability UP|DOWN), sentence (marcadores {source} {target} {name}), symbol, motion (sólo FLOW) y presentation ({connectionEffects}|{nodeEffects}, parche); la acción de los pasos la sigue decidiendo el evento. " +
       "Las reglas son las del editor: un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) y no se elimina (REFERENCED_ENTITY, con las Historias y pasos que lo usan; quita antes esos pasos); cambiar nombre, frase, símbolo o presentación es global y no toca pasos, tiempos ni objetivos. Puedes usar {ref} de un evento creado en el lote en add_step. " +
@@ -410,6 +412,7 @@ server.registerTool(
       "Los ids los asigna Fluyo (la respuesta trae 'refs': [{ref,type,pageIndex,id}] para seguir trabajando) y los defaults, la geometría de las conexiones y las reglas (auto-lazo, ids duplicados, forma) son las del editor; los campos son los del documento (w/h, color en hex). " +
       "MODIFICAR (update_node, update_connection): mover = x/y, redimensionar = w/h; solo cambia lo que envías y las conexiones no se tocan; source/target = retarget; los waypoints solo cambian si los envías (waypoints:[] vuelve a la ruta automática). " +
       "ELIMINAR: delete_node quita también sus conexiones y su disponibilidad inicial. " +
+      "SEMÁNTICA (la decide el autor, nunca se infiere): spec.kind; set_observed_flow {storyId, source, target} (elementos distintos; los dos null = ruta automática) guarda la ruta observada de la Historia, sin tocar pasos. " +
       "Las Historias mandan (B2): si el estado final del lote dejaría una Historia inválida (un paso apunta a lo eliminado) se rechaza TODO con REFERENCED_ENTITY (entidad eliminada, Historias y pasos afectados, operación y razón); nada se limpia en silencio. " +
       "Retargetear/quitar pasos y eliminar en el mismo lote es válido (se evalúa el estado final). Las {ref} valen también en update_*/delete_* y en los destinos de los pasos (target: {ref} | {edgeId:{ref}} | {nodeId:{ref}} | {from:{ref},to:{ref}}, nodeId de set_initial_availability). " +
       "SENTIDO de un paso FLOW: target {edgeId|ref, reverse:true} recorre la conexión de to a from (la respuesta va por la MISMA conexión: no dibujes la inversa); retarget_step fija conexión y sentido (sin reverse = normal). " +

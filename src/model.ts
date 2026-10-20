@@ -113,6 +113,9 @@ export const FluyoEdgeSchema = z
     dotsGlobal: z.boolean().optional(),
     /** FLUYO-018.27: tamaño de las puntas (1 = el de siempre; la app acota en [1, 2]). Ausente = 1, sin migrar. */
     arrowSize: z.number().nullable().optional(),
+    /** SCENARIOS-SEMANTICS-001: semántica (FLOWS_TO | REQUIRES; otro texto se conserva y se lee como Conexión). Sin normalizar aquí: lo
+        lee edgeKind (svg.ts), como la app. */
+    kind: z.unknown().optional(),
   })
   .passthrough();
 
@@ -294,6 +297,8 @@ const commonEdgeFields = {
   dots: z.number().int().min(1).max(6).optional().describe("Número de puntos propio de esta arista. Requiere dotsGlobal=false."),
   dotsGlobal: z.boolean().optional().describe("Si es false, esta arista usa su propio 'dots' en vez del global."),
   arrowSize: z.number().min(1).max(2).optional().describe("Tamaño de las puntas de esta conexión: 1 (el de siempre, 11×8 px), 1.5 o 2. Solo cambia el dibujo de la punta, no la ruta."),
+  /* SCENARIOS-SEMANTICS-001 FASE 5 (D9): antes, z.object lo quitaba en silencio. */
+  kind: z.enum(["FLOWS_TO", "REQUIRES"]).nullable().optional().describe("FLOWS_TO = Flujo | REQUIRES = Requisito; sin kind, genérica."),
 };
 
 export const EdgeSpecSchema = z.object(commonEdgeFields);

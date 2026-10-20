@@ -30,7 +30,10 @@ interface ValidationReport {
   engineVersion: number;
   errors: IntegrityError[];
   stories: Array<{ pageIndex: number; storyId: number; executable: boolean }>;
+  /** SCENARIOS-SEMANTICS-001 FASE 5 (§ V): avisos W2/W3 de FluyoIntegrity; solo existen si hay alguno. No cambian `valid`. */
+  warnings?: IntegrityWarning[];
 }
+interface IntegrityWarning { code: string; message: string; scope: string; pageIndex: number; storyId?: number; entityKind?: string; entityId?: number; kind?: string; missing?: string[] }
 
 /** Lo que el modelo NO representa. Se devuelve siempre: es lo que impide que el agente lo invente. */
 export const UNMODELED: readonly string[] = [
@@ -95,13 +98,15 @@ interface KernelModel {
   pages: Array<{
     name: string;
     nodes: Array<{ id: number; label: string; shape: string; icon?: string; x: number; y: number; w: number; h: number }>;
-    edges: Array<{ id: number; from: number; to: number; label?: string; route: string; fromSide: string | null; toSide: string | null; waypoints: Array<{ x: number; y: number }> }>;
+    edges: Array<{ id: number; from: number; to: number; label?: string; route: string; fromSide: string | null; toSide: string | null; waypoints: Array<{ x: number; y: number }>; kind: string }>;
     behaviors: Array<{ nodeId: number; initialState: string }>;
     stories: Array<{
       id: number;
       name: string;
       engineVersion: number;
       stepCount: number;
+      /** SCENARIOS-SEMANTICS-001 FASE 5: la ruta observada TAL CUAL está guardada (null = automática). */
+      observedFlow: { from: number; to: number } | null;
       /** FLUYO-018.22: lo ALMACENADO (forma canónica), lo que aplica al reproducir (por paso) y lo ignorado con su razón. */
       arrival: {
         stored: Array<{ stepId: number; waitsForArrivalOf: number[] }> | null;
@@ -181,10 +186,11 @@ const READ_MODEL = `(function(){
       name: pg.name,
       nodes: pg.nodes.map(n => ({id: n.id, label: n.label, shape: n.shape, icon: n.icon, x: n.x, y: n.y, w: n.w, h: n.h})),
       edges: pg.edges.map(e => ({id: e.id, from: e.from, to: e.to, label: e.label, route: e.route,
-        fromSide: e.fromSide || null, toSide: e.toSide || null, waypoints: (e.waypoints || []).map(w => ({x: w.x, y: w.y}))})),
+        fromSide: e.fromSide || null, toSide: e.toSide || null, waypoints: (e.waypoints || []).map(w => ({x: w.x, y: w.y})), kind: edgeKind(e)})),
       behaviors: pg.behaviors,
       stories: pg.scenarios.map(sc => ({
         id: sc.id, name: sc.name, engineVersion: sc.engineVersion, stepCount: sc.steps.length,
+        observedFlow: sc.observedFlow ? {from: sc.observedFlow.from, to: sc.observedFlow.to} : null,
         arrival: (function(){ const a = arrivalDependencies(sc); return {stored: arrivalCanonical(arrivalRawMap(sc)), waits: [...a.waits], ignored: a.ignored}; })(),
         groups: storyboardGroups(sc.steps).map(g => ({at: g.at, steps: g.steps.map(s => ({
           id: s.id, action: s.action, eventTypeId: s.eventTypeId, nodeId: s.nodeId, edgeId: s.edgeId,
@@ -229,6 +235,8 @@ export function describeDocument(input: DescribeInput) {
     valid: validation.valid,
     errorCount: validation.errors.length,
     errors: validation.errors.slice(0, MAX_ERRORS_IN_DESCRIPTION),
+    /* SCENARIOS-SEMANTICS-001 FASE 5 (§ V): W2 (extremo perdido de una ruta observada) y W3 (kind desconocido). Solo si hay. */
+    ...(validation.warnings?.length ? { warnings: validation.warnings.slice(0, MAX_ERRORS_IN_DESCRIPTION) } : {}),
   };
   const model = kernel.call<KernelModel | null>(READ_MODEL, input.document);
   if (!model) {
@@ -274,6 +282,9 @@ export function describeDocument(input: DescribeInput) {
           ...(e.fromSide ? { fromSide: e.fromSide } : {}),
           ...(e.toSide ? { toSide: e.toSide } : {}),
           ...(e.waypoints.length ? { waypoints: e.waypoints } : {}),
+          /* SCENARIOS-SEMANTICS-001 FASE 5 (D9): solo en Flujo y Requisito; sin connectionKind es una conexión genérica (D2). Otro
+             nombre que target.kind de los pasos. */
+          ...(e.kind !== "GENERIC" ? { connectionKind: e.kind } : {}),
         })),
         bounds: boundsOf(pg.nodes),
         initialUnavailable: pg.behaviors.filter(b => b.initialState === "DOWN").map(b => b.nodeId),
@@ -287,6 +298,11 @@ export function describeDocument(input: DescribeInput) {
             stepCount: sc.stepCount,
             durationMs: last,
             executable: executable.get(`${pageIndex}:${sc.id}`) ?? false,
+            /* SCENARIOS-SEMANTICS-001 FASE 5 (D5, D9): la ruta observada GUARDADA, con source/target como set_observed_flow. Sin ella, la
+               Historia usa la ruta automática (si la hay) y aquí no sale nada. Un extremo perdido sale con label "?" y un aviso W2. */
+            ...(sc.observedFlow
+              ? { observedFlow: { source: sc.observedFlow.from, target: sc.observedFlow.to, sourceLabel: label.get(sc.observedFlow.from) ?? "?", targetLabel: label.get(sc.observedFlow.to) ?? "?" } }
+              : {}),
             /* FLUYO-018.22: dato almacenado tal cual (canónico) y, aparte, lo almacenado que NO aplica al reproducir. Sin dependencias, nada. */
             ...(sc.arrival.stored ? { arrivalDependencies: sc.arrival.stored } : {}),
             ...(sc.arrival.ignored.length ? { inactiveArrivalDependencies: sc.arrival.ignored } : {}),

@@ -1021,6 +1021,65 @@ export function edgeStroke(e: { endArrow?: boolean; startArrow?: boolean; arrowS
   return out;
 }
 
+/* ===================== Marcas de semántica (port de edgeSemanticMarks, SCENARIOS-SEMANTICS-001 FASE 5) =====================
+   Port LITERAL de fluyo/js/geometry.js (edgeSemanticMarks) y de edgeKind (fluyo/js/model.js). Significado del diagrama, no
+   comportamiento: Flujo = dos cuñas en el centro del tramo VISIBLE más largo, de from a to (las puntas y flowDir no cuentan);
+   Requisito = un anillo relleno del fondo a 10 px del origen (detrás de la punta de inicio si la hay). Cualquier otro kind → null:
+   el SVG de siempre, byte a byte. El golden compartido con la app (test/fixtures/fluyo-scenarios-semantics-5-marcas-svg.json) lo
+   genera «Exportar → SVG» del editor en Chrome. */
+export const EDGE_KIND_GENERIC = "GENERIC";
+export function edgeKind(e: { kind?: unknown } | null | undefined): "FLOWS_TO" | "REQUIRES" | "GENERIC" {
+  const k = e && e.kind;
+  return k === "FLOWS_TO" || k === "REQUIRES" ? k : EDGE_KIND_GENERIC;
+}
+function polyLen(pts: Pt[]): number {
+  let L = 0;
+  for (let i = 1; i < pts.length; i++) L += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y);
+  return L;
+}
+export const SEM_CHEVRON = 4.2, SEM_CHEVRON_GAP = 3.5, SEM_CHEVRON_MIN_SEG = 28, SEM_RING_R = 4.2, SEM_RING_OFFSET = 10;
+export interface SemanticMarks { kind: "FLOWS_TO" | "REQUIRES"; chevrons?: CylSeg[][]; ring?: { x: number; y: number; r: number } }
+export function edgeSemanticMarks(e: { kind?: unknown; startArrow?: boolean; arrowSize?: number | null }, pts: Pt[]): SemanticMarks | null {
+  const kind = edgeKind(e);
+  if (kind === EDGE_KIND_GENERIC || !pts || pts.length < 2) return null;
+  if (kind === "FLOWS_TO") {
+    /* tramos visibles: una ruta ortogonal trae vértices sin giro (pasillos, 018.25); se unen antes de elegir el más largo */
+    let best = 0, a: Pt | null = null, b: Pt | null = null;
+    for (let i = 0; i < pts.length - 1; ) {
+      let j = i + 1;
+      const dx = pts[j].x - pts[i].x, dy = pts[j].y - pts[i].y;
+      if (!dx && !dy) { i = j; continue; }            // punto repetido: no define dirección
+      while (j < pts.length - 1) {
+        const ex = pts[j + 1].x - pts[j].x, ey = pts[j + 1].y - pts[j].y;
+        if (Math.abs(dx * ey - dy * ex) > 1e-6 || dx * ex + dy * ey < 0) break;
+        j++;
+      }
+      const L = Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y);
+      if (L > best) { best = L; a = pts[i]; b = pts[j]; }
+      i = j;
+    }
+    if (best < SEM_CHEVRON_MIN_SEG || !a || !b) return { kind, chevrons: [] };
+    const ux = (b.x - a.x) / best, uy = (b.y - a.y) / best, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, s = SEM_CHEVRON;
+    const chevrons = [-SEM_CHEVRON_GAP, SEM_CHEVRON_GAP].map((off): CylSeg[] => {
+      const cx = mx + ux * off, cy = my + uy * off;
+      return [{ op: "M", x: cx - ux * s + uy * s, y: cy - uy * s - ux * s }, { op: "L", x: cx, y: cy }, { op: "L", x: cx - ux * s - uy * s, y: cy - uy * s + ux * s }];
+    });
+    return { kind, chevrons };
+  }
+  const L = polyLen(pts);
+  const behindHead = e.startArrow ? EDGE_GAP + EDGE_HEAD_LEN * edgeArrowSize(e) : 0;
+  const d = Math.min(behindHead + SEM_RING_OFFSET, L / 3);
+  const p = L > 0 ? pointAt(pts, d / L) : pts[0];
+  return { kind, ring: { x: p.x, y: p.y, r: SEM_RING_R } };
+}
+/* Las marcas como SVG (port de semanticMarksToSVG, fluyo/js/export.js): una entrada por elemento. */
+function semanticMarksToSVG(sem: SemanticMarks, lineCol: string, bg: string): string[] {
+  const st = `stroke="${lineCol}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"`;
+  const out = (sem.chevrons || []).map(ch => `<path d="${segmentsToSVGPath(ch)}" fill="none" ${st}/>`);
+  if (sem.ring) out.push(`<circle cx="${sem.ring.x.toFixed(2)}" cy="${sem.ring.y.toFixed(2)}" r="${sem.ring.r}" fill="${bg}" ${st}/>`);
+  return out;
+}
+
 function hexPointsSVG(n: FluyoNode): string {
   const { x, y, w, h } = n, i = Math.min(24, w * 0.18);
   return [
@@ -1203,7 +1262,7 @@ function renderNodeToSVG(n: FluyoNode, theme: ThemeName, globalFont: string, sym
 
 /* ===================== Aristas ===================== */
 
-function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[], globalFont: string, labelPos: Map<number, Pt>, skinBg: string | null = null): string {
+function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<number, FluyoNode>, edges: readonly FluyoEdge[], globalFont: string, labelPos: Map<number, Pt>, skinBg: string | null = null, bg: string = THEMES[theme].bg): string {
   const A = nodeById.get(e.from), B = nodeById.get(e.to);
   if (!A || !B) return "";
   let pts = edgePoints(e, nodeById, edges);
@@ -1216,7 +1275,11 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
   const stroke = edgeStroke(e, pts);
   const parts = [`<path d="${segmentsToSVGPath(stroke.line)}" fill="none" stroke="${lineCol}" stroke-width="${EDGE_W}" stroke-linejoin="round"${dash}/>`];
   for (const h of stroke.heads) parts.push(`<path d="${segmentsToSVGPath(h)}" fill="${lineCol}"/>`);
-  if (skinBg !== null && !e.startArrow) {
+  /* SCENARIOS-SEMANTICS-001 FASE 5 (§ Export): las marcas de Flujo/Requisito, en el orden de la app (línea → puntas → marcas → anillo
+     de salida → rótulo); N3: donde va el anillo de Requisito no va el de salida. Sin kind, nada cambia. */
+  const sem = edgeSemanticMarks(e, pts);
+  if (sem) parts.push(...semanticMarksToSVG(sem, lineCol, escapeXML(bg)));
+  if (skinBg !== null && !e.startArrow && !(sem && sem.ring)) {
     const port = skinEdgePort(pts[0], e.lineColor || T.edge, skinBg);
     parts.push(`<path d="${segmentsToSVGPath(port.segs)}" fill="${escapeXML(port.fill)}" stroke="${escapeXML(port.stroke)}" stroke-width="${port.sw}"/>`);
   }
@@ -1292,7 +1355,7 @@ export interface PageToSVGOptions {
    * (2.5D) como «Exportar → SVG» de la app; ausente o cualquier otro valor, el SVG plano de siempre, byte a byte.
    */
   skin?: string | null;
-  /** FLUYO-019.3: fondo personalizado del documento (`doc.customBg`); vacío = el del tema. Solo lo usa la piel. */
+  /** FLUYO-019.3: fondo personalizado del documento (`doc.customBg`); vacío = el del tema. Lo usan la piel y (SCENARIOS-SEMANTICS-001 FASE 5) el relleno del anillo de Requisito. */
   customBg?: string | null;
 }
 
@@ -1342,7 +1405,8 @@ export function pageToSVG(
      externos. Mismo orden que buildSVGDocument. */
   const syms = svgSymbols();
   const contenedores = lay.containers.map(n => renderNodeToSVG(n, theme, font, syms, skinBg));
-  const conexiones = page.edges.map(e => renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos, skinBg));
+  /* el anillo de Requisito se rellena con el fondo del documento (doc.customBg || el del tema), como el lienzo y buildSVGDocument */
+  const conexiones = page.edges.map(e => renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos, skinBg, customBg || THEMES[theme].bg));
   const nodos = lay.leaves.map(n => renderNodeToSVG(n, theme, font, syms, skinBg));
   const defs = syms.defs();
   if (contenedores.length) { if (defs) parts.push(defs); parts.push(...contenedores, ...conexiones); }
