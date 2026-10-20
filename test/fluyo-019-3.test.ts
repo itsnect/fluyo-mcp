@@ -19,7 +19,7 @@ import { createDiagram, createDiagramResult, parseDocument } from "../src/diagra
 import { createKernel } from "../src/kernel.js";
 import { normalizeWith, revisionOf } from "../src/revision.js";
 import { SKIN_VALUES, projectSkin, type FluyoPage } from "../src/model.js";
-import { pageEdgeGeometry, pageToSVG } from "../src/svg.js";
+import { containmentPaintOrder, pageEdgeGeometry, pageToSVG } from "../src/svg.js";
 import { SKIN_DEPTH, skinColor, skinEdgeLanding, skinExtent, skinNode, skinPaintOrder, skinTones, type SkinNodeInput } from "../src/skin.js";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -162,17 +162,23 @@ export function skinSvgLines(svg: string): string[] {
 }
 
 describe("FLUYO-019.3 · port de skin.js contra los goldens de fluyo", () => {
-  it("golden 019.1: skinNode por pieza y tema (dark, crema, claro), fondo personalizado, skinExtent y skinEdgeLanding", () => {
+  it("golden 019.1: skinNode por pieza y tema (dark, crema, claro), fondo personalizado, skinExtent y skinEdgeLanding (por silueta, 019.4a)", () => {
     for (const theme of ["dark", "crema", "claro"]) for (const n of G1.nodes)
       assert.deepEqual(J(skinNode(n, theme, THEME_BG[theme])), G1.themes[theme][n.id], `${theme} / ${n.shape} #${n.id}`);
     assert.deepEqual(J(skinNode(G1.nodes.find((n: any) => n.id === 1), "crema", "#123456")), G1.themes.customBg);
     for (const n of G1.nodes) assert.deepEqual(J(skinExtent(n)), G1.extent[n.id], "extent " + n.shape);
-    const routes: Record<string, Array<{ x: number; y: number }>> = {
-      n3: [{ x: 100, y: 0 }, { x: 100, y: 50 }, { x: 200, y: 50 }, { x: 200, y: 100 }], e3: [{ x: 0, y: 100 }, { x: 50, y: 100 }, { x: 50, y: 200 }, { x: 120, y: 200 }],
-      n2: [{ x: 100, y: 0 }, { x: 100, y: 100 }], diag: [{ x: 0, y: 0 }, { x: 40, y: 40 }, { x: 80, y: 100 }] };
+    /* FLUYO-019.4a (decisión 213): `landing` = «destino/lado-ruta» → {in, out}; las 8 piezas (bloques, cilindro, icono, formas
+       planas y desconocida) × n/e/s/w con codo, recta y diagonal. El destino es el nodo del golden con ese id. */
     const keys = Object.keys(G1.landing);
-    assert.ok(keys.length >= 12, String(keys.length));
-    for (const k of keys) { const [route, side] = k.split("/"); assert.deepEqual(skinEdgeLanding(routes[route], side), G1.landing[k], k); }
+    assert.ok(keys.length >= 48, String(keys.length));
+    let moved = 0;
+    for (const k of keys) {
+      const B = G1.nodes.find((n: any) => n.id === +k.split("/")[0]), c = G1.landing[k];
+      assert.ok(B, k);
+      assert.deepEqual(skinEdgeLanding(c.in, B), c.out, k);
+      if (JSON.stringify(c.in) !== JSON.stringify(c.out)) moved++;
+    }
+    assert.ok(moved > 0 && moved < keys.length, "unas retroceden y otras no: " + moved + "/" + keys.length);
   });
 
   it("golden de color 019.3: skinColor, skinTones y skinNode (#rgb, #rrggbb, #rrggbbaa compuesto, ilegibles → PALETTE[0])", () => {
@@ -187,11 +193,11 @@ describe("FLUYO-019.3 · port de skin.js contra los goldens de fluyo", () => {
   it("los fixtures compartidos son byte a byte los de fluyo (si está al lado)", () => {
     const fl = join(FIXTURES_DIR, "..", "..", "..", "fluyo", "test", "fixtures");
     let n = 0;
-    for (const f of ["fluyo-019-1-skin.json", "fluyo-019-2-skin.fluyo.json", "fluyo-019-2-skin-svg.json", "fluyo-019-3-colores.json"]) {
+    for (const f of ["fluyo-019-1-skin.json", "fluyo-019-2-skin.fluyo.json", "fluyo-019-2-skin-svg.json", "fluyo-019-3-colores.json", "fluyo-019-d6-capas.json", "fluyo-019-d6-capas-svg.json"]) {
       let other: string; try { other = readFileSync(join(fl, f), "utf8"); } catch { continue; }
       assert.equal(readFileSync(join(FIXTURES_DIR, f), "utf8").replace(/\r\n/g, "\n"), other.replace(/\r\n/g, "\n"), f); n++;
     }
-    assert.ok(n === 0 || n === 4, "o ninguno (sin fluyo/) o los cuatro: " + n);
+    assert.ok(n === 0 || n === 6, "o ninguno (sin fluyo/) o los seis: " + n);
   });
 });
 
@@ -227,25 +233,30 @@ describe("FLUYO-019.3 · export_diagram con skin:\"built\"", () => {
     const texts = (svg: string) => svg.split("\n").filter(l => l.startsWith("<text") || (l.startsWith("<rect") && !l.includes(" stroke="))).map(l => l.replace(/ font-family="[^"]*"/, "").replace(/ font-weight="500"/, "")).sort();
     assert.deepEqual(texts(built), texts(flat), "mismos rótulos (posición, tamaño, texto) y mismas cajas de etiqueta");
     assert.ok(built.includes('font-family="&apos;IBM Plex Mono&apos;') && built.includes('font-weight="500"'), "la voz de la piel: Plex Mono 500");
-    /* la geometría de las rutas es la de siempre (pageEdgeGeometry no conoce la piel) y el aterrizaje solo mueve el final */
-    const geo = pageEdgeGeometry(page);
+    /* la geometría de las rutas es la de siempre (pageEdgeGeometry no conoce la piel) y el aterrizaje (019.4a) solo retira el
+       último vértice sobre su propio tramo: mismo número de puntos, origen y vértices intermedios intactos, sin inclinación */
+    const geo = pageEdgeGeometry(page), byId = new Map(page.nodes.map(n => [n.id, n] as const));
     for (const e of page.edges) {
-      const pts = geo.get(e.id)!;
-      for (const side of ["n", "e", "s", "w"]) {
-        const l = skinEdgeLanding(pts, side);
+      const pts = geo.get(e.id)!, B = byId.get(e.to)!;
+      for (const T of [B, ...page.nodes]) {
+        const l = skinEdgeLanding(pts, T as SkinNodeInput);
         assert.equal(l.length, pts.length);
-        for (let i = 0; i < pts.length - 2; i++) assert.deepEqual(l[i], pts[i], `e${e.id}/${side}: vértice ${i} intacto`);
-        const z = pts[pts.length - 1], lz = l[l.length - 1];
-        assert.ok(Math.hypot(lz.x - z.x, lz.y - z.y) <= Math.hypot(SKIN_DEPTH / 2, SKIN_DEPTH / 2) + 1e-9, `e${e.id}/${side}: la punta se mueve como mucho d/2`);
+        for (let i = 0; i < pts.length - 1; i++) assert.deepEqual(l[i], pts[i], `e${e.id}→#${T.id}: vértice ${i} intacto`);
+        const p = pts[pts.length - 2], z = pts[pts.length - 1], lz = l[l.length - 1], L = Math.hypot(z.x - p.x, z.y - p.y);
+        const cross = (z.x - p.x) * (lz.y - p.y) - (z.y - p.y) * (lz.x - p.x), back = Math.hypot(lz.x - z.x, lz.y - z.y);
+        assert.ok(Math.abs(cross) < 1e-6 * Math.max(1, L * L), `e${e.id}→#${T.id}: la punta sigue sobre su tramo`);
+        assert.ok(back <= Math.max(0, L - 1) + 1e-9 && Math.hypot(lz.x - p.x, lz.y - p.y) <= L + 1e-9, `e${e.id}→#${T.id}: solo retrocede`);
+        if (T === B) assert.ok(back <= 3 * SKIN_DEPTH, `e${e.id}: el retroceso cabe en la silueta del destino`);
       }
     }
   });
 
-  it("estructura: nodos en el orden de pintor, un clip por cilindro, un anillo por conexión sin startArrow; las formas planas no cambian", () => {
+  it("estructura: nodos en el orden de las capas (D6), un clip por cilindro, un anillo por conexión sin startArrow; las formas planas no cambian", () => {
     const d = doc019(), page = parseDocument(d).doc.pages[0] as FluyoPage;
     const built = pageToSVG(page, d.doc.theme, { ...flatOpts(d), skin: "built" });
     const order = [...built.matchAll(/<g id="node-(\d+)">/g)].map(m => +m[1]);
-    assert.deepEqual(order, skinPaintOrder(page.nodes).map(n => n.id));
+    const lay = containmentPaintOrder(page.nodes, skinPaintOrder);
+    assert.deepEqual(order, [...lay.containers, ...lay.leaves].map(n => n.id));
     assert.equal((built.match(/<clipPath id="skin-clip-/g) || []).length, page.nodes.filter(n => n.shape === "cylinder").length);
     const rings = built.split("\n").filter(l => /^<path d="[^"]*" fill="[^"]*" stroke="[^"]*" stroke-width="1\.5"\/>$/.test(l)).length;
     assert.equal(rings, page.edges.filter(e => !e.startArrow).length);

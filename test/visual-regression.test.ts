@@ -33,7 +33,7 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { createContext, runInContext } from "node:vm";
 
-import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, codeFont, colorTint, codeTokenWeight, cylinderGeom, cylinderSegments, drawnContentBox, edgeStroke, inferSide, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels, segmentsToSVGPath } from "../src/svg.js";
+import { anchorBox, approxTextWidth, codeBlockLayout, codeColors, codeFont, colorTint, codeTokenWeight, containmentPaintOrder, cylinderGeom, cylinderSegments, drawnContentBox, edgeStroke, inferSide, isContainerNode, labelLayout, measureNodeLabel, pageEdgeGeometry, placeEdgeLabels, segmentsToSVGPath } from "../src/svg.js";
 import * as Skin from "../src/skin.js";
 import { CODE_ADV, CODE_LANGS, DEFAULT_FONT, DEFAULT_LANG, DEFAULT_SIZES, FONTS, THEMES } from "../src/generated/config.js";
 import { FluyoEdge, FluyoNode, FluyoPage } from "../src/model.js";
@@ -950,7 +950,8 @@ describe("paridad de geometría entre fluyo/js/geometry.js y src/svg.ts", () => 
    que lo usa) tiene que dar lo mismo, capa a capa y vértice a vértice, sobre los 8 ejemplos, las 3 regresiones y el documento
    con la piel de 019.2, en los tres temas y con fondo personalizado. Aquí se usa el config.js real (no el codegen): si las
    constantes de la piel o los temas derivaran, también salta. */
-type SkinApi = typeof Skin & { inferSide: typeof inferSide; cylinderGeom: typeof cylinderGeom; PALETTE0: string };
+type SkinApi = typeof Skin & { inferSide: typeof inferSide; cylinderGeom: typeof cylinderGeom; PALETTE0: string;
+  containmentPaintOrder: typeof containmentPaintOrder; isContainerNode: typeof isContainerNode };
 function loadAppSkin(fluyoPath: string): SkinApi {
   const read = (f: string) => readFileSync(join(fluyoPath, "js", f), "utf8");
   const doc = { pages: [] as FluyoPage[], cur: 0, theme: "dark", customBg: "" };
@@ -960,6 +961,7 @@ function loadAppSkin(fluyoPath: string): SkinApi {
   runInContext("P=()=>doc.pages[doc.cur]; nodeById=id=>P().nodes.find(n=>n.id===id); edgeById=id=>P().edges.find(e=>e.id===id);", ctx);
   runInContext(read("geometry.js"), ctx);
   return runInContext(read("skin.js") + "\n;({skinActive, skinColor, skinTones, skinNode, skinExtent, skinPaintOrder, skinEdgeLanding, skinEdgePort, skinLabelFont, inferSide, cylinderGeom," +
+    " skinSilhouette, skinLineCuts, skinLayerSpan, containmentPaintOrder, isContainerNode," +
     " SKIN_DEPTH, SKIN_MIN_PX, SKIN_FRONT_R, SKIN_LED_R, SKIN_LED_IN, SKIN_PORT_R, SKIN_PLINTH_H, SKIN_PLINTH_PAD, SKIN_TONES, SKIN_FLAT_SHAPES: [...SKIN_FLAT_SHAPES], PALETTE0: PALETTE[0].c});", ctx) as SkinApi;
 }
 
@@ -999,23 +1001,94 @@ describe("paridad de la piel entre fluyo/js/skin.js y src/skin.ts (FLUYO-019.3)"
     assert.ok(n >= 1500, "capas comparadas: " + n);
   });
 
-  it("aterrizaje de las conexiones: inferSide y skinEdgeLanding idénticos vértice a vértice en el corpus", { skip }, () => {
-    let n = 0;
+  it("aterrizaje por silueta (019.4a): skinSilhouette y skinEdgeLanding idénticos vértice a vértice en el corpus, con cada nodo de destino", { skip }, () => {
+    let n = 0, moved = 0;
     for (const d of skinDocs()) for (const page of d.pages) {
       const geo = pageEdgeGeometry(page), byId = new Map(page.nodes.map(x => [x.id, x] as const));
+      for (const node of page.nodes) assert.deepEqual(plano(Skin.skinSilhouette(node as Skin.SkinNodeInput)), plano(app.skinSilhouette(node as Skin.SkinNodeInput)), `${d.name} #${node.id}: silueta`);
       for (const e of page.edges) {
         const pts = geo.get(e.id) ?? [], B = byId.get(e.to);
         if (!B || pts.length < 2) continue;
-        const side = inferSide(B, pts[pts.length - 1]);
-        assert.equal(side, app.inferSide(B, pts[pts.length - 1]), `${d.name} e${e.id}: lado de llegada`);
-        for (const s of ["n", "e", "s", "w"]) assert.deepEqual(plano(Skin.skinEdgeLanding(pts, s)), plano(app.skinEdgeLanding(pts, s)), `${d.name} e${e.id} ${s}`);
-        const landed = Skin.skinEdgeLanding(pts, side);
-        assert.deepEqual(plano(edgeStroke(e, landed)), plano(edgeStroke(e, plano(app.skinEdgeLanding(pts, side)))), `${d.name} e${e.id}: trazo sobre la ruta posada`);
+        assert.equal(inferSide(B, pts[pts.length - 1]), app.inferSide(B, pts[pts.length - 1]), `${d.name} e${e.id}: lado de llegada`);
+        /* el destino real y, como prueba de la regla, todos los demás nodos de la página como destino */
+        for (const T of page.nodes) assert.deepEqual(plano(Skin.skinEdgeLanding(pts, T as Skin.SkinNodeInput)), plano(app.skinEdgeLanding(pts, T as Skin.SkinNodeInput)), `${d.name} e${e.id} → #${T.id}`);
+        const landed = Skin.skinEdgeLanding(pts, B as Skin.SkinNodeInput);
+        if (JSON.stringify(landed) !== JSON.stringify(pts)) moved++;
+        assert.deepEqual(plano(edgeStroke(e, landed)), plano(edgeStroke(e, plano(app.skinEdgeLanding(pts, B as Skin.SkinNodeInput)))), `${d.name} e${e.id}: trazo sobre la ruta aterrizada`);
         assert.deepEqual(plano(Skin.skinEdgePort(landed[0], e.lineColor || "#777", "#161616")), plano(app.skinEdgePort(landed[0], e.lineColor || "#777", "#161616")), `${d.name} e${e.id}: anillo`);
         n++;
       }
     }
-    assert.ok(n > 50, "conexiones comparadas: " + n);
+    assert.ok(n > 50 && moved > 0, "conexiones comparadas: " + n + " (aterrizan: " + moved + ")");
+  });
+
+  it("capas con la piel (D6): isContainerNode y containmentPaintOrder idénticos en el corpus y en los casos del contrato", { skip }, () => {
+    const D6 = JSON.parse(readFileSync(join(FIXTURES_DIR, "fluyo-019-d6-capas.json"), "utf8")) as { cases: Array<{ name: string; nodes: FluyoNode[] }> };
+    const pages = [...skinDocs().flatMap(d => d.pages.map(p => [d.name, p.nodes] as const)), ...D6.cases.map(c => ["D6 " + c.name, c.nodes] as const)];
+    let conts = 0;
+    for (const [name, nodes] of pages) {
+      for (const node of nodes) assert.equal(isContainerNode(node, nodes), app.isContainerNode(node, nodes), `${name} #${node.id}: contenedor`);
+      const a = containmentPaintOrder(nodes, Skin.skinPaintOrder), b = plano(app.containmentPaintOrder(nodes, app.skinPaintOrder)) as { containers: FluyoNode[]; leaves: FluyoNode[] };
+      assert.deepEqual(a.containers.map(x => x.id), b.containers.map(x => x.id), `${name}: contenedores`);
+      assert.deepEqual(a.leaves.map(x => x.id), b.leaves.map(x => x.id), `${name}: hojas`);
+      conts += a.containers.length;
+    }
+    assert.ok(conts >= 15, "contenedores comparados: " + conts);
+  });
+
+  /* Baterías deterministas contra el skin.js y el geometry.js reales: llegan a las ramas que el corpus no toca (guardas del
+     aterrizaje, cortes de arco del cilindro y de los LED, empates de área entre contenedores). */
+  const rng = (seed: number) => () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+  const SHAPES = ["rect", "cylinder", "icon", "circle", "diamond", "hex", "text", "code", "image", "anim", "unknown-shape"];
+
+  it("aterrizaje: 4000 rutas aleatorias (recta, codo, diagonal, cualquier ángulo; desde dentro y con tramos cortos) a todas las formas, idénticas a la app", { skip }, () => {
+    const r = rng(4013);
+    let moved = 0, inside = 0, short = 0;
+    for (let i = 0; i < 4000; i++) {
+      const w = 60 + Math.round(r() * 160), h = 40 + Math.round(r() * 120);
+      const B = { id: 1, shape: SHAPES[i % SHAPES.length], x: 400, y: 300, w, h } as Skin.SkinNodeInput;
+      /* el ancla: un punto del borde lógico (o de la caja de anclaje del icono), a veces desplazado como en las paralelas */
+      const ab = anchorBox(B as FluyoNode), side = ["n", "e", "s", "w"][Math.floor(r() * 4)], off = (r() - 0.5) * (side === "n" || side === "s" ? ab.w : ab.h) * (r() < 0.5 ? 0 : 0.8);
+      const z = side === "n" ? { x: ab.x + off, y: ab.y - ab.h / 2 } : side === "s" ? { x: ab.x + off, y: ab.y + ab.h / 2 } : side === "e" ? { x: ab.x + ab.w / 2, y: ab.y + off } : { x: ab.x - ab.w / 2, y: ab.y + off };
+      const out = side === "n" ? { x: 0, y: -1 } : side === "s" ? { x: 0, y: 1 } : side === "e" ? { x: 1, y: 0 } : { x: -1, y: 0 };
+      const kind = r(), len = r() < 0.15 ? 0.5 + r() * 12 : 20 + r() * 120;
+      let pts: Array<{ x: number; y: number }>;
+      if (kind < 0.12) { pts = [{ x: ab.x + (r() - 0.5) * ab.w * 0.6, y: ab.y + (r() - 0.5) * ab.h * 0.6 }, z]; inside++; }       /* llega desde dentro */
+      else if (kind < 0.45) pts = [{ x: z.x + out.x * len, y: z.y + out.y * len }, z];                                               /* recta */
+      else if (kind < 0.75) { const p = { x: z.x + out.x * len, y: z.y + out.y * len }; pts = [{ x: p.x + out.y * 90, y: p.y + out.x * 90 }, p, z]; }  /* codo */
+      else if (kind < 0.85) { const ang = Math.atan2(out.y, out.x) + (r() - 0.5) * 1.6; pts = [{ x: z.x + Math.cos(ang) * len * 2, y: z.y + Math.sin(ang) * len * 2 }, { x: z.x + Math.cos(ang) * len, y: z.y + Math.sin(ang) * len }, z]; }  /* diagonal */
+      else {
+        /* cualquier punto del borde lógico y cualquier dirección: tramos casi tangentes que cruzan los arcos del cilindro */
+        const q = r(), e2 = Math.floor(r() * 4), ang = r() * 2 * Math.PI;
+        const z2 = e2 === 0 ? { x: B.x - w / 2 + q * w, y: B.y - h / 2 } : e2 === 1 ? { x: B.x - w / 2 + q * w, y: B.y + h / 2 } : e2 === 2 ? { x: B.x - w / 2, y: B.y - h / 2 + q * h } : { x: B.x + w / 2, y: B.y - h / 2 + q * h };
+        pts = [{ x: z2.x + Math.cos(ang) * len, y: z2.y + Math.sin(ang) * len }, z2];
+      }
+      if (len < 13) short++;
+      const a = Skin.skinEdgeLanding(pts, B), b = plano(app.skinEdgeLanding(pts, B));
+      assert.deepEqual(plano(a), b, `ruta ${i}: ${B.shape} ${w}×${h} por ${side}`);
+      if (JSON.stringify(a) !== JSON.stringify(pts)) moved++;
+    }
+    assert.ok(moved > 300 && inside > 300 && short > 300, `retroceden ${moved}, desde dentro ${inside}, tramos cortos ${short}`);
+  });
+
+  it("capas: 400 páginas aleatorias (áreas repetidas, solapes, anidados) con isContainerNode y containmentPaintOrder idénticos a la app", { skip }, () => {
+    const r = rng(212);
+    let conts = 0, ties = 0;
+    for (let i = 0; i < 400; i++) {
+      const sizes = [[80, 60], [120, 80], [200, 140], [320, 220]], nodes: FluyoNode[] = [];
+      const k = 3 + Math.floor(r() * 6);
+      for (let j = 0; j < k; j++) {
+        const [w, h] = sizes[Math.floor(r() * sizes.length)];
+        nodes.push({ id: j + 1, shape: "rect", x: 300 + Math.round((r() - 0.5) * 260), y: 300 + Math.round((r() - 0.5) * 200), w, h } as FluyoNode);
+      }
+      for (const n of nodes) assert.equal(isContainerNode(n, nodes), app.isContainerNode(n, nodes), `página ${i} #${n.id}`);
+      const a = containmentPaintOrder(nodes, Skin.skinPaintOrder), b = plano(app.containmentPaintOrder(nodes, app.skinPaintOrder)) as { containers: FluyoNode[]; leaves: FluyoNode[] };
+      assert.deepEqual(a.containers.map(x => x.id), b.containers.map(x => x.id), `página ${i}: contenedores`);
+      assert.deepEqual(a.leaves.map(x => x.id), b.leaves.map(x => x.id), `página ${i}: hojas`);
+      conts += a.containers.length;
+      if (nodes.some(n => nodes.some(m => m !== n && m.w * m.h === n.w * n.h && Math.abs(m.x - n.x) < n.w / 2 && Math.abs(m.y - n.y) < n.h / 2))) ties++;
+    }
+    assert.ok(conts > 300 && ties > 100, `contenedores ${conts}, páginas con empates de área solapados ${ties}`);
   });
 
   it("color: skinColor y skinTones idénticos en una batería de 1500 colores (#rgb, #rrggbb, #rrggbbaa, ilegibles) × fondos", { skip }, () => {

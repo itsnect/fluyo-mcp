@@ -1208,8 +1208,8 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
   if (!A || !B) return "";
   let pts = edgePoints(e, nodeById, edges);
   if (pts.length < 2) return "";
-  /* FLUYO-019.3: el mismo aterrizaje que la app (copia; edgePoints no cambia) */
-  if (skinBg !== null) pts = skinEdgeLanding(pts, inferSide(B, pts[pts.length - 1]));
+  /* FLUYO-019.3/019.4a: el mismo aterrizaje que la app (silueta del destino, decisión 213; copia; edgePoints no cambia) */
+  if (skinBg !== null) pts = skinEdgeLanding(pts, B);
   const T = THEMES[theme];
   const lineCol = escapeXML(e.lineColor || T.edge);
   const dash = e.dashed ? ' stroke-dasharray="8 7"' : "";
@@ -1236,6 +1236,33 @@ function renderConnectorToSVG(e: FluyoEdge, theme: ThemeName, nodeById: Map<numb
 }
 
 /* FLUYO-018.16: ya no hay <defs> de marcadores; las puntas son <path> explícitos (edgeStroke). */
+
+/* ===================== Capas con la piel (FLUYO-019-HIT-TEST-D6, decisión 212) =====================
+   Port literal de `isContainerNode` y `containmentPaintOrder` de fluyo/js/geometry.js. Un nodo es CONTENEDOR si el centro de
+   otro nodo más pequeño cae dentro de su caja. Con la piel, el SVG pinta contenedores (de fuera adentro, en recorrido en
+   profundidad preorden; raíces y hermanos en el orden `order`) → conexiones → hojas (en el orden `order`). Padre = el
+   contenedor de menor área, estrictamente mayor, que contiene su centro; a igual área, el de más arriba en el documento.
+   Sin contenedores, containers = [] y leaves = order(nodes): el orden de antes. Pura: el orden de pintor llega como argumento. */
+export function isContainerNode<T extends { x: number; y: number; w: number; h: number }>(n: T, nodes: readonly T[]): boolean {
+  const a = n.w * n.h;
+  for (const m of nodes) if (m !== n && m.w * m.h < a && Math.abs(m.x - n.x) < n.w / 2 && Math.abs(m.y - n.y) < n.h / 2) return true;
+  return false;
+}
+export function containmentPaintOrder<T extends { x: number; y: number; w: number; h: number }>(nodes: readonly T[], order: (ns: readonly T[]) => T[]): { containers: T[]; leaves: T[] } {
+  const conts = nodes.filter(n => isContainerNode(n, nodes)), isCont = new Set(conts), parent = new Map<T, T | null>();
+  for (const c of conts) {
+    let best: T | null = null;
+    for (const o of conts) {
+      if (o === c || o.w * o.h <= c.w * c.h || Math.abs(c.x - o.x) >= o.w / 2 || Math.abs(c.y - o.y) >= o.h / 2) continue;
+      if (!best || o.w * o.h < best.w * best.h || (o.w * o.h === best.w * best.h && nodes.indexOf(o) > nodes.indexOf(best))) best = o;
+    }
+    parent.set(c, best);
+  }
+  const containers: T[] = [];
+  const walk = (c: T): void => { containers.push(c); for (const k of order(conts.filter(k => parent.get(k) === c))) walk(k); };
+  for (const r of order(conts.filter(c => parent.get(c) === null))) walk(r);
+  return { containers, leaves: order(nodes.filter(n => !isCont.has(n))) };
+}
 
 /** Caja que envuelve el contenido, con 40 px de aire. Port de `getBounds()`. */
 function pageBounds(page: FluyoPage, nodeById: Map<number, FluyoNode>) {
@@ -1306,15 +1333,20 @@ export function pageToSVG(
   ];
   // Sin rectángulo de fondo: el SVG que exporta la app es transparente.
   const labelPos = placeEdgeLabels(page);
-  for (const e of page.edges) parts.push(renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos, skinBg));
+  /* FLUYO-019-HIT-TEST-D6 (decisión 212): con la piel, las mismas capas que la app (containmentPaintOrder): contenedores →
+     conexiones → hojas. En plano, o con la piel y sin contenedores, el SVG de siempre byte a byte. */
+  const lay = skinBg !== null ? containmentPaintOrder(page.nodes, skinPaintOrder) : { containers: [] as FluyoNode[], leaves: page.nodes };
   /* Los símbolos se recogen dibujando, así que el <defs> con los íconos solo se
-     conoce al final. Se inserta antes de los nodos, no al cierre: un id se
-     resuelve igual esté donde esté, pero declarar antes de usar es lo que abren
-     sin quejarse los editores externos. */
+     conoce al final. Se inserta antes del primer nodo (después de las conexiones si no hay contenedores), no al cierre:
+     un id se resuelve igual esté donde esté, pero declarar antes de usar es lo que abren sin quejarse los editores
+     externos. Mismo orden que buildSVGDocument. */
   const syms = svgSymbols();
-  const nodos = (skinBg !== null ? skinPaintOrder(page.nodes) : page.nodes).map(n => renderNodeToSVG(n, theme, font, syms, skinBg));
+  const contenedores = lay.containers.map(n => renderNodeToSVG(n, theme, font, syms, skinBg));
+  const conexiones = page.edges.map(e => renderConnectorToSVG(e, theme, nodeById, page.edges, font, labelPos, skinBg));
+  const nodos = lay.leaves.map(n => renderNodeToSVG(n, theme, font, syms, skinBg));
   const defs = syms.defs();
-  if (defs) parts.push(defs);
+  if (contenedores.length) { if (defs) parts.push(defs); parts.push(...contenedores, ...conexiones); }
+  else { parts.push(...conexiones); if (defs) parts.push(defs); }
   parts.push(...nodos, "</svg>");
   return parts.join("\n");
 }

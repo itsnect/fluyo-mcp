@@ -44,6 +44,7 @@ Los archivos `fluyo-0xx-*` los genera el test de una tarea de Fluyo y se copian 
 | Archivo | Tarea | Qué fija |
 |---|---|---|
 | `fluyo-018-15-colores.json`, `fluyo-018-16-conexiones*.json` | 018.15, 018.16 | colores del documento, trazo de las conexiones |
-| `fluyo-019-1-skin.json` | 019.1 | capas de la piel por pieza y tema (`skinNode`, `skinExtent`, `skinEdgeLanding`) |
+| `fluyo-019-1-skin.json` | 019.1, 019.4a | capas de la piel por pieza y tema (`skinNode`, `skinExtent`) y el aterrizaje por silueta (`skinEdgeLanding(pts, destino)`, sección `landing`: `{in, out}`) |
 | `fluyo-019-2-skin.fluyo.json` + `fluyo-019-2-skin-svg.json` | 019.2 | documento con `settings.skin:"built"` y las líneas de la piel del SVG del editor real (`skinSvgLines`) |
 | `fluyo-019-3-colores.json` | 019.3 | regla de color de la piel (`skinColor`, `skinTones`, `skinNode` con `#rgb`, `#rrggbb`, `#rrggbbaa` e ilegibles) |
+| `fluyo-019-d6-capas.json` + `fluyo-019-d6-capas-svg.json` | 019-HIT-TEST-D6 | capas con la piel: el orden contenedores → conexiones → hojas calculado a mano para 13 casos (`containmentPaintOrder`) y el SVG del editor del caso anidado D |

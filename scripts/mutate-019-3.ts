@@ -31,7 +31,8 @@ const MUTATIONS: Mutation[] = [
   A("divergencia: la app usa otra profundidad", APP, ["const SKIN_DEPTH=8;", "const SKIN_DEPTH=9;"]),
   A("divergencia: la app cambia un tono", APP, ["  light:{top:.10, front:.22, side:.40, line:.45, contact:.22},", "  light:{top:.12, front:.22, side:.40, line:.45, contact:.22},"]),
   A("divergencia: la app invierte el orden de pintor", APP, ["  return nodes.slice().sort((a,b)=>(a.y-b.y)||(b.x-a.x));", "  return nodes.slice().sort((a,b)=>(b.y-a.y)||(b.x-a.x));"]),
-  A("divergencia: la app posa también en s/w", APP, ['  if(out.length<3 || (toSide!=="n" && toSide!=="e")) return out;', "  if(out.length<3) return out;"]),
+  /* FLUYO-019-MCP-PARITY: el aterrizaje es por silueta (019.4a, decisión 213); la regla de 019.1 (n/e, d/2) ya no existe */
+  A("divergencia: la app aterriza también sin silueta (desplazamiento fijo)", APP, ["  if(t<=1e-6 || t>L-1) return out;", "  if(t<=1e-6) t=SKIN_DEPTH/2;\n  if(t>L-1) return out;"]),
   A("divergencia: la app descarta el alfa", APP, ['  return m? skinMix(base, "#"+m[1], parseInt(m[2],16)/255) : null;', '  return m? "#"+m[1].toLowerCase() : null;']),
   A("divergencia: la app vuelve a DEFAULT_NODE_COLOR", APP, ["  const col=skinColor(color, base) || PALETTE[0].c;", "  const col=skinColor(color, base) || DEFAULT_NODE_COLOR;"]),
   /* ── el MCP cambia y la app no */
@@ -44,8 +45,8 @@ const MUTATIONS: Mutation[] = [
   M("orden de capas del bloque (lateral antes que tapa)", SKIN, ['  layers.push({ k: "top", segs: skinPoly(f.top), fill: T.top, stroke: T.line, sw: 1 });\n  layers.push({ k: "side", segs: skinPoly(f.side), fill: T.side, stroke: T.line, sw: 1 });\n  layers.push({ k: "front"',
     '  layers.push({ k: "side", segs: skinPoly(f.side), fill: T.side, stroke: T.line, sw: 1 });\n  layers.push({ k: "top", segs: skinPoly(f.top), fill: T.top, stroke: T.line, sw: 1 });\n  layers.push({ k: "front"']),
   M("clip ausente en la banda del cilindro", SVG, ["    if (L.clip) {", "    if (L.clip && L.k !== \"band\") {"]),
-  M("aterrizaje también en s/w", SKIN, ['  if (out.length < 3 || (toSide !== "n" && toSide !== "e")) return out;', "  if (out.length < 3) return out;"]),
-  M("sin orden de pintor", SVG, ["  const nodos = (skinBg !== null ? skinPaintOrder(page.nodes) : page.nodes).map(", "  const nodos = page.nodes.map("]),
+  M("aterrizaje: la punta no retrocede", SKIN, ["  z.x += u.x * t; z.y += u.y * t;", "  z.x += 0 * t; z.y += 0 * t;"]),
+  M("sin orden de pintor (capas en orden de documento)", SVG, ["containmentPaintOrder(page.nodes, skinPaintOrder)", "containmentPaintOrder(page.nodes, ns => ns.slice())"]),
   M("sin anillo de salida", SVG, ["  if (skinBg !== null && !e.startArrow) {", "  if (skinBg !== null && !e.startArrow && e.id < 0) {"]),
   M("anillo también con startArrow", SVG, ["  if (skinBg !== null && !e.startArrow) {", "  if (skinBg !== null) {"]),
   M("respaldo DEFAULT_NODE_COLOR en vez de PALETTE[0]", SKIN, ["  const col = skinColor(color, base) || PALETTE[0].hex;", '  const col = skinColor(color, base) || "#857F6C";']),
