@@ -171,9 +171,8 @@ function oversizedMessage(toolName: string, bytes: number, limit: number): strin
       "  · Los nodos shape:\"image\" incrustan la imagen entera como data URI: son con " +
       "diferencia lo más pesado. Quítalos del documento antes de exportar o sustitúyelos " +
       "por un nodo 'rect' con etiqueta.\n" +
-      "  · Cada nodo shape:\"icon\" inserta su SVG completo, y se repite por nodo. En " +
-      "diagramas de más de ~100 iconos conviene dejar el ícono solo en los componentes " +
-      "clave y usar 'rect' o 'text' en el resto.\n" +
+      "  · Los íconos y GIFs de catálogo no son la causa: cada uno distinto va una sola vez " +
+      "en <defs> y los nodos lo reutilizan con <use>.\n" +
       "  · Divide el diagrama en varias páginas más pequeñas y expórtalas por separado.\n\n" +
       "El diagrama en sí es válido: el límite es de este despliegue HTTP. El mismo servidor " +
       "ejecutado en local por stdio (npx fluyo-mcp) exporta sin tope de tamaño."

@@ -29,3 +29,10 @@ export function revisionOf(kernel: Kernel, document: unknown): string | null {
   return p === null ? null : revisionOfProject(p);
 }
 
+/** Texto de REVISION_MISMATCH (author_document, propose_layout). MCP-TOKEN-EFFICIENCY-002: el error ya trae la revisión real
+ *  ('actual'), así que el caso habitual —reenviar el documento de la respuesta anterior con el baseRevision de antes— se arregla sin
+ *  releer el documento. Solo si 'actual' no es la revisión que el agente tiene de esa respuesta hay que volver a describe_document. */
+export const REVISION_MISMATCH_MESSAGE =
+  "baseRevision no coincide: la revisión real de este documento va en 'actual'. " +
+  "Si es el documento que devolvió tu última llamada y 'actual' es su revision/resultRevision, reintenta con baseRevision = 'actual' (sin describe_document); " +
+  "si no, el documento cambió: reléelo con describe_document.";

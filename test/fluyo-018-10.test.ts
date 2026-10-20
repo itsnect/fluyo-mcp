@@ -99,11 +99,14 @@ describe("D1: author_document devuelve el enlace #d= al documento FINAL", () => 
     for (const w of ["editorUrl", "#d=", "LINK_TOO_LARGE"]) assert.ok(d.includes(w), w);
   });
 
-  it("el resumen trae el mismo enlace, como create_diagram", async () => {
+  /* MCP-TOKEN-EFFICIENCY-002: antes el resumen repetía la URL entera; ahora va UNA vez, en editorUrl, y el resumen la señala. */
+  it("el resumen señala editorUrl sin repetir la URL; el enlace sigue en el 2.º bloque", async () => {
     const res = await author(blank(), RICH_OPS);
     const j = documentOf(res);
-    assert.equal(linkInSummary(res), j.editorUrl);
-    assert.match(textBlocks(res)[0], /Ábrelo en Fluyo: /);
+    assert.match(j.editorUrl, /^https:\/\/fluyo\.space\/#d=[A-Za-z0-9\-_]+$/);
+    assert.equal(linkInSummary(res), null);
+    assert.equal(textBlocks(res)[0].includes("#d="), false);
+    assert.match(textBlocks(res)[0], /editorUrl, en el 2\.º bloque/);
   });
 
   it("create_diagram y create_from_template: el mismo tipo de enlace (misma función), decodificado = su documento", async () => {

@@ -46,8 +46,11 @@ export interface CreateDiagramInput {
 
 export type DiagramError = Record<string, unknown> & { code: string; message: string };
 interface Head { engineVersion: number; kernelId: string }
+/** Ids que el dominio asignó (MCP-TOKEN-EFFICIENCY-002): nodo por key y arista por posición en `edges`. Van en el resumen, no en el
+ *  documento, para que el agente siga con author_document sin llamar antes a describe_document. */
+export interface CreatedIds { nodes: Array<{ key: string; id: number }>; edges: number[] }
 export type CreateDiagramResult =
-  | { ok: true; project: FluyoProject; revision: string }
+  | { ok: true; project: FluyoProject; revision: string; ids: CreatedIds }
   | ({ ok: false; valid: false; errors: DiagramError[]; note: string } & Head);
 
 interface KernelApply {
@@ -202,7 +205,10 @@ export function createDiagramResult(input: CreateDiagramInput): CreateDiagramRes
     for (const ref of r.refs ?? []) if (ref.type === "node") idByKey.set(ref.ref, ref.id);
     project = r.project;
   }
-  return { ok: true, project: project as FluyoProject, revision: revisionOfProject(project) };
+  /* Las conexiones se crean en el orden de `edges` y la página las guarda en ese orden (el lienzo en blanco no trae ninguna). */
+  const created = (project as FluyoProject).doc.pages[0]?.edges ?? [];
+  const ids: CreatedIds = { nodes: input.nodes.map(n => ({ key: n.key, id: idByKey.get(n.key) as number })), edges: created.map(e => e.id) };
+  return { ok: true, project: project as FluyoProject, revision: revisionOfProject(project), ids };
 }
 
 /** Uso interno (tests, scripts): el documento, o un error que lleva los mismos errores estructurados. */

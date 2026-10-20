@@ -10,10 +10,10 @@ No necesita backend. Es una capa delgada sobre el modelo de documento de Fluyo, 
 
 | Tool | Para qué |
 |---|---|
-| `create_diagram` | Texto → diagrama. Nodos y aristas; si no das `x`/`y`, aplica auto-layout por capas. Devuelve el documento **v5 del editor** (mismas reglas que `author_document`; ver «create_diagram y create_from_template por el dominio»). |
+| `create_diagram` | Texto → diagrama. Nodos y aristas; si no das `x`/`y`, aplica auto-layout por capas. Devuelve el documento **v5 del editor** (mismas reglas que `author_document`; ver «create_diagram y create_from_template por el dominio»). El resumen trae su `revision` y los ids asignados (key→id y aristas en el orden de `edges`), así que se puede seguir con `author_document` sin pasar por `describe_document`. |
 | `export_diagram` | Renderiza una página a SVG estático. |
 | `list_templates` / `create_from_template` | Instancia patrones de arquitectura predefinidos (Kafka, RAG, microservicios) con reemplazo de etiquetas. |
-| `list_icons` | Las 47 claves de ícono, agrupadas (General, GCP, AWS, Azure, Estados, Varios). |
+| `list_icons` | Las 72 claves de ícono, agrupadas en 8 grupos (General, GCP, AWS, Azure, Estados, Seguridad, DevOps, Varios). |
 | `list_colors` | Los 14 colores semánticos de la paleta. |
 | `list_anims` | Los 8 GIFs animados para nodos `shape:"anim"`. |
 | `list_fonts` | Las 14 tipografías disponibles (las 12 históricas, Playfair Display e IBM Plex Mono). |
@@ -94,7 +94,7 @@ O como ejecutable global (`npm link`):
 
 ## Historias: leer, validar y ejecutar (`describe_document`, `run_story`)
 
-Estas dos tools **no escriben**: leen un documento, lo validan y ejecutan una Historia. No hay autoría de Historias (crear/duplicar/editar pasos) todavía.
+Estas dos tools **no escriben**: leen un documento, lo validan y ejecutan una Historia. La autoría de Historias (crear, duplicar, editar pasos) es de `author_document` (sección siguiente).
 
 ```text
 fluyo/js (kernel)  ──sync:kernel──▶  src/generated/kernel-sources.ts  ──▶  vm aislado por llamada
@@ -118,7 +118,7 @@ describe_document (revision) ──▶ author_document (baseRevision + operacion
 ```
 
 - **Atómico**: o se aplica todo el lote o nada; el documento recibido nunca se modifica. `dryRun:true` valida y devuelve los `changes` sin documento.
-- **Revisión optimista, sin estado**: `baseRevision` es la `revision` que anunció `describe_document` (sha256 del JSON canónico del documento normalizado). Si no coincide → `REVISION_MISMATCH`. `resultRevision` es determinista.
+- **Revisión optimista, sin estado**: `baseRevision` es la `revision` del documento (sha256 del JSON canónico del documento normalizado): la que anuncia `describe_document`, la del resumen de `create_*` o el `resultRevision` de la autoría anterior. Si no coincide → `REVISION_MISMATCH` con la real en `actual`; si `actual` es la revisión del documento que devolvió la última llamada, basta reintentar con ella, sin releerlo. `resultRevision` es determinista.
 - **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId}` / `{from,to}` para conexiones; `{nodeId}` para elementos; o `{ref}` de lo creado en el lote; los ids de `edgeId`/`nodeId`/`from`/`to` también admiten `{ref}`). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
 - **Tiempo narrativo**: `waitMs` al añadir al final o `set_wait` por momento; «al mismo tiempo» con `placement.sameMomentAs`. Eliminar colapsa la espera; duplicar entra en el mismo momento. `waitMs` se cuenta desde el **inicio del momento anterior** y no incluye ni espera el viaje visual del token de un `SEND` (presentación: `motion` fast/normal/slow = 500/1100/1800 ms; no sirve para calcular esperas).
 - **Dependencias de llegada** (explícitas, nunca inferidas de las conexiones): `add_step` con `waitsForArrivalOf` o `set_arrival_dependencies` (reemplaza; `[]` las quita) declaran que el momento de un paso no empieza, al reproducir en Fluyo, hasta que llegue el token de envíos (`SEND`) anteriores de la misma Historia. Se guardan en la Historia (`arrivalDependencies`), no en el paso; el Trace no cambia. Lo inválido se rechaza con `INVALID_ARRIVAL_DEPENDENCY` y su razón.
@@ -257,7 +257,7 @@ las aplica `FluyoAuthoring` —las mismas funciones que el editor— en lotes de
 
 Toda respuesta que trae un documento lleva el enlace que lo abre **ya animado** en la app: `create_diagram` y
 `create_from_template` en el resumen, y `author_document` (y `set_theme`, `reorder_nodes`, `duplicate_node`) en el
-resumen y en el campo `editorUrl`, apuntando al documento FINAL del lote (todas las páginas, tema, Historias, eventos y
+campo `editorUrl` del 2.º bloque (una sola vez: el resumen lo señala sin repetir la URL), apuntando al documento FINAL del lote (todas las páginas, tema, Historias, eventos y
 disponibilidad). Una sola codificación (`src/link.ts`) para todas. `dryRun` y los rechazos no traen enlace. Es el paso que faltaba: antes había que
 copiar el JSON del chat, guardarlo como `.fluyo.json` y abrirlo a mano.
 
@@ -422,7 +422,7 @@ Memoria:172.800 × 0,5  × $0,0000025 = $0,22/día
 
 En operación normal la cifra real es una fracción de eso, porque con `min-instances=0` no se factura nada mientras no hay tráfico.
 
-> **`--concurrency=80` no se toca.** Es contraintuitivo: **bajarlo multiplica el coste**. Cada instancia atiende hasta 80 peticiones a la vez; con `concurrency=10` harían falta ocho veces más instancias para el mismo tráfico, se toparía antes en `max-instances=2` y los usuarios recibirían 429 de la plataforma antes que del rate limiter. Las doce tools son funciones puras que no comparten estado, así que 80 simultáneas por instancia no tienen ningún inconveniente.
+> **`--concurrency=80` no se toca.** Es contraintuitivo: **bajarlo multiplica el coste**. Cada instancia atiende hasta 80 peticiones a la vez; con `concurrency=10` harían falta ocho veces más instancias para el mismo tráfico, se toparía antes en `max-instances=2` y los usuarios recibirían 429 de la plataforma antes que del rate limiter. Las quince tools son funciones puras que no comparten estado, así que 80 simultáneas por instancia no tienen ningún inconveniente.
 
 ### Primer despliegue
 
@@ -585,6 +585,7 @@ test/
   link.test.ts      # Formato del enlace, tope de tamaño; lo creado ya no lleva meta.generator (018.9)
   fluyo-018-9.test.ts # create_diagram/create_from_template = dominio (golden, reglas, errores, stdio)
   fluyo-018-10.test.ts # editorUrl en author_document; retirada de edit_diagram (15 tools)
+  fluyo-mcp-token-efficiency-002.test.ts # JSON compacto, revision e ids en create_*, enlace una vez, schema sin topes de entero seguro
   fixtures/         # Copias de fluyo/ejemplos/ (datos y previews de referencia)
 ```
 

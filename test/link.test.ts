@@ -224,7 +224,9 @@ describe("el enlace en la respuesta de las tools", () => {
     for (const name of CON_ENLACE) {
       const bloques = textBlocks(respuestas[name]);
       assert.equal(bloques.length, 2, `${name}: content[] dejó de ser [resumen, json]`);
-      assert.match(bloques[0], /#d=[A-Za-z0-9\-_]+$/m, `${name}: el resumen no trae enlace`);
+      /* MCP-TOKEN-EFFICIENCY-002: author_document lo lleva una sola vez, en editorUrl (el resumen lo señala sin repetirlo). */
+      if (name === "author_document") assert.match(JSON.parse(bloques[1]).editorUrl, /#d=[A-Za-z0-9\-_]+$/, `${name}: sin editorUrl`);
+      else assert.match(bloques[0], /#d=[A-Za-z0-9\-_]+$/m, `${name}: el resumen no trae enlace`);
     }
   });
 
@@ -234,8 +236,7 @@ describe("el enlace en la respuesta de las tools", () => {
       name: "author_document",
       arguments: { document: base, baseRevision: rev(base), operations: [{ op: "rename_page", scope: "document", pageIndex: 0, name: "Después" }] },
     });
-    assert.equal(/https?:\/\/\S+#d=[A-Za-z0-9\-_]+/.exec(textBlocks(res)[0])![0], documentOf(res).editorUrl);
-    const url = /https?:\/\/\S+#d=[A-Za-z0-9\-_]+/.exec(textBlocks(res)[0])![0];
+    const url = documentOf(res).editorUrl;
     const { doc } = leerEnlace(url);
     assert.equal((doc as any).doc.pages[0].name, "Después");
   });

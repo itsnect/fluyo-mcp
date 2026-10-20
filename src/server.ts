@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from "./schema.js";
 import { CreateDiagramInputShape, DocumentInputSchema, ThemeSchema, projectSkin } from "./model.js";
-import { createDiagramResult, createFromTemplateResult, parseDocument, type CreateDiagramResult } from "./diagram.js";
+import { createDiagramResult, createFromTemplateResult, parseDocument, type CreateDiagramResult, type CreatedIds } from "./diagram.js";
 import type { FluyoProject } from "./model.js";
 import { pageToSVG } from "./svg.js";
 import { openLink, openLinkLine } from "./link.js";
@@ -28,6 +28,10 @@ const TOOL_PURA = {
 } as const;
 
 type ToolResult = { content: Array<{ type: "text"; text: string }>; isError?: boolean };
+
+/** MCP-TOKEN-EFFICIENCY-002: el 2.º bloque es JSON SIN sangría. Lo lee un modelo, no una persona, y la sangría era ~40 % de lo que
+ *  recibía. El contenido es el mismo (JSON.parse da el mismo valor) y la revisión no depende del formato (JSON canónico, revision.ts). */
+const json = (value: unknown): string => JSON.stringify(value);
 
 function ok(...texts: string[]): ToolResult {
   return { content: texts.map(text => ({ type: "text" as const, text })) };
@@ -55,18 +59,70 @@ function summarizeWithLink(project: FluyoProject): string {
   return `${summarize(project)}\n${openLinkLine(openLink(project))}`;
 }
 
+/** MCP-TOKEN-EFFICIENCY-002: create_* dice en el resumen la revisión y los ids que asignó el dominio, para seguir con author_document
+ *  sin pedir antes describe_document. Van fuera del documento: el 2.º bloque sigue siendo el .fluyo.json tal cual. */
+function summarizeCreated(project: FluyoProject, revision: string, ids: CreatedIds): string {
+  const nodes = ids.nodes.map(n => `${n.key}=${n.id}`).join(", ");
+  return `${summarizeWithLink(project)}\n` +
+    `revision ${revision} (baseRevision para author_document).` +
+    (nodes ? `\nIds por key: ${nodes}.` : "") +
+    (ids.edges.length ? `\nIds de aristas (orden de edges): ${ids.edges.join(", ")}.` : "");
+}
+
 /** create_diagram / create_from_template (FLUYO-018.9): el documento v5 del dominio, o el rechazo estructurado con la misma forma
  *  que author_document ([resumen, JSON {ok:false, errors…}], isError) y sin documento. */
 function createdOrRejected(r: CreateDiagramResult): ToolResult {
-  if (r.ok) return ok(summarizeWithLink(r.project), JSON.stringify(r.project, null, 2));
+  if (r.ok) return ok(summarizeCreated(r.project, r.revision, r.ids), json(r.project));
   const first = r.errors[0] ?? { code: "ERROR", message: "" };
-  return { ...ok(`Diagrama RECHAZADO (${first.code}): ${first.message} No se devuelve ningún documento.`, JSON.stringify(r, null, 2)), isError: true };
+  return { ...ok(`Diagrama RECHAZADO (${first.code}): ${first.message} No se devuelve ningún documento.`, json(r)), isError: true };
+}
+
+/* ===================== schema publicado (MCP-TOKEN-EFFICIENCY-002) =====================
+   Zod 4 publica cada z.number().int() con minimum/maximum = ±Number.MAX_SAFE_INTEGER (eran 79 topes, ~2 KB de tools/list). Esos topes
+   solo repiten lo que ya exige la validación real (Zod, que no se toca: un entero no seguro se sigue rechazando); los topes propios
+   (min(1), max(86_400_000)…) se conservan. Sin $defs/$ref: el resto del schema sale igual que lo genera el SDK. */
+
+const SAFE = Number.MAX_SAFE_INTEGER;
+
+/** El schema JSON sin los topes de entero seguro implícitos de Zod (solo en nodos type:"integer"). No muta la entrada. */
+export function withoutSafeIntBounds(schema: unknown): unknown {
+  if (Array.isArray(schema)) return schema.map(withoutSafeIntBounds);
+  if (schema === null || typeof schema !== "object") return schema;
+  const o = schema as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(o)) {
+    if (o.type === "integer" && ((k === "minimum" && v === -SAFE) || (k === "maximum" && v === SAFE))) continue;
+    out[k] = withoutSafeIntBounds(v);
+  }
+  return out;
+}
+
+type ListHandler = (request: unknown, extra: unknown) => Promise<{ tools: Array<{ inputSchema?: unknown }> }>;
+
+/** Envuelve el tools/list que instala McpServer (al registrar la primera tool) para publicar el schema sin esos topes. El SDK no
+ *  ofrece un gancho público para esto; la versión está fijada (1.29.0) y, si cambia el mapa de handlers, esto falla al arrancar en
+ *  vez de publicar en silencio otro catálogo (lo cubre test/fluyo-mcp-token-efficiency-002.test.ts). */
+function withCompactToolSchemas(server: McpServer): McpServer {
+  const handlers = (server.server as unknown as { _requestHandlers?: Map<string, ListHandler> })._requestHandlers;
+  const list = handlers?.get("tools/list");
+  if (!handlers || !list) throw new Error("fluyo-mcp: el SDK ya no expone el handler de tools/list; revisa withCompactToolSchemas.");
+  handlers.set("tools/list", async (request, extra) => {
+    const r = await list(request, extra);
+    return { ...r, tools: r.tools.map(t => ({ ...t, inputSchema: withoutSafeIntBounds(t.inputSchema) })) };
+  });
+  return server;
 }
 
 /** Registra las herramientas de Fluyo sobre una instancia nueva de McpServer. Separado de
  *  index.ts para poder conectarlo tanto a stdio (uso real) como a un InMemoryTransport
  *  (los tests de test/) sin duplicar las definiciones de herramientas. */
 export function buildServer(): McpServer {
+  return withCompactToolSchemas(buildServerAsSdkPublishes());
+}
+
+/** Las mismas tools, con el catálogo tal como lo genera el SDK (con los topes de entero seguro). Solo para tests y mediciones:
+ *  demuestra que el schema publicado es este mismo salvo esos topes. */
+export function buildServerAsSdkPublishes(): McpServer {
   // Debe coincidir con la versión de package.json; hay un test que lo comprueba.
   const server = new McpServer({ name: "fluyo-mcp", version: "1.0.0" });
 
@@ -83,6 +139,7 @@ server.registerTool(
       "La respuesta trae un enlace fluyo.space/#d=… que abre el diagrama YA ANIMADO en la app: dáselo al usuario, " +
       "es la forma más rápida de que vea el resultado y no requiere guardar ningún archivo. " +
       "El JSON es el documento v5 del editor (mismos defaults, ids y revisión que crearlo con author_document): se puede guardar como .fluyo.json, seguir editando con author_document o exportar con export_diagram. " +
+      "El resumen trae su 'revision' (el baseRevision de author_document: no hace falta describe_document) y los ids asignados (key→id; aristas en el orden de edges). " +
       "Colores: nombre de list_colors o HEX. Valen las reglas y límites de author_document (HEX, catálogos, auto-lazo, capabilities.limits, página 1–80): si algo no cumple se rechaza TODO con errores estructurados (code, field, input = nodes[i]/edges[j]) y sin documento. " +
       "Usa list_icons para ver íconos válidos y list_templates si el patrón ya existe como plantilla.",
     inputSchema: CreateDiagramInputShape,
@@ -253,7 +310,7 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Instancia uno de los templates de list_templates como un documento Fluyo completo, con auto-layout aplicado. " +
-      "Se pueden personalizar los labels de los nodos vía 'labelOverrides' (mapa key -> nuevo texto). Sigue la misma ruta y reglas que create_diagram (documento v5 del editor). " +
+      "Se pueden personalizar los labels de los nodos vía 'labelOverrides' (mapa key -> nuevo texto). Sigue la misma ruta y reglas que create_diagram (documento v5 del editor; el resumen trae revision e ids por key). " +
       "La respuesta trae un enlace fluyo.space/#d=… que abre el diagrama animado en la app.",
     inputSchema: {
       templateId: z.string(),
@@ -298,7 +355,7 @@ server.registerTool(
   async ({ document, pageIndex, includeSteps }) => {
     try {
       const description = describeDocument({ document, pageIndex, includeSteps });
-      return ok(summarizeDescription(description), JSON.stringify(description, null, 2));
+      return ok(summarizeDescription(description), json(description));
     } catch (err) {
       return fail(err);
     }
@@ -326,7 +383,7 @@ server.registerTool(
   async ({ document, pageIndex, storyId }) => {
     try {
       const result = runStory({ document, pageIndex, storyId });
-      return ok(summarizeRun(result), JSON.stringify(result, null, 2));
+      return ok(summarizeRun(result), json(result));
     } catch (err) {
       return fail(err);
     }
@@ -373,13 +430,13 @@ server.registerTool(
       "Se guardan en la Historia (arrivalDependencies), no en el paso. Una dependencia inválida (no existe, no es SEND, mismo momento o posterior, sí misma, ciclo, otra Historia) se rechaza con INVALID_ARRIVAL_DEPENDENCY {stepId, sendId, reason}. " +
       "remove_step quita las dependencias del paso y las que lo esperaban (changes[].cascade.arrivalDependencies); duplicate_step copia las válidas a la copia y no redirige las que esperan al original; duplicate_story las copia con los mismos ids de paso. " +
       "Si move_step/set_wait dejan una dependencia sin efecto, se conserva y se avisa en 'warnings' (ARRIVAL_DEPENDENCY_INACTIVE). " +
-      "Requiere 'baseRevision': la 'revision' que devolvió describe_document para ESTE documento; si no coincide se rechaza. " +
+      "Requiere 'baseRevision': la revisión de ESTE documento (la del resumen de create_*, el resultRevision de la autoría anterior o la 'revision' de describe_document); si no coincide se rechaza con REVISION_MISMATCH, que trae la real ('actual'). " +
       "Con dryRun:true se valida y se devuelven los cambios sin documento. " +
       "waitMs: add_step por defecto 1000 (el primero 0); set_wait lo cuenta desde el momento anterior y desplaza los posteriores; move_step {direction}|{to:{gapIndex}|{sameMomentAs,after}}. " +
       "Devuelve 'changes' (qué hizo cada operación y a qué Historias/pasos afecta), 'resultRevision' y 'editorUrl': el enlace fluyo.space/#d=… que abre el documento resultante en Fluyo (dáselo al usuario; si no cabe, editorUrlError LINK_TOO_LARGE). Después usa run_story para ver el Trace.",
     inputSchema: {
       document: DocumentInputSchema,
-      baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La 'revision' de este documento según describe_document."),
+      baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La revisión de este documento (create_*, resultRevision anterior o describe_document)."),
       operations: z.array(AuthoringOperationSchema).min(1).max(200),
       dryRun: z.boolean().default(false).describe("Sólo validar y devolver los cambios; no se devuelve documento."),
     },
@@ -387,7 +444,7 @@ server.registerTool(
   async ({ document, baseRevision, operations, dryRun }) => {
     try {
       const result = authorDocument({ document, baseRevision, operations, dryRun });
-      const blocks = [summarizeAuthoring(result), JSON.stringify(result, null, 2)];
+      const blocks = [summarizeAuthoring(result), json(result)];
       return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
     } catch (err) {
       return fail(err);
@@ -419,7 +476,7 @@ server.registerTool(
   async ({ document, pageIndex, clearWaypoints, baseRevision }) => {
     try {
       const result = proposeLayout({ document, pageIndex, clearWaypoints, baseRevision });
-      const blocks = [summarizeLayout(result), JSON.stringify(result, null, 2)];
+      const blocks = [summarizeLayout(result), json(result)];
       return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
     } catch (err) {
       return fail(err);
@@ -434,7 +491,7 @@ server.registerTool(
 
 const SingleBase = {
   document: DocumentInputSchema,
-  baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La 'revision' de describe_document."),
+  baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("Revisión del documento (create_*, resultRevision o describe_document)."),
   dryRun: z.boolean().default(false).describe("Solo validar: sin documento."),
 };
 const NodeIds = z.array(z.strictObject({ id: z.number().int().min(1) })).min(1).max(100).describe("Elementos por {id}.");
@@ -442,7 +499,7 @@ const NodeIds = z.array(z.strictObject({ id: z.number().int().min(1) })).min(1).
 async function runSingle(input: { document: unknown; baseRevision: string; dryRun?: boolean }, operation: Record<string, unknown>): Promise<ToolResult> {
   try {
     const result = authorSingle(input, operation);
-    const blocks = [summarizeAuthoring(result), JSON.stringify(result, null, 2)];
+    const blocks = [summarizeAuthoring(result), json(result)];
     return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
   } catch (err) {
     return fail(err);
@@ -456,7 +513,7 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Cambia el tema (dark, crema, claro) y/o el fondo personalizado (customBg en HEX; null o \"\" lo quita) sobre una COPIA y devuelve el documento nuevo. Parche: solo cambia lo que envías; repetir el valor actual no es un error (changed:false). " +
-      "Requiere baseRevision (la 'revision' de describe_document). Equivale a set_theme de author_document.",
+      "Requiere baseRevision. Equivale a set_theme de author_document.",
     inputSchema: { ...SingleBase, ...ThemeFields },
   },
   async ({ document, baseRevision, dryRun, theme, customBg }) =>

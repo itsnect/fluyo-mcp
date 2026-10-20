@@ -1,7 +1,7 @@
 import { authorDocument } from "./authoring.js";
 import { createKernel } from "./kernel.js";
 import { layoutPage } from "./layout.js";
-import { normalizeWith, revisionOfProject } from "./revision.js";
+import { REVISION_MISMATCH_MESSAGE, normalizeWith, revisionOfProject } from "./revision.js";
 
 /**
  * propose_layout (FLUYO-018.6): auto-layout como herramienta de LECTURA.
@@ -61,7 +61,7 @@ export function proposeLayout(input: ProposeLayoutInput) {
   const revision = revisionOfProject(base);
   if (input.baseRevision !== undefined && input.baseRevision !== revision) {
     return rejected(
-      [{ code: "REVISION_MISMATCH", message: "baseRevision no coincide con el documento recibido: el documento cambió o no es el que describiste. Vuelve a leerlo con describe_document.", expected: input.baseRevision, actual: revision }],
+      [{ code: "REVISION_MISMATCH", message: REVISION_MISMATCH_MESSAGE, expected: input.baseRevision, actual: revision }],
       { actualRevision: revision }
     );
   }

@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 import { createKernel } from "./kernel.js";
-import { openLink, openLinkLine, type OpenLink } from "./link.js";
+import { openLink, type OpenLink } from "./link.js";
 import { CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema, ThemeSchema } from "./model.js";
-import { normalizeWith, revisionOfProject } from "./revision.js";
+import { REVISION_MISMATCH_MESSAGE, normalizeWith, revisionOfProject } from "./revision.js";
 import { UNMODELED } from "./stories.js";
 
 /**
@@ -324,7 +324,7 @@ export function authorDocument(input: AuthorInput) {
     return rejected(
       [{
         code: "REVISION_MISMATCH",
-        message: "baseRevision no coincide con el documento recibido: el documento cambió o no es el que describiste. Vuelve a leerlo con describe_document.",
+        message: REVISION_MISMATCH_MESSAGE,
         expected: input.baseRevision,
         actual,
       }],
@@ -380,7 +380,8 @@ export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string
     `${r.touchedStories.length} Historia(s) creada(s)/editada(s), todas ejecutables. ` +
     ("warnings" in r && r.warnings?.length ? `Aviso: ${r.warnings.length} dependencia(s) de llegada sin efecto (ver warnings). ` : "") +
     `${r.dryRun ? "No se devuelve documento." : "Documento nuevo en el 2.º bloque."} resultRevision ${r.resultRevision.slice(0, 19)}…` +
-    ("editorUrl" in r && r.editorUrl ? `\n${openLinkLine({ ok: true, url: r.editorUrl }, "Ábrelo en Fluyo")}` : "") +
+    /* MCP-TOKEN-EFFICIENCY-002: el enlace va UNA vez, en editorUrl del 2.º bloque (antes se repetía aquí: hasta 16.000 caracteres). */
+    ("editorUrl" in r && r.editorUrl ? "\nEnlace para abrirlo en Fluyo (dáselo al usuario): editorUrl, en el 2.º bloque." : "") +
     ("editorUrlError" in r && r.editorUrlError ? `\n${r.editorUrlError.message}` : "")
   );
 }
