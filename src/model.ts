@@ -198,13 +198,13 @@ export const FluyoProjectSchema = z
  * Así que aquí solo se comprueba que sea un objeto, y la validación de verdad la
  * hace el handler con `FluyoProjectSchema`, que sí puede explicarse (ver errors.ts).
  *
- * Dónde queda la frontera: si `document` no es un objeto (un texto, una lista), lo
- * rechaza el SDK antes de llegar al handler y el mensaje es el suyo, no el nuestro.
- * Se acepta: "expected object, received string" ya es claro, y el caso solo aparece
- * si alguien pasa el JSON sin parsear. Todo input que SEA un objeto —que es donde
- * están los fallos interesantes— llega al handler y se explica en prosa.
+ * Dónde queda la frontera: si `document` no es un objeto ni una cadena (una lista, un
+ * número), lo rechaza el SDK antes de llegar al handler y el mensaje es el suyo. Una
+ * CADENA llega al handler (MCP-TOKEN-EFFICIENCY-003): es el enlace `#d=` (link-input.ts),
+ * y si no lo es se rechaza con DOCUMENT_LINK_UNREADABLE (format). Todo input que SEA un
+ * objeto —que es donde están los fallos interesantes— llega al handler y se explica en prosa.
  */
-export const DocumentInputSchema = z
+export const DocumentObjectSchema = z
   .looseObject({
     app: z.literal("fluyo").optional(),
     version: z.number().optional(),
@@ -217,10 +217,14 @@ export const DocumentInputSchema = z
       })
       .optional(),
     settings: z.looseObject({}).optional(),
-  })
+  });
+
+/** MCP-TOKEN-EFFICIENCY-003: el documento como objeto (igual que antes) o como su enlace `#d=`. UNA description, en la unión: el
+ *  catálogo publica `anyOf:[objeto, string]` y cada byte se repite en las 8 tools que reciben documento. */
+export const DocumentInputSchema = z
+  .union([DocumentObjectSchema, z.string()])
   .describe(
-    "El documento Fluyo completo (.fluyo.json): el objeto que devuelve create_diagram / author_document, " +
-      "o el contenido de un archivo guardado con Ctrl+S en la app."
+    "El documento Fluyo (.fluyo.json) o su enlace #d= (editorUrl o el del resumen de create_*) copiado EXACTO; con enlace, baseRevision obligatorio."
   );
 
 export type Shape = z.infer<typeof ShapeSchema>;

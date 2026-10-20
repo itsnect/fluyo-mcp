@@ -1,6 +1,7 @@
 import { authorDocument } from "./authoring.js";
 import { createKernel } from "./kernel.js";
 import { layoutPage } from "./layout.js";
+import { resolveDocument } from "./link-input.js";
 import { REVISION_MISMATCH_MESSAGE, normalizeWith, revisionOfProject } from "./revision.js";
 
 /**
@@ -54,7 +55,12 @@ export function proposeLayout(input: ProposeLayoutInput) {
     note: "Solo lectura: el documento no se modificó y no se devuelve ninguna propuesta.",
   });
 
-  const base = normalizeWith(kernel, input.document) as NormalizedProject | null;
+  /* MCP-TOKEN-EFFICIENCY-003: un enlace #d= exige baseRevision y se resuelve al documento normalizado de esa revisión. */
+  const resolved = resolveDocument(input.document, input.baseRevision);
+  if (!resolved.ok) return rejected([resolved.error]);
+  const document = resolved.document;
+
+  const base = normalizeWith(kernel, document) as NormalizedProject | null;
   if (base === null) {
     return rejected([{ code: "DOCUMENT_UNREADABLE", message: "El documento no es legible: usa describe_document para ver los errores de validación." }]);
   }
@@ -129,7 +135,7 @@ export function proposeLayout(input: ProposeLayoutInput) {
   // Lotes ≤ maxOps. Cada uno se APLICA de verdad (sobre una copia, en memoria) con author_document: así la propuesta es consumible tal cual
   // y el baseRevision de cada lote es el resultRevision del anterior. Nada de esto sale de la llamada.
   const batches: Array<{ baseRevision: string; resultRevision: string; operations: Op[] }> = [];
-  let current: unknown = input.document;
+  let current: unknown = document;
   let currentRevision = revision;
   for (let i = 0; i < ops.length; i += maxOps) {
     const chunk = ops.slice(i, i + maxOps);

@@ -3,6 +3,7 @@ import { z } from "zod";
 import { createKernel } from "./kernel.js";
 import { openLink, type OpenLink } from "./link.js";
 import { CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema, ThemeSchema } from "./model.js";
+import { resolveDocument } from "./link-input.js";
 import { REVISION_MISMATCH_MESSAGE, normalizeWith, revisionOfProject } from "./revision.js";
 import { UNMODELED } from "./stories.js";
 
@@ -334,7 +335,12 @@ export function authorDocument(input: AuthorInput) {
     note: "No se devolvió ningún documento: el original no se modificó.",
   });
 
-  const base = normalizeWith(kernel, input.document);
+  /* MCP-TOKEN-EFFICIENCY-003: un enlace #d= se resuelve (con baseRevision) al documento normalizado de esa revisión; un objeto pasa tal cual. */
+  const resolved = resolveDocument(input.document, input.baseRevision);
+  if (!resolved.ok) return rejected([resolved.error]);
+  const document = resolved.document;
+
+  const base = normalizeWith(kernel, document);
   if (base === null) {
     return rejected([{ code: "DOCUMENT_UNREADABLE", message: "El documento no es legible: usa describe_document para ver los errores de validación." }]);
   }
@@ -351,7 +357,7 @@ export function authorDocument(input: AuthorInput) {
     );
   }
 
-  const result = kernel.call<KernelApply>("FluyoAuthoring.apply(__a.p, __a.o)", { p: input.document, o: input.operations });
+  const result = kernel.call<KernelApply>("FluyoAuthoring.apply(__a.p, __a.o)", { p: document, o: input.operations });
   if (!result.ok) return rejected(result.errors ?? [{ code: "INVALID_OPERATION", message: "El lote no se pudo aplicar." }]);
 
   const resultRevision = revisionOfProject(result.project);

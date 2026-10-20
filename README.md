@@ -329,6 +329,36 @@ parte las líneas largas, y una URL partida ya no abre nada. Lo que dispara el t
 práctica no es el número de nodos, son los nodos `image`: llevan la imagen entera dentro como
 data URI y uno solo puede pesar más que un diagrama de cien nodos.
 
+### Pasar el enlace en vez del JSON (MCP-TOKEN-EFFICIENCY-003)
+
+Las ocho tools que reciben `document` (`export_diagram`, `describe_document`, `run_story`, `author_document`,
+`propose_layout`, `set_theme`, `reorder_nodes`, `duplicate_node`) aceptan **el enlace en lugar del objeto**: el
+`editorUrl` de la última autoría o el enlace del resumen de `create_*`, copiado **exacto**. Es lo que más ahorra en una
+sesión: el documento era ~91 % de lo que emite el agente, y el enlace ocupa entre 4 y 9 veces menos (medido: −53 % de tokens
+emitidos con 10 nodos, −72 % con 60). Las respuestas no cambian ni un byte.
+
+```json
+{ "document": "https://fluyo.space/#d=Ae2ZXY7b…", "baseRevision": "sha256:…", "operations": [ … ] }
+```
+
+- **Con un enlace, `baseRevision` es obligatorio en las ocho** (`export_diagram`, `describe_document` y `run_story` lo
+  aceptan opcional para un objeto; si se pasa, se comprueba como en `propose_layout`). Es la `revision` del resumen de
+  `create_*` o el `resultRevision` de la respuesta que trajo el enlace.
+- La tool trabaja sobre el documento **normalizado** de esa revisión. Una copia inexacta no llega nunca como otro documento:
+  o no se lee, o no coincide la revisión.
+- Vale cualquier prefijo (`https://fluyo.space/`, un self-host o solo `#d=…`). No se recortan espacios ni saltos de línea.
+- Si no hay enlace (más de 16.000 caracteres, `dryRun`), se pasa el JSON como siempre.
+
+| Código | Cuándo | Qué hacer |
+|---|---|---|
+| `DOCUMENT_LINK_UNREADABLE` (`reason`: `format`, `base64`, `version`, `decode`, `too_large`, `json`) | la cadena no es un enlace legible | copiarlo exacto o pasar el JSON |
+| `LINK_REVISION_REQUIRED` | enlace sin `baseRevision` | pasar la revisión de la respuesta que trajo el enlace |
+| `LINK_REVISION_MISMATCH` (sin `actual`) | la revisión no es la del enlace: casi siempre, una copia inexacta | copiarlo de nuevo o pasar el JSON; **no** reintentar con otra revisión |
+
+En `author_document`, las tools de una operación y `propose_layout` el error va estructurado en `errors[]`; en
+`export_diagram`, `describe_document` y `run_story`, como `Error: <CODE> …`. La lectura es la de la app
+(`fluyo/js/link-codec.js`): base64url canónico, versiones 1 (deflate-raw) y 0 (UTF-8), y 2 MiB como tope de lo descomprimido.
+
 ---
 
 ## Retirada de `edit_diagram` (FLUYO-018.10)
@@ -602,6 +632,7 @@ src/
   svg.ts            # Exportador SVG
   templates.ts      # Plantillas de arquitectura
   link.ts           # Enlace fluyo.space/#d=… (deflate-raw + base64url)
+  link-input.ts     # El enlace #d= como document: lectura, baseRevision y documento normalizado
   server.ts         # Registro de las tools MCP — común a los dos transportes
   index.ts          # Entry point 1: stdio
   http.ts           # Entry point 2: Streamable HTTP (stateless) + rutas del host
@@ -625,6 +656,7 @@ test/
   fluyo-018-9.test.ts # create_diagram/create_from_template = dominio (golden, reglas, errores, stdio)
   fluyo-018-10.test.ts # editorUrl en author_document; retirada de edit_diagram (15 tools)
   fluyo-mcp-token-efficiency-002.test.ts # JSON compacto, revision e ids en create_*, enlace una vez, schema sin topes de entero seguro
+  fluyo-mcp-token-efficiency-003.test.ts # el enlace #d= como document: equivalencia byte a byte, revisión, corrupción, topes
   fixtures/         # Copias de fluyo/ejemplos/ (datos y previews de referencia)
 ```
 

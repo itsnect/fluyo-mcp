@@ -491,12 +491,15 @@ describe("propose_layout: errores estructurados (nunca TypeError)", () => {
     assert.equal(mj.errors[0].actual, rev(doc()));
     assert.equal(mj.actualRevision, rev(doc()));
     assert.equal(documentOf(await propose(doc(), { baseRevision: rev(doc()) })).ok, true, "baseRevision correcta se acepta");
-    for (const bad of [null, undefined, 5, "x", [], {}, { version: 5 }, { version: 99, app: "fluyo", doc: {} }]) {
+    for (const bad of [null, undefined, 5, [], {}, { version: 5 }, { version: 99, app: "fluyo", doc: {} }]) {
       const r: any = proposeLayout({ document: bad });
       assert.equal(r.ok, false);
       assert.equal(r.errors[0].code, "DOCUMENT_UNREADABLE");
       assert.doesNotMatch(JSON.stringify(r), NO_LEAK);
     }
+    // MCP-TOKEN-EFFICIENCY-003: una cadena es un enlace #d=; si no lo es, DOCUMENT_LINK_UNREADABLE (format)
+    const s: any = proposeLayout({ document: "x" });
+    assert.deepEqual([s.ok, s.errors[0].code, s.errors[0].reason], [false, "DOCUMENT_LINK_UNREADABLE", "format"]);
     // el schema del SDK rechaza tipos incorrectos antes de llegar al kernel
     for (const args of [{ document: doc(), pageIndex: "x" }, { document: doc(), clearWaypoints: "si" }, { document: doc(), baseRevision: "abc" }]) {
       const r = await propose(args.document, Object.fromEntries(Object.entries(args).filter(([k]) => k !== "document")));

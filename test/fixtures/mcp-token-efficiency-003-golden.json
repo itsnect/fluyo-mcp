@@ -1,0 +1,214 @@
+{
+  "base": "3d9cda7",
+  "note": "sha256 de JSON.stringify(content) de cada respuesta de runSession(mode:'json'), medido contra la build de la base 3d9cda7 (FASE 5)",
+  "sessions": {
+    "10": [
+      {
+        "tag": "1 create_diagram",
+        "isError": false,
+        "bytes": 7136,
+        "sha256": "fb350fa7f8f18578d4a07ee78ca8821dfb2b9bd8211ca5bfb026b8d45f9b2e86"
+      },
+      {
+        "tag": "2 author_document (eventos + Historia)",
+        "isError": false,
+        "bytes": 16179,
+        "sha256": "c4d4b2b2904ef4f043cffbf3289d3463c0c891d572423528930d10227a283093"
+      },
+      {
+        "tag": "3 run_story",
+        "isError": false,
+        "bytes": 6856,
+        "sha256": "29d27c12e26e7f95a01f183ff1787bafb5ac50a4d699d6134206e62b18b350c0"
+      },
+      {
+        "tag": "4 author_document (respuestas reverse)",
+        "isError": false,
+        "bytes": 13556,
+        "sha256": "ccb8555bfb831d893236a7d4dc6432901ef002707e6d4d409ffbcce8b557e1b9"
+      },
+      {
+        "tag": "5 run_story",
+        "isError": false,
+        "bytes": 8560,
+        "sha256": "d17b7188cb1fc24890d7b474401dcf51de25c934a71e829ab0af6fab4e66d739"
+      },
+      {
+        "tag": "6 describe_document",
+        "isError": false,
+        "bytes": 8991,
+        "sha256": "80473b1ed49c6dbe7cbf078bfcee540bda675fa8c8b3bc34989b6dfdbfaedeba"
+      },
+      {
+        "tag": "7 describe_document (sin pasos, página 0)",
+        "isError": false,
+        "bytes": 5624,
+        "sha256": "e032fbdb6bc288aca649320855c0b2db20e16039317e8b57c3cdcbd5977c037e"
+      },
+      {
+        "tag": "8 export_diagram",
+        "isError": false,
+        "bytes": 7371,
+        "sha256": "1384bc819a0501424bbb41e0db0f4ff4a257c8182d367c5fd995bb1bc828815e"
+      },
+      {
+        "tag": "9 propose_layout",
+        "isError": false,
+        "bytes": 1751,
+        "sha256": "b67ce3b31fce7df2129788180a8f365cf3492f892a94b4218c9be25337bb189e"
+      },
+      {
+        "tag": "10 author_document dryRun",
+        "isError": false,
+        "bytes": 1830,
+        "sha256": "9e588c260e6948f15c584988cfeacf9b29dbc9e7b5941e5fe3c243aeb97c6a0d"
+      },
+      {
+        "tag": "11 set_theme",
+        "isError": false,
+        "bytes": 12305,
+        "sha256": "b81d247e992cd2ca047c2a87250a6d543215b0396070b25eb32bc2d9c6b05552"
+      },
+      {
+        "tag": "12 reorder_nodes",
+        "isError": false,
+        "bytes": 12333,
+        "sha256": "f27563b2be0b0782f33178aa1bef24e1246df26b6f1e9c80c1f801d075459075"
+      },
+      {
+        "tag": "13 duplicate_node",
+        "isError": false,
+        "bytes": 13252,
+        "sha256": "cd8c89c88d8bf6496d843874cac175d2f342373dffbcafb5761d481250f0d2e1"
+      },
+      {
+        "tag": "14 run_story (final)",
+        "isError": false,
+        "bytes": 8682,
+        "sha256": "0173464a17212314f65be8861498fd1463e8312c6b5022caf1dcd95cd97edf9a"
+      },
+      {
+        "tag": "15 export_diagram (final)",
+        "isError": false,
+        "bytes": 8364,
+        "sha256": "6de62be8c64c1e8e02b03d7cb2a3152b3db0f836d0d4b6d21c51242c6200d6ef"
+      },
+      {
+        "tag": "16 create_from_template",
+        "isError": false,
+        "bytes": 4853,
+        "sha256": "1ed8f32e4a7de5f488cbb710bc79b57b89be8ef8f49bbe6692faefd053633806"
+      },
+      {
+        "tag": "17 describe_document (plantilla)",
+        "isError": false,
+        "bytes": 3632,
+        "sha256": "ff27aa03e78eec8a66fee4e53542ed7cf4e03f6413e7f621e09ff07ae6d12c6c"
+      }
+    ],
+    "30": [
+      {
+        "tag": "1 create_diagram",
+        "isError": false,
+        "bytes": 18407,
+        "sha256": "ee5cdf29b7659e7efe34c52627c378984bc541a9b9954f13a28496dd7eae9039"
+      },
+      {
+        "tag": "2 author_document (eventos + Historia)",
+        "isError": false,
+        "bytes": 35181,
+        "sha256": "7810fd363f6806684c3bcc2903de1831bbc9ff580fcad70a888d8c32b0d0f41b"
+      },
+      {
+        "tag": "3 run_story",
+        "isError": false,
+        "bytes": 17845,
+        "sha256": "b2515c9e78f5ba4bb2930bc715306f419bdd943ebcb40c2507feaaa37862ea10"
+      },
+      {
+        "tag": "4 author_document (respuestas reverse)",
+        "isError": false,
+        "bytes": 26376,
+        "sha256": "5a5f9a0978f138f9e4e165e57b7b4cd6833b97f2a04c21b3c75497fffb268547"
+      },
+      {
+        "tag": "5 run_story",
+        "isError": false,
+        "bytes": 19576,
+        "sha256": "a80fd52d9602f6080ca7e898da741c9420d14ae338a4ee4669026d4f066b8e0a"
+      },
+      {
+        "tag": "6 describe_document",
+        "isError": false,
+        "bytes": 19395,
+        "sha256": "e1670db90669dab12259496c15876205572009344435f7d3430b90ac2520c1d6"
+      },
+      {
+        "tag": "7 describe_document (sin pasos, página 0)",
+        "isError": false,
+        "bytes": 10738,
+        "sha256": "54ec40225a4dac4a0adf101a8fe51516a8d9f56d4ab3d9c747de0f490ada2d62"
+      },
+      {
+        "tag": "8 export_diagram",
+        "isError": false,
+        "bytes": 21569,
+        "sha256": "bf9b9d38ccff561565b887b1be2d1a190c3c35689cb75ba4dfdbbbfa0948e706"
+      },
+      {
+        "tag": "9 propose_layout",
+        "isError": false,
+        "bytes": 3371,
+        "sha256": "3e3b6a2567c1c520f531a46f588f5106844fe23807f9e58d6cf2a1d1c9efb946"
+      },
+      {
+        "tag": "10 author_document dryRun",
+        "isError": false,
+        "bytes": 1890,
+        "sha256": "43cfb7eef79626dd605585d1f838d08c3e4dc8fa34ee86398d7088bc9dc52e2d"
+      },
+      {
+        "tag": "11 set_theme",
+        "isError": false,
+        "bytes": 25122,
+        "sha256": "1d7f6c086d75901dc72e0ddd2e522a10ea56f8988836c016fecf357d0eb2094f"
+      },
+      {
+        "tag": "12 reorder_nodes",
+        "isError": false,
+        "bytes": 25267,
+        "sha256": "13b49dbe8808d2a3c98db18df1c555f445102abbee1b8f6d1643cd1effe5a20c"
+      },
+      {
+        "tag": "13 duplicate_node",
+        "isError": false,
+        "bytes": 26066,
+        "sha256": "efa8f7e3965474cb429cb004fa6163fb2d651c8ef7358b7ae252ee39811ff495"
+      },
+      {
+        "tag": "14 run_story (final)",
+        "isError": false,
+        "bytes": 19698,
+        "sha256": "9a505979ec4bb06d5487aa8efc64ec3e7f61d1a80804d1167620ee3a2a7efa57"
+      },
+      {
+        "tag": "15 export_diagram (final)",
+        "isError": false,
+        "bytes": 22682,
+        "sha256": "af436fdff43a8dd0b5acd48a55c85938eadc789de52bf46acfd531b293251dc6"
+      },
+      {
+        "tag": "16 create_from_template",
+        "isError": false,
+        "bytes": 4853,
+        "sha256": "1ed8f32e4a7de5f488cbb710bc79b57b89be8ef8f49bbe6692faefd053633806"
+      },
+      {
+        "tag": "17 describe_document (plantilla)",
+        "isError": false,
+        "bytes": 3632,
+        "sha256": "ff27aa03e78eec8a66fee4e53542ed7cf4e03f6413e7f621e09ff07ae6d12c6c"
+      }
+    ]
+  }
+}

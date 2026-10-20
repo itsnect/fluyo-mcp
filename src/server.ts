@@ -11,6 +11,9 @@ import { TEMPLATES } from "./templates.js";
 import { describeDocument, runStory, summarizeDescription, summarizeRun } from "./stories.js";
 import { AuthoringOperationSchema, DuplicateFields, ThemeFields, ZPlacement, authorDocument, authorSingle, summarizeAuthoring } from "./authoring.js";
 import { proposeLayout, summarizeLayout } from "./propose-layout.js";
+import { linkErrorText, resolveDocument } from "./link-input.js";
+import { createKernel } from "./kernel.js";
+import { REVISION_MISMATCH_MESSAGE, revisionOf } from "./revision.js";
 
 /**
  * Las quince tools de este servidor son funciones puras: reciben JSON, devuelven
@@ -75,6 +78,24 @@ function createdOrRejected(r: CreateDiagramResult): ToolResult {
   if (r.ok) return ok(summarizeCreated(r.project, r.revision, r.ids), json(r.project));
   const first = r.errors[0] ?? { code: "ERROR", message: "" };
   return { ...ok(`Diagrama RECHAZADO (${first.code}): ${first.message} No se devuelve ningún documento.`, json(r)), isError: true };
+}
+
+/* ===================== el enlace #d= como document (MCP-TOKEN-EFFICIENCY-003) =====================
+   author_document, las tools de una operación y propose_layout lo resuelven dentro de su dominio (errores estructurados). */
+
+/** baseRevision de export_diagram / describe_document / run_story: obligatorio con un enlace; opcional con un objeto. */
+const LinkRevision = z.string().regex(/^sha256:[0-9a-f]{64}$/).optional();
+
+/** El document de las tools de lectura. Un enlace se resuelve (link-input.ts) al documento normalizado de su revisión; con un objeto,
+ *  baseRevision, si se pasa, se comprueba como en propose_layout (REVISION_MISMATCH con 'actual'). Los errores son `Error: …`. */
+function readDocument(document: unknown, baseRevision: string | undefined): unknown {
+  const r = resolveDocument(document, baseRevision);
+  if (!r.ok) throw new Error(linkErrorText(r.error));
+  if (typeof document !== "string" && baseRevision !== undefined) {
+    const actual = revisionOf(createKernel(), document);
+    if (actual !== baseRevision) throw new Error(`REVISION_MISMATCH: ${REVISION_MISMATCH_MESSAGE} actual: ${actual ?? "ninguna (el documento no es legible)"}`);
+  }
+  return r.document;
 }
 
 /* ===================== schema publicado (MCP-TOKEN-EFFICIENCY-002) =====================
@@ -171,6 +192,7 @@ server.registerTool(
       "Con kind, las marcas de Flujo y Requisito, como la app.",
     inputSchema: {
       document: DocumentInputSchema,
+      baseRevision: LinkRevision,
       pageIndex: z.number().optional().describe("Índice de página a exportar (por defecto, la página actual)."),
       scale: z.number().min(0.25).max(4).default(1).describe("Escala de las dimensiones width/height del SVG resultante."),
       crop: z
@@ -182,9 +204,9 @@ server.registerTool(
         ),
     },
   },
-  async ({ document, pageIndex, scale, crop }) => {
+  async ({ document, baseRevision, pageIndex, scale, crop }) => {
     try {
-      const project = parseDocument(document);
+      const project = parseDocument(readDocument(document, baseRevision));
       const idx = pageIndex ?? project.doc.cur ?? 0;
       const page = project.doc.pages[idx];
       if (!page) throw new Error(`pageIndex ${idx} fuera de rango (el documento tiene ${project.doc.pages.length} página(s)).`);
@@ -351,13 +373,14 @@ server.registerTool(
       "Con includeSteps:false se omiten los pasos de cada Historia.",
     inputSchema: {
       document: DocumentInputSchema,
+      baseRevision: LinkRevision,
       pageIndex: z.number().int().min(0).optional().describe("Describe sólo esta página (por defecto, todas)."),
       includeSteps: z.boolean().default(true).describe("Incluir los pasos de cada Historia."),
     },
   },
-  async ({ document, pageIndex, includeSteps }) => {
+  async ({ document, baseRevision, pageIndex, includeSteps }) => {
     try {
-      const description = describeDocument({ document, pageIndex, includeSteps });
+      const description = describeDocument({ document: readDocument(document, baseRevision), pageIndex, includeSteps });
       return ok(summarizeDescription(description), json(description));
     } catch (err) {
       return fail(err);
@@ -380,13 +403,14 @@ server.registerTool(
       "Pide antes describe_document para conocer pageIndex y storyId.",
     inputSchema: {
       document: DocumentInputSchema,
+      baseRevision: LinkRevision,
       pageIndex: z.number().int().min(0).optional().describe("Página de la Historia (por defecto, la página actual del documento)."),
       storyId: z.number().int().min(1).describe("Id de la Historia en esa página (los ids de Historia son por página)."),
     },
   },
-  async ({ document, pageIndex, storyId }) => {
+  async ({ document, baseRevision, pageIndex, storyId }) => {
     try {
-      const result = runStory({ document, pageIndex, storyId });
+      const result = runStory({ document: readDocument(document, baseRevision), pageIndex, storyId });
       return ok(summarizeRun(result), json(result));
     } catch (err) {
       return fail(err);

@@ -462,13 +462,15 @@ describe("un documento inválido se explica en prosa, no con un volcado de Zod",
     assert.doesNotMatch(textOf(r), /"code":/, "no debe filtrar el JSON de issues de Zod");
   });
 
-  /** La frontera declarada en DocumentInputSchema: un no-objeto lo rechaza el SDK
-   *  antes del handler. El mensaje es suyo y es aceptable; se fija aquí para que el
-   *  día que cambie se vea en el diff en vez de descubrirse en producción. */
-  it("un document que no es objeto lo rechaza el SDK con un mensaje claro", async () => {
+  /** La frontera declarada en DocumentInputSchema. MCP-TOKEN-EFFICIENCY-003: una CADENA es el enlace #d= y llega al handler; si no
+   *  lo es, el servidor la rechaza con DOCUMENT_LINK_UNREADABLE (format). Lo que no es ni objeto ni cadena lo sigue rechazando el SDK. */
+  it("un document cadena que no es un enlace #d= se rechaza con DOCUMENT_LINK_UNREADABLE (format)", async () => {
     const r = await h.client.callTool({ name: "export_diagram", arguments: { document: "no soy un objeto" } });
     assert.ok(isToolError(r));
-    assert.match(textOf(r), /expected object/i);
+    assert.match(textOf(r), /^Error: DOCUMENT_LINK_UNREADABLE \(format\): /);
+    const n = await h.client.callTool({ name: "export_diagram", arguments: { document: 5 } });
+    assert.ok(isToolError(n));
+    assert.match(textOf(n), /expected object|invalid input/i);
   });
 
   it("editar un documento roto tampoco filtra Zod: author_document lo rechaza estructurado y export_diagram señala la ruta", async () => {
