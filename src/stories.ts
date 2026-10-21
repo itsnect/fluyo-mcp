@@ -125,6 +125,7 @@ interface KernelModel {
           ends?: TraversalEnds;
           state?: string;
           sentence: string;
+          message?: string;
         }>;
       }>;
     }>;
@@ -195,7 +196,7 @@ const READ_MODEL = `(function(){
         groups: storyboardGroups(sc.steps).map(g => ({at: g.at, steps: g.steps.map(s => ({
           id: s.id, action: s.action, eventTypeId: s.eventTypeId, nodeId: s.nodeId, edgeId: s.edgeId,
           reverse: s.reverse === true || undefined, ends: sendEnds(pg, s), state: s.state,
-          sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId))}))}))
+          sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId)), message: s.message}))}))
       }))
     }))
   };
@@ -324,6 +325,8 @@ export function describeDocument(input: DescribeInput) {
                         ...(s.state ? { state: s.state } : {}),
                         target: stepTarget(s, edgeById, label),
                         sentence: s.sentence,
+                        // FLUYO-MCP-STEP-MESSAGE-001: el globo propio del paso, solo si lo tiene (sin él, la salida de siempre).
+                        ...(s.message !== undefined ? { message: s.message } : {}),
                         ...(waits.get(s.id)?.length ? { waitsForArrivalOf: waits.get(s.id) } : {}),
                       };
                     }),
@@ -404,7 +407,7 @@ interface RunModel {
   nodes: Array<{ id: number; label: string }>;
   edges: Array<{ id: number; from: number; to: number }>;
   eventTypes: Array<{ id: number; name: string; symbol: string }>;
-  ordered: Array<{ id: number; sentence: string; ends?: TraversalEnds }>;
+  ordered: Array<{ id: number; sentence: string; message?: string; ends?: TraversalEnds }>;
   run: { ok: true; trace: { engineVersion: number; scenarioId: number; events: Array<Record<string, unknown>> } } | { ok: false; errors: unknown[] };
   outcomes?: Array<Record<string, any>>;
   finalAvailability?: Record<string, string>;
@@ -428,7 +431,7 @@ const RUN_STORY = `(function(){
     nodes: pg.nodes.map(n => ({id: n.id, label: n.label})),
     edges: pg.edges.map(e => ({id: e.id, from: e.from, to: e.to})),
     eventTypes: d.eventTypes.map(et => ({id: et.id, name: et.name, symbol: eventSymbol(et)})),
-    ordered: storyboardOrderedSteps(sc.steps).map(s => ({id: s.id, sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId)), ends: sendEnds(pg, s)})),
+    ordered: storyboardOrderedSteps(sc.steps).map(s => ({id: s.id, sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId)), message: s.message, ends: sendEnds(pg, s)})),
     run,
     outcomes: run.ok ? FluyoStory.outcomes(run.trace, sc, pg) : undefined,
     finalAvailability: run.ok ? FluyoStory.finalAvailability(run.trace, pg) : undefined
@@ -482,6 +485,7 @@ export function runStory(input: RunStoryInput) {
   const et = new Map(model.eventTypes.map(e => [e.id, e]));
   const sentence = new Map(model.ordered.map(s => [s.id, s.sentence]));
   const ends = new Map(model.ordered.map(s => [s.id, s.ends]));
+  const message = new Map(model.ordered.map(s => [s.id, s.message]));
   const trace = model.run.trace;
 
   let moment = -1;
@@ -499,6 +503,8 @@ export function runStory(input: RunStoryInput) {
       // FLUYO-MCP-STEP-REVERSE-001: `reverse` lo da FluyoStory.outcomes (solo si es true); el motivo (reasonNode) ya es del recorrido.
       target: stepTarget({ edgeId, nodeId, reverse, ends: ends.get(stepId) }, edge, label),
       sentence: sentence.get(stepId) ?? "",
+      // FLUYO-MCP-STEP-MESSAGE-001: el globo propio del paso, solo si lo tiene. La frase y event.name siguen siendo los del evento.
+      ...(message.get(stepId) !== undefined ? { message: message.get(stepId) } : {}),
       outcome: {
         status,
         ...(reason !== undefined ? { reason } : {}),

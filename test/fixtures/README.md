@@ -48,3 +48,4 @@ Los archivos `fluyo-0xx-*` los genera el test de una tarea de Fluyo y se copian 
 | `fluyo-019-2-skin.fluyo.json` + `fluyo-019-2-skin-svg.json` | 019.2 | documento con `settings.skin:"built"` y las líneas de la piel del SVG del editor real (`skinSvgLines`) |
 | `fluyo-019-3-colores.json` | 019.3 | regla de color de la piel (`skinColor`, `skinTones`, `skinNode` con `#rgb`, `#rrggbb`, `#rrggbbaa` e ilegibles) |
 | `fluyo-019-d6-capas.json` + `fluyo-019-d6-capas-svg.json` | 019-HIT-TEST-D6 | capas con la piel: el orden contenedores → conexiones → hojas calculado a mano para 13 casos (`containmentPaintOrder`) y el SVG del editor del caso anidado D |
+| `fluyo-step-message-001-rag.json` | STEP-MESSAGE-001 | el documento real de una prueba agéntica (10 nodos, 3 Historias, 38 pasos, 9 eventos); copia byte a byte de `fluyo/test/fixtures/step-message/rag-mcp.fluyo.json`. Con 5 eventos y `message` da el mismo Trace |

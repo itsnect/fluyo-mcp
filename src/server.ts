@@ -362,7 +362,7 @@ server.registerTool(
       "Lee un documento Fluyo (cualquier versión que abra la app, v1–v5) y devuelve una descripción COMPACTA pensada para un agente: " +
       "páginas con sus elementos (id, nombre, forma, x/y = centro, w/h) y conexiones (id, origen, destino, ruta, lados y waypoints si los hay; sin estilos), los 'bounds' que ocupa cada página, disponibilidad inicial, la biblioteca de eventos " +
       "(id, nombre, frase, símbolo, primitiva, acción, a qué se aplica —conexión o elemento—, presentación distinta del defecto y dónde se usa: Historias y pasos; " +
-      "es lo que responde «¿qué eventos puedo usar?») y las Historias con sus pasos agrupados por momento, su evento, objetivo y frase. " +
+      "es lo que responde «¿qué eventos puedo usar?») y las Historias con sus pasos agrupados por momento, su evento, objetivo, frase y message (el globo propio del paso, si lo tiene). " +
       "Si una Historia tiene dependencias de llegada: arrivalDependencies (lo guardado), inactiveArrivalDependencies (lo guardado que no aplica, con su razón), " +
       "waitsForArrivalOf en cada paso y waitsFor en cada momento (solo lo que aplica al reproducir). " +
       "Un paso con target.reverse:true recorre su conexión de to a from: label y frase van en ese sentido (from/to son los de la conexión). " +
@@ -396,7 +396,7 @@ server.registerTool(
     description:
       "Ejecuta una Historia de un documento Fluyo con el MISMO motor determinista que usa el editor (no es una simulación nueva ni la hace el modelo) " +
       "y devuelve: la validación del documento, el Trace del motor sin modificar, el resultado de cada paso (completed, not_completed con su razón, " +
-      "state_changed, no_change o narrated), la frase de cada paso y las versiones de schema y motor. " +
+      "state_changed, no_change o narrated), la frase de cada paso (y su message si lo tiene) y las versiones de schema y motor. " +
       "Un paso OCCURRENCE es siempre 'narrated': el motor lo registra aunque el elemento esté no disponible y NO prueba que ocurriera nada real. " +
       "Si la Historia no es válida no hay Trace: se devuelven los errores. No modifica el documento. " +
       "Un paso con target.reverse:true recorre su conexión de to a from: frase, reasonNode y Trace (reverse:true) van en ese sentido. " +
@@ -427,7 +427,7 @@ server.registerTool(
     annotations: TOOL_PURA,
     description:
       "Aplica un LOTE ATÓMICO de operaciones de Historia y de eventos sobre una COPIA del documento y devuelve un documento nuevo que Fluyo puede ejecutar tal cual (el original no se modifica). " +
-      "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait, set_arrival_dependencies, set_observed_flow (alcance 'story'); " +
+      "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait, set_step_message, set_arrival_dependencies, set_observed_flow (alcance 'story'); " +
       "set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection, reorder_nodes, duplicate_node (alcance 'page'); create_page, rename_page, delete_page, set_theme (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id). Cada operación declara su 'scope'. " +
       "Un evento se define con name, primitive (FLOW=conexión, OCCURRENCE=elemento, SET_AVAILABILITY=elemento que cambia su disponibilidad con availability UP|DOWN), sentence (marcadores {source} {target} {name}), symbol, motion (sólo FLOW) y presentation ({connectionEffects}|{nodeEffects}, parche); la acción de los pasos la sigue decidiendo el evento. " +
       "Las reglas son las del editor: un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) y no se elimina (REFERENCED_ENTITY, con las Historias y pasos que lo usan; quita antes esos pasos); cambiar nombre, frase, símbolo o presentación es global y no toca pasos, tiempos ni objetivos. Puedes usar {ref} de un evento creado en el lote en add_step. " +

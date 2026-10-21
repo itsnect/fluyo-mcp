@@ -279,7 +279,8 @@ describe("018.28 · sin API nueva, misma semántica", () => {
   it("add_step y set_wait publican exactamente las claves de siempre; no existe arrivalMs/latency/dependsOn/after/causedBy", async () => {
     const tool = (await h.client.listTools()).tools.find(t => t.name === "author_document")!;
     const keys = (op: string) => Object.keys((variants(tool).find((v: any) => v.properties?.op?.const === op || v.properties?.op?.enum?.[0] === op)).properties).sort();
-    assert.deepEqual(keys("add_step"), ["eventTypeId", "op", "pageIndex", "placement", "ref", "scope", "storyId", "target", "waitMs", "waitsForArrivalOf"]);
+    /* FLUYO-MCP-STEP-MESSAGE-001: `message` es el texto del globo del paso, no un campo de tiempo (la lista de prohibidos no cambia) */
+    assert.deepEqual(keys("add_step"), ["eventTypeId", "message", "op", "pageIndex", "placement", "ref", "scope", "storyId", "target", "waitMs", "waitsForArrivalOf"]);
     assert.deepEqual(keys("set_wait"), ["op", "pageIndex", "scope", "stepId", "storyId", "waitMs"]);
     assert.deepEqual(keys("set_arrival_dependencies"), ["op", "pageIndex", "scope", "stepId", "storyId", "waitsForArrivalOf"]);
     const json = JSON.stringify(tool.inputSchema);

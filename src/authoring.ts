@@ -197,6 +197,9 @@ const Endpoint = z
   .meta({ id: "Endpoint" });
 /** Los esquemas publicados como definitions compartidas, por su id (los tests los expanden para comparar con el catálogo de antes). */
 export const SHARED_DEFINITIONS = { IdOrRef, Wait, Target, Presentation, Endpoint };
+/* FLUYO-MCP-STEP-MESSAGE-001 (fluyo, decisión 255): el texto del globo de un paso de elemento. Solo la forma (1 a 120 unidades UTF-16,
+   las mismas que cuenta el kernel); «solo espacios» y un evento FLOW los rechaza el kernel (stepMessageValid, messageOf) con su explicación. */
+const StepMessage = z.string().min(1).max(120);
 const storyRef = { pageIndex: PageIndex, storyId: IdOrRef };
 const stepRef = { ...storyRef, stepId: IdOrRef };
 /* FLUYO-018.22: dependencias de llegada. Solo la forma; la validez (SEND de la misma Historia en un momento anterior) la decide el kernel. */
@@ -237,6 +240,7 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
       .strictObject({ sameMomentAs: IdOrRef, position: z.enum(["before", "after"]).optional() })
       .optional(),
     waitsForArrivalOf: WaitsForArrivalOf.optional(),
+    message: StepMessage.describe("Texto del globo de ESTE paso (solo eventos de elemento; no en FLOW), en vez del del evento; el nombre y la frase siguen siendo del evento. No cambia tiempos ni Trace.").optional(),
     ref: z.string().min(1).max(40).optional(),
   }),
   z.strictObject({ op: z.literal("remove_step"), scope: story, ...stepRef }),
@@ -250,6 +254,7 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
   z.strictObject({ op: z.literal("duplicate_step"), scope: story, ...stepRef, ref: z.string().min(1).max(40).optional() }),
   z.strictObject({ op: z.literal("retarget_step"), scope: story, ...stepRef, target: Target }),
   z.strictObject({ op: z.literal("set_wait"), scope: story, ...stepRef, waitMs: Wait }),
+  z.strictObject({ op: z.literal("set_step_message"), scope: story, ...stepRef, message: StepMessage.nullable().describe("null lo quita.") }),
   z.strictObject({
     op: z.literal("set_arrival_dependencies"),
     scope: story,

@@ -339,7 +339,8 @@ describe("contrato de campos de las operaciones de EventType", () => {
     assert.deepEqual(Object.keys(find("create_event_type").properties).sort(), ["availability", "motion", "name", "op", "presentation", "primitive", "ref", "scope", "sentence", "symbol"]);
     assert.deepEqual(Object.keys(find("update_event_type").properties).sort(), ["availability", "eventTypeId", "motion", "name", "op", "presentation", "primitive", "scope", "sentence", "symbol"]);
     assert.deepEqual(Object.keys(find("delete_event_type").properties).sort(), ["eventTypeId", "op", "scope"]);
-    assert.deepEqual(Object.keys(find("add_step").properties).sort(), ["eventTypeId", "op", "pageIndex", "placement", "ref", "scope", "storyId", "target", "waitMs", "waitsForArrivalOf"]);
+    /* FLUYO-MCP-STEP-MESSAGE-001: add_step admite `message` (el globo propio del paso; no es tiempo, ni acción, ni estado) */
+    assert.deepEqual(Object.keys(find("add_step").properties).sort(), ["eventTypeId", "message", "op", "pageIndex", "placement", "ref", "scope", "storyId", "target", "waitMs", "waitsForArrivalOf"]);
   });
 });
 
