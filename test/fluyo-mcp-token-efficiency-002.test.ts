@@ -25,7 +25,7 @@ import { authorDocument } from "../src/authoring.js";
 import { describeDocument, runStory } from "../src/stories.js";
 import { proposeLayout } from "../src/propose-layout.js";
 import { ICONS, ICON_GROUPS } from "../src/schema.js";
-import { isToolError, loadFixture, packageRoot, textBlocks, textOf } from "./helpers.js";
+import { derefSchema, isToolError, loadFixture, packageRoot, textBlocks, textOf } from "./helpers.js";
 import { connectHttpClient, startHttpHarness } from "./http-helpers.js";
 
 const SAFE = Number.MAX_SAFE_INTEGER;
@@ -276,11 +276,16 @@ describe("5. tools/list sin los topes de entero seguro, la misma validación", (
   it("el catálogo publicado es el del SDK salvo los ±MAX_SAFE_INTEGER (ni uno queda) y es más pequeño", async () => {
     const pub = (await h.client.listTools()).tools, sdk = (await raw.client.listTools()).tools;
     const rawText = JSON.stringify(sdk), pubText = JSON.stringify(pub);
-    assert.ok(rawText.split(String(SAFE)).length - 1 > 50, "el SDK publica los topes (si no, este test no prueba nada)");
+    /* CATALOG-COMPACTION-001: con las definitions compartidas, cada esquema repetido (y sus topes) sale una vez; las cuentas de lo que
+       ahorra quitar los topes se hacen sobre el catálogo expandido, el que medía este test. */
+    const expanded = (ts: typeof pub) => JSON.stringify(ts.map(t => ({ ...t, inputSchema: derefSchema(t.inputSchema) })));
+    const rawExpanded = expanded(sdk), pubExpanded = expanded(pub);
+    assert.ok(rawExpanded.split(String(SAFE)).length - 1 > 50, "el SDK publica los topes (si no, este test no prueba nada)");
     assert.equal(pubText.includes(String(SAFE)), false);
     assert.deepEqual(pub, sdk.map(t => ({ ...t, inputSchema: withoutSafeIntBounds(t.inputSchema) })));
     assert.deepEqual(pub.map(t => ({ ...t, inputSchema: restore(t.inputSchema) })), sdk, "volviendo a poner los topes sale el catálogo del SDK");
-    assert.ok(Buffer.byteLength(pubText) < Buffer.byteLength(rawText) - 2000, `${Buffer.byteLength(pubText)} vs ${Buffer.byteLength(rawText)}`);
+    assert.ok(Buffer.byteLength(pubExpanded) < Buffer.byteLength(rawExpanded) - 2000, `${Buffer.byteLength(pubExpanded)} vs ${Buffer.byteLength(rawExpanded)}`);
+    assert.ok(Buffer.byteLength(pubText) < Buffer.byteLength(rawText), `${Buffer.byteLength(pubText)} vs ${Buffer.byteLength(rawText)}`);
     assert.ok(Buffer.byteLength(pubText) < 72_000);
   });
 

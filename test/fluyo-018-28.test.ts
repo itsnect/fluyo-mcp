@@ -18,7 +18,7 @@ import { authorDocument } from "../src/authoring.js";
 import { createKernel } from "../src/kernel.js";
 import { revisionOf } from "../src/revision.js";
 import { describeDocument, runStory, UNMODELED } from "../src/stories.js";
-import { packageRoot, startHarness, type Harness } from "./helpers.js";
+import { derefSchema, packageRoot, startHarness, type Harness } from "./helpers.js";
 
 const ROOT = packageRoot();
 const FLUYO = resolve(ROOT, process.env.FLUYO_PATH ?? join("..", "fluyo"));
@@ -211,7 +211,8 @@ describe("018.28 · fixture de agente: Kafka cae y vuelve", () => {
 
 /* ═══════════════ 2. Lo que un agente lee al descubrir las tools ═══════════════ */
 describe("018.28 · contrato: lo que ve un agente en tools/list, describe_document y README", () => {
-  const schemaOf = async (name: string) => (await h.client.listTools()).tools.find(t => t.name === name)!;
+  /* CATALOG-COMPACTION-001: Wait (waitMs) es un $ref a las definitions; lo que lee el agente es la definición, una vez. */
+  const schemaOf = async (name: string) => { const t = (await h.client.listTools()).tools.find(t => t.name === name)!; return { ...t, inputSchema: derefSchema(t.inputSchema) }; };
   const variants = (tool: any): any[] => { const items = tool.inputSchema.properties.operations.items; return items.anyOf ?? items.oneOf ?? []; };
   const opSchema = (tool: any, op: string): any => variants(tool).find(v => v.properties?.op?.const === op || v.properties?.op?.enum?.[0] === op);
 

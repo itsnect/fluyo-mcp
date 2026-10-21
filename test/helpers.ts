@@ -67,6 +67,30 @@ export async function startHarness(): Promise<Harness> {
   };
 }
 
+/** FLUYO-MCP-CATALOG-COMPACTION-001: el inputSchema publicado con sus $ref resueltos contra sus `definitions` (y sin ellas), es decir,
+ *  la forma expandida que publicaba el catálogo antes de compartir esquemas. `{$ref}` solo → la definición; `{allOf:[{$ref}], …hermanos}`
+ *  (lo que emite Zod en draft-07 cuando el uso lleva description u optional) → la definición con los hermanos encima. No muta la entrada. */
+export function derefSchema(schema: any): any {
+  const defs: Record<string, unknown> = schema?.definitions ?? {};
+  const target = (ref: string) => {
+    const m = /^#\/definitions\/(.+)$/.exec(ref);
+    if (!m || !(m[1] in defs)) throw new Error(`$ref sin definición: ${ref}`);
+    return defs[m[1]];
+  };
+  const walk = (v: any): any => {
+    if (Array.isArray(v)) return v.map(walk);
+    if (v === null || typeof v !== "object") return v;
+    if (typeof v.$ref === "string" && Object.keys(v).length === 1) return walk(target(v.$ref));
+    if (Array.isArray(v.allOf) && v.allOf.length === 1 && typeof v.allOf[0]?.$ref === "string" && Object.keys(v.allOf[0]).length === 1) {
+      const { allOf, ...siblings } = v;
+      return { ...walk(target(allOf[0].$ref)), ...walk(siblings) };
+    }
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, walk(x)]));
+  };
+  const { definitions, ...rest } = schema ?? {};
+  return walk(rest);
+}
+
 /** `callTool` devuelve una unión que incluye la forma legacy `{toolResult}`, así que
  *  se accede al contenido con narrowing manual en vez de tipar el parámetro. */
 export function textBlocks(result: unknown): string[] {

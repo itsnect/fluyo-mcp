@@ -21,7 +21,11 @@ import { UNMODELED } from "./stories.js";
 
 const Id = z.number().int().min(1);
 const Ref = z.strictObject({ ref: z.string().min(1).max(40) });
-const IdOrRef = z.union([Id, Ref]);
+/* FLUYO-MCP-CATALOG-COMPACTION-001: los esquemas que se repiten en las operaciones llevan un id. Zod los publica UNA vez en las
+   `definitions` de author_document y cada uso es un $ref (con hermanos, allOf:[{$ref}], como pide draft-07): IdOrRef salía 35 veces,
+   ≈ 6 KB. Solo cambia la forma de tools/list; la validación (Zod en el servidor) y las respuestas son las de siempre. Desreferenciado,
+   el catálogo es el de antes (lo fija test/fluyo-mcp-catalog-compaction-001.test.ts). */
+const IdOrRef = z.union([Id, Ref]).meta({ id: "IdOrRef" });
 const PageIndex = z.number().int().min(0);
 /* FLUYO-018.28: la espera es narrativa. Un agente que solo lee el schema tiene que saber que NO es «lo que tarda en llegar el mensaje». */
 const Wait = z
@@ -32,7 +36,8 @@ const Wait = z
   .describe(
     "Espera NARRATIVA en ms contada desde el INICIO del momento anterior (no desde que termine nada): no incluye ni espera el viaje visual del token de un envío. " +
       "Si el paso narra la recepción, el procesamiento o la consecuencia de un SEND anterior, declara la dependencia (waitsForArrivalOf en add_step; set_arrival_dependencies después) en vez de calcular la espera."
-  );
+  )
+  .meta({ id: "Wait" });
 /* FLUYO-MCP-STEP-REVERSE-001: el sentido de un SEND (contrato de fluyo STEP-REVERSE-002, D9). `reverse` solo existe en las formas de
    conexión explícitas ({edgeId}, {ref}); {from,to} ya dice el sentido y la resolución directa → inversa la hace el kernel (targetOf).
    `reverse:false` = normal y no se guarda. Que un {ref} sea un elemento (TARGET_INCOMPATIBLE) también lo decide el kernel. */
@@ -48,7 +53,8 @@ const Target = z
     "{edgeId} o {from,to} si el evento es de conexión; {nodeId} si es de elemento; o {ref} de la conexión/elemento creado antes en el lote (el evento decide cuál). " +
       "Los ids de edgeId/nodeId/from/to también admiten {ref}. " +
       "reverse:true (solo conexión) la recorre de to a from. {from,to}: la directa from→to o, si no hay, la inversa con reverse:true (sin poner reverse)."
-  );
+  )
+  .meta({ id: "Target" });
 const story = z.literal("story");
 const page = z.literal("page");
 const eventType = z.literal("eventType");
@@ -74,7 +80,8 @@ const ConnectionEffects = z
   .partial();
 const Presentation = z
   .strictObject({ nodeEffects: NodeEffects.optional(), connectionEffects: ConnectionEffects.optional() })
-  .describe("Efectos visuales (parche sobre los actuales): {connectionEffects} para eventos FLOW, {nodeEffects} para OCCURRENCE/SET_AVAILABILITY.");
+  .describe("Efectos visuales (parche sobre los actuales): {connectionEffects} para eventos FLOW, {nodeEffects} para OCCURRENCE/SET_AVAILABILITY.")
+  .meta({ id: "Presentation" });
 const Primitive = z.enum(["FLOW", "OCCURRENCE", "SET_AVAILABILITY"]);
 /** Campos de un evento; en create_event_type name, sentence y primitive son obligatorios; en update_event_type todos opcionales. */
 const EventFields = {
@@ -186,7 +193,10 @@ const ConnectionPatch = ConnectionSpec.omit({ id: true }).describe(
 const LocalRef = z.string().min(1).max(40);
 const Endpoint = z
   .union([z.strictObject({ ref: LocalRef }), z.strictObject({ id: Id })])
-  .describe("{ref} de algo creado antes en el lote (misma página) o {id} existente.");
+  .describe("{ref} de algo creado antes en el lote (misma página) o {id} existente.")
+  .meta({ id: "Endpoint" });
+/** Los esquemas publicados como definitions compartidas, por su id (los tests los expanden para comparar con el catálogo de antes). */
+export const SHARED_DEFINITIONS = { IdOrRef, Wait, Target, Presentation, Endpoint };
 const storyRef = { pageIndex: PageIndex, storyId: IdOrRef };
 const stepRef = { ...storyRef, stepId: IdOrRef };
 /* FLUYO-018.22: dependencias de llegada. Solo la forma; la validez (SEND de la misma Historia en un momento anterior) la decide el kernel. */

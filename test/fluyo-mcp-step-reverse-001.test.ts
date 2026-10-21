@@ -25,7 +25,7 @@ import { createKernel } from "../src/kernel.js";
 import { KERNEL_FILES } from "../src/generated/kernel-sources.js";
 import { revisionOf } from "../src/revision.js";
 import { describeDocument, runStory } from "../src/stories.js";
-import { FIXTURES_DIR, documentOf, isToolError, packageRoot, startHarness, textOf, type Harness } from "./helpers.js";
+import { FIXTURES_DIR, derefSchema, documentOf, isToolError, packageRoot, startHarness, textOf, type Harness } from "./helpers.js";
 
 const ROOT = packageRoot();
 const FLUYO = resolve(ROOT, process.env.FLUYO_PATH ?? join("..", "fluyo"));
@@ -129,7 +129,7 @@ describe("MCP-STEP-REVERSE-001 · schema de target", () => {
 
   it("tools/list: add_step y retarget_step publican reverse:boolean SOLO en las formas {edgeId} y {ref}", async () => {
     const { tools } = await h.client.listTools();
-    const items: any = (tools.find(t => t.name === "author_document")!.inputSchema as any).properties.operations.items;
+    const items: any = derefSchema(tools.find(t => t.name === "author_document")!.inputSchema).properties.operations.items; // CATALOG-COMPACTION-001: Target es un $ref
     const find = (op: string): any => (items.oneOf ?? items.anyOf).find((o: any) => o.properties.op.const === op);
     for (const op of ["add_step", "retarget_step"]) {
       const forms: any[] = find(op).properties.target.anyOf;

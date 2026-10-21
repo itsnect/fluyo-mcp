@@ -23,7 +23,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { authorDocument } from "../src/authoring.js";
 import { createKernel } from "../src/kernel.js";
 import { revisionOf } from "../src/revision.js";
-import { documentOf, isToolError, packageRoot, startHarness, textOf, type Harness } from "./helpers.js";
+import { derefSchema, documentOf, isToolError, packageRoot, startHarness, textOf, type Harness } from "./helpers.js";
 
 const ROOT = packageRoot();
 const DIR = join(ROOT, "test", "fixtures", "stories");
@@ -373,7 +373,7 @@ describe("contrato de tools/list", () => {
 
   it("las listas cerradas del schema son las de la UI de Fluyo (kernel): sin deriva", async () => {
     const { tools } = await h.client.listTools();
-    const schema: any = tools.find(x => x.name === "author_document")!.inputSchema;
+    const schema: any = derefSchema(tools.find(x => x.name === "author_document")!.inputSchema); // CATALOG-COMPACTION-001: Presentation es un $ref
     const create = findOp(schema, "create_event_type");
     const kernel = createKernel().call<any>(`({
       primitives:[...EVENT_TYPE_PRIMITIVES], motions:[...EVENT_TYPE_MOTIONS], sizes:SYMBOL_SIZES, styles:FLOW_STYLES, trails:FLOW_TRAILS, arrivals:FLOW_ARRIVALS, durings:FLOW_DURINGS,
