@@ -26,6 +26,7 @@ import { buildServer } from "../src/server.js";
 import { LINK_MAX_BYTES, decodeLink, resolveDocument } from "../src/link-input.js";
 import { openLink } from "../src/link.js";
 import { createKernel } from "../src/kernel.js";
+import { KERNEL_ID } from "../src/generated/kernel-sources.js";
 import { authorDocument } from "../src/authoring.js";
 import { canonicalJson, normalizeWith, revisionOfProject } from "../src/revision.js";
 import { isToolError, loadFixture, textBlocks, textOf } from "./helpers.js";
@@ -361,11 +362,15 @@ describe("T8 · con el documento como objeto, cada respuesta es la de la base 3d
   const golden = loadFixture("mcp-token-efficiency-003-golden.json") as {
     base: string; sessions: Record<string, Array<{ tag: string; isError: boolean; bytes: number; sha256: string }>>;
   };
+  /* El kernelId (hash de los archivos del kernel) viaja en algunas respuestas. Una resincronización posterior del kernel lo cambia sin cambiar
+     el camino JSON (SCENARIOS-SEMANTICS-001 FASE 6, B1 en model.js): se compara con el de la base, del mismo largo, y nada más cambia. */
+  const BASE_KERNEL_ID = "4105228c61e77f2d36354eeeca2ea6b75a7bdfbc078c68766f97b7a81e85f8d3";
+  const atBaseKernel = (r: ToolResponse) => bytesOf(r).split(KERNEL_ID).join(BASE_KERNEL_ID);
   for (const n of [10, 30]) {
-    it(`sesión de ${n} nodos en modo JSON: hash a hash igual que en ${golden.base}`, async () => {
+    it(`sesión de ${n} nodos en modo JSON: hash a hash igual que en ${golden.base} (salvo el kernelId)`, async () => {
       const steps = n === 10 ? jsonSession : await runSession(h.call, { n, mode: "json" });
       assert.deepEqual(
-        steps.map(s => ({ tag: s.tag, isError: !!s.response.isError, bytes: Buffer.byteLength(bytesOf(s.response)), sha256: sha(bytesOf(s.response)) })),
+        steps.map(s => ({ tag: s.tag, isError: !!s.response.isError, bytes: Buffer.byteLength(atBaseKernel(s.response)), sha256: sha(atBaseKernel(s.response)) })),
         golden.sessions[n]
       );
     });
