@@ -325,7 +325,7 @@ export function describeDocument(input: DescribeInput) {
                         ...(s.state ? { state: s.state } : {}),
                         target: stepTarget(s, edgeById, label),
                         sentence: s.sentence,
-                        // FLUYO-MCP-STEP-MESSAGE-001: el globo propio del paso, solo si lo tiene (sin él, la salida de siempre).
+                        // FLUYO-MCP-STEP-MESSAGE-001 / PRODUCT-NARRATION-001: la frase propia del paso (de cualquier evento), solo si la tiene.
                         ...(s.message !== undefined ? { message: s.message } : {}),
                         ...(waits.get(s.id)?.length ? { waitsForArrivalOf: waits.get(s.id) } : {}),
                       };
@@ -503,7 +503,8 @@ export function runStory(input: RunStoryInput) {
       // FLUYO-MCP-STEP-REVERSE-001: `reverse` lo da FluyoStory.outcomes (solo si es true); el motivo (reasonNode) ya es del recorrido.
       target: stepTarget({ edgeId, nodeId, reverse, ends: ends.get(stepId) }, edge, label),
       sentence: sentence.get(stepId) ?? "",
-      // FLUYO-MCP-STEP-MESSAGE-001: el globo propio del paso, solo si lo tiene. La frase y event.name siguen siendo los del evento.
+      // FLUYO-MCP-STEP-MESSAGE-001 / PRODUCT-NARRATION-001: la frase propia del paso (de cualquier evento), solo si la tiene. La frase
+      // del evento (sentence) y event.name no cambian.
       ...(message.get(stepId) !== undefined ? { message: message.get(stepId) } : {}),
       outcome: {
         status,

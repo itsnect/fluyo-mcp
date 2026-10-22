@@ -356,7 +356,7 @@ server.registerTool(
     title: "Describir un documento Fluyo",
     annotations: TOOL_PURA,
     description:
-      "Lee un documento Fluyo (v1–v5) y devuelve una descripción COMPACTA para un agente: 'revision', capabilities.limits, páginas con elementos (id, nombre, forma, x/y = centro, w/h), conexiones (id, from, to, ruta, lados, waypoints) y bounds, disponibilidad inicial, la biblioteca de eventos (id, nombre, frase, primitiva, a qué se aplica, dónde se usa: responde «¿qué eventos puedo usar?») y las Historias con sus pasos por momento: evento, objetivo, frase y message (el globo propio del paso, si lo tiene), dependencias de llegada (waitsFor por momento; inactiveArrivalDependencies con su razón). " +
+      "Lee un documento Fluyo (v1–v5) y devuelve una descripción COMPACTA para un agente: 'revision', capabilities.limits, páginas con elementos (id, nombre, forma, x/y = centro, w/h), conexiones (id, from, to, ruta, lados, waypoints) y bounds, disponibilidad inicial, la biblioteca de eventos (id, nombre, frase, primitiva, a qué se aplica, dónde se usa: responde «¿qué eventos puedo usar?») y las Historias con sus pasos por momento: evento, objetivo, frase y message (la frase propia del paso, si la tiene), dependencias de llegada (waitsFor por momento; inactiveArrivalDependencies con su razón). " +
       "Un paso con target.reverse:true recorre su conexión de to a from (label y frase en ese sentido). " +
       "Si los hay: connectionKind, observedFlow y warnings. " +
       "Valida la integridad con la regla del motor y declara lo que el modelo NO representa. " +

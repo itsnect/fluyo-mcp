@@ -197,8 +197,8 @@ const Endpoint = z
   .meta({ id: "Endpoint" });
 /** Los esquemas publicados como definitions compartidas, por su id (los tests los expanden para comparar con el catálogo de antes). */
 export const SHARED_DEFINITIONS = { IdOrRef, Wait, Target, Presentation, Endpoint };
-/* FLUYO-MCP-STEP-MESSAGE-001 (fluyo, decisión 255): el texto del globo de un paso de elemento. Solo la forma (1 a 120 unidades UTF-16,
-   las mismas que cuenta el kernel); «solo espacios» y un evento FLOW los rechaza el kernel (stepMessageValid, messageOf) con su explicación. */
+/* FLUYO-MCP-STEP-MESSAGE-001 y PRODUCT-NARRATION-001 (fluyo, decisiones 255 y 258): la frase propia de un paso, de cualquier evento. Solo la
+   forma (1 a 120 unidades UTF-16, las mismas que cuenta el kernel); «solo espacios» lo rechaza el kernel (stepMessageValid, messageOf). */
 const StepMessage = z.string().min(1).max(120);
 const storyRef = { pageIndex: PageIndex, storyId: IdOrRef };
 const stepRef = { ...storyRef, stepId: IdOrRef };
@@ -240,7 +240,7 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
       .strictObject({ sameMomentAs: IdOrRef, position: z.enum(["before", "after"]).optional() })
       .optional(),
     waitsForArrivalOf: WaitsForArrivalOf.optional(),
-    message: StepMessage.describe("Texto del globo de ESTE paso (solo eventos de elemento; no en FLOW), en vez del del evento; el nombre y la frase siguen siendo del evento. No cambia tiempos ni Trace.").optional(),
+    message: StepMessage.describe("Frase de ESTE paso (cualquier evento, también FLOW): al reproducir es el título de su momento y, en un elemento, su globo. El evento y su frase no cambian. No cambia tiempos ni Trace.").optional(),
     ref: z.string().min(1).max(40).optional(),
   }),
   z.strictObject({ op: z.literal("remove_step"), scope: story, ...stepRef }),

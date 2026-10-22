@@ -105,7 +105,8 @@ describe("MCP-STEP-MESSAGE-001 · kernel y versiones", () => {
     assert.deepEqual(k.call(`["x", "x".repeat(120), "", "   ", "x".repeat(121), null].map(stepMessageValid)`), [true, true, false, false, false, false]);
     assert.equal(k.call("FluyoAuthoring.OPERATION_SCOPE.set_step_message"), "story");
     const engine = KERNEL_FILES.find(f => f.name === "scenario-engine.js")!.source;
-    assert.ok(engine.includes(`!(k==="message" && step.action!=="SEND")`));
+    /* PRODUCT-NARRATION-001 (fluyo, decisión 258): el motor filtra la clave en cualquier acción */
+    assert.ok(engine.includes(`k!=="message"`));
   });
   it("engineVersion sigue en 2 y el documento en v5 (sin v3)", () => {
     const d: any = describeDocument({ document: DOC() });
@@ -119,8 +120,9 @@ describe("MCP-STEP-MESSAGE-001 · schema publicado y catálogo", () => {
     const { variant } = await catalog();
     const m = variant("add_step").properties.message;
     assert.deepEqual([m.type, m.minLength, m.maxLength], ["string", 1, 120]);
-    assert.match(m.description, /globo de ESTE paso/);
-    assert.match(m.description, /no en FLOW/);
+    /* PRODUCT-NARRATION-001 (decisión 258): también en FLOW; en un elemento, además, su globo */
+    assert.match(m.description, /Frase de ESTE paso \(cualquier evento, también FLOW\)/);
+    assert.match(m.description, /en un elemento, su globo/);
     assert.match(m.description, /No cambia tiempos ni Trace/);
     assert.ok(!variant("add_step").required.includes("message"), "opcional");
   });
@@ -138,7 +140,7 @@ describe("MCP-STEP-MESSAGE-001 · schema publicado y catálogo", () => {
   it("las descriptions: la operación en la lista detrás de set_wait; describe_document y run_story dicen que dan `message`", async () => {
     const { ad, tool } = await catalog();
     assert.ok(ad.description.includes("set_wait, set_step_message, set_arrival_dependencies, set_observed_flow (alcance 'story')"));
-    assert.ok(tool("describe_document").description!.includes("objetivo, frase y message (el globo propio del paso, si lo tiene)"));
+    assert.ok(tool("describe_document").description!.includes("objetivo, frase y message (la frase propia del paso, si la tiene)"));
     assert.ok(tool("run_story").description!.includes("la frase de cada paso (y su message si lo tiene)"));
   });
   it("catálogo: tools/list ≤ 63 000 B (guarda de CATALOG-COMPACTION-001) y < 72 000; desreferenciado, la operación es la misma", async () => {
@@ -171,10 +173,8 @@ describe("MCP-STEP-MESSAGE-001 · autoría (tools/call: zod + kernel)", () => {
     assert.ok(!("message" in step(doc, 7)));
     assert.ok(!JSON.stringify(documentOf(r).changes).includes("¿Y el límite?"), "la respuesta no repite el texto en changes");
   });
-  it("add_step en un evento FLOW: INVALID_OPERATION {field:'message'} explicado; vacío/121/null: schema; solo espacios: INVALID_FIELD", async () => {
-    const e = rejected(PLAIN(), [S("add_step", { eventTypeId: 1, target: { edgeId: 5 }, message: "hola" })]);
-    assert.deepEqual([e.code, e.field], ["INVALID_OPERATION", "message"]);
-    assert.match(e.message, /un envío no tiene globo/);
+  it("add_step en un evento FLOW: acepta message (PRODUCT-NARRATION-001, decisión 258); vacío/121/null: schema; solo espacios: INVALID_FIELD", async () => {
+    assert.deepEqual(step(ok(PLAIN(), [S("add_step", { eventTypeId: 1, target: { edgeId: 5 }, message: "hola" })]).document, 5), { id: 5, at: 3600, eventTypeId: 1, action: "SEND", edgeId: 5, message: "hola" });
     for (const message of ["", "x".repeat(121), null]) {
       const r = await authorTool(PLAIN(), [S("add_step", { eventTypeId: 2, target: { nodeId: 1 }, message })]);
       assert.ok(isToolError(r) && /message/.test(textOf(r)), JSON.stringify(message));
@@ -200,12 +200,9 @@ describe("MCP-STEP-MESSAGE-001 · autoría (tools/call: zod + kernel)", () => {
     r = ok(PLAIN(), [S("add_step", { eventTypeId: 2, target: { nodeId: 3 }, ref: "n" }), S("set_step_message", { stepId: { ref: "n" }, message: "por ref" })]);
     assert.equal(step(r.document, 5).message, "por ref");
   });
-  it("set_step_message en un SEND (texto o null): INVALID_OPERATION explicado; vacío por tools/call: schema; solo espacios: INVALID_FIELD", async () => {
-    for (const message of ["x", null]) {
-      const e = rejected(DOC(), [S("set_step_message", { stepId: 2, message })]);
-      assert.deepEqual([e.code, e.field], ["INVALID_OPERATION", "message"], JSON.stringify(message));
-      assert.match(e.message, /un envío no tiene globo/);
-    }
+  it("set_step_message en un SEND (texto o null): lo acepta (PRODUCT-NARRATION-001, decisión 258); vacío por tools/call: schema; solo espacios: INVALID_FIELD", async () => {
+    assert.deepEqual(step(ok(DOC(), [S("set_step_message", { stepId: 2, message: "x" })]).document, 2), { id: 2, at: 900, eventTypeId: 1, action: "SEND", edgeId: 4, message: "x" });
+    assert.equal(ok(DOC(), [S("set_step_message", { stepId: 2, message: null })]).changes[0].changed, false);
     const r = await authorTool(DOC(), [S("set_step_message", { stepId: 1, message: "" })]);
     assert.ok(isToolError(r), "\"\" no pasa la forma");
     assert.deepEqual([rejected(DOC(), [S("set_step_message", { stepId: 1, message: "  " })]).code], ["INVALID_FIELD"]);
@@ -262,7 +259,7 @@ describe("MCP-STEP-MESSAGE-001 · describe_document y run_story", () => {
     assert.equal(step(authored.document, 1).message, ASK, "author_document devuelve el documento con el texto");
   });
   it("un message inválido en el documento: no legible (invalid_step), sin Trace ni lectura a medias", () => {
-    const bad = DOC([...STEPS.slice(0, 1), { id: 2, at: 900, eventTypeId: 1, action: "SEND", edgeId: 4, message: "x" }]);
+    const bad = DOC([...STEPS.slice(0, 1), { id: 2, at: 900, eventTypeId: 1, action: "SEND", edgeId: 4, message: "   " }]);
     const d: any = describeDocument({ document: bad });
     assert.equal(d.readable, false);
     assert.deepEqual(d.errors.map((e: any) => e.code), ["invalid_step"]);
