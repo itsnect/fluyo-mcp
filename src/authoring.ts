@@ -322,6 +322,8 @@ export interface AuthorInput {
   baseRevision: string;
   operations: unknown[];
   dryRun?: boolean;
+  /** MCP-TOKEN-EFFICIENCY-004: false = sin `document` cuando hay editorUrl. */
+  returnDocument?: boolean;
 }
 
 interface KernelApply {
@@ -398,7 +400,9 @@ export function authorDocument(input: AuthorInput) {
     ...(result.warnings?.length ? { warnings: result.warnings } : {}),
     unmodeled: UNMODELED,
     ...(link === null ? {} : link.ok ? { editorUrl: link.url } : { editorUrlError: { code: link.code, chars: link.chars, maxChars: link.maxChars, message: link.message } }),
-    ...(input.dryRun ? {} : { document: result.project }),
+    /* MCP-TOKEN-EFFICIENCY-004: con returnDocument:false el documento solo se omite si el enlace salió (editorUrl lo codifica entero);
+       sin enlace, el documento es la única forma de seguir y sale igual. */
+    ...(input.dryRun || (input.returnDocument === false && link?.ok) ? {} : { document: result.project }),
   };
 }
 
@@ -419,7 +423,7 @@ export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string
     diagram +
     `${r.touchedStories.length} Historia(s) creada(s)/editada(s), todas ejecutables. ` +
     ("warnings" in r && r.warnings?.length ? `Aviso: ${r.warnings.length} dependencia(s) de llegada sin efecto (ver warnings). ` : "") +
-    `${r.dryRun ? "No se devuelve documento." : "Documento nuevo en el 2.º bloque."} resultRevision ${r.resultRevision.slice(0, 19)}…` +
+    `${r.dryRun ? "No se devuelve documento." : "document" in r ? "Documento nuevo en el 2.º bloque." : "Sin documento (returnDocument:false): sigue con editorUrl y resultRevision."} resultRevision ${r.resultRevision.slice(0, 19)}…` +
     /* MCP-TOKEN-EFFICIENCY-002: el enlace va UNA vez, en editorUrl del 2.º bloque (antes se repetía aquí: hasta 16.000 caracteres). */
     ("editorUrl" in r && r.editorUrl ? "\nEnlace para abrirlo en Fluyo (dáselo al usuario): editorUrl, en el 2.º bloque." : "") +
     ("editorUrlError" in r && r.editorUrlError ? `\n${r.editorUrlError.message}` : "")

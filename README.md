@@ -118,7 +118,7 @@ describe_document (revision) ──▶ author_document (baseRevision + operacion
                           documento nuevo + resultRevision   |   rechazo: sin documento
 ```
 
-- **Atómico**: o se aplica todo el lote o nada; el documento recibido nunca se modifica. `dryRun:true` valida y devuelve los `changes` sin documento.
+- **Atómico**: o se aplica todo el lote o nada; el documento recibido nunca se modifica. `dryRun:true` valida y devuelve los `changes` sin documento; `returnDocument:false` aplica el lote y omite el documento si trae `editorUrl` (ver «Respuestas sin el documento»).
 - **Revisión optimista, sin estado**: `baseRevision` es la `revision` del documento (sha256 del JSON canónico del documento normalizado): la que anuncia `describe_document`, la del resumen de `create_*` o el `resultRevision` de la autoría anterior. Si no coincide → `REVISION_MISMATCH` con la real en `actual`; si `actual` es la revisión del documento que devolvió la última llamada, basta reintentar con ella, sin releerlo. `resultRevision` es determinista.
 - **Un paso = evento + objetivo**: `eventTypeId` + `target` (`{edgeId, reverse?}` / `{from,to}` para conexiones; `{nodeId}` para elementos; o `{ref}` de lo creado en el lote; los ids de `edgeId`/`nodeId`/`from`/`to` también admiten `{ref}`). La acción la decide el evento; no se escribe `action`, `state` ni `at`.
 - **Sentido de un paso FLOW** (`reverse`, contrato de Fluyo STEP-REVERSE): un `SEND` puede recorrer su conexión **de `to` a `from`**. Así la respuesta va por la **misma** conexión que la petición, sin dibujar la inversa. Formas de `target`:
@@ -359,6 +359,25 @@ emitidos con 10 nodos, −72 % con 60). Las respuestas no cambian ni un byte.
 En `author_document`, las tools de una operación y `propose_layout` el error va estructurado en `errors[]`; en
 `export_diagram`, `describe_document` y `run_story`, como `Error: <CODE> …`. La lectura es la de la app
 (`fluyo/js/link-codec.js`): base64url canónico, versiones 1 (deflate-raw) y 0 (UTF-8), y 2 MiB como tope de lo descomprimido.
+
+### Respuestas sin el documento: `returnDocument:false` (MCP-TOKEN-EFFICIENCY-004)
+
+Quien sigue trabajando con el enlace no necesita el JSON del documento en cada respuesta: el `editorUrl` lo codifica
+entero, y el documento era la mitad de lo que recibía el agente. `author_document` y `create_diagram` aceptan
+`returnDocument` (por defecto `true`, es decir, como siempre):
+
+- **`false` con enlace**: `author_document` no trae la clave `document` (el resto, `editorUrl` y `resultRevision` incluidos, es
+  igual) y su resumen dice «Sin documento (returnDocument:false)…»; `create_diagram` contesta con **un solo bloque**, el resumen de
+  siempre (enlace, `revision`, ids por key y de aristas) más esa línea. Medido: −31 % a −57 % de lo recibido, sin llamadas extra.
+- **`false` sin enlace** (`LINK_TOO_LARGE`): el documento sale igual, porque es la única forma de seguir.
+- `dryRun` y los rechazos no cambian: nunca traen documento.
+- Solo esas dos tools: `create_from_template` y las de una operación (`set_theme`, `reorder_nodes`, `duplicate_node`) no lo
+  publican (el catálogo no da para más) y lo ignoran; sus operaciones están en `author_document`.
+
+**Si vas a necesitar el archivo `.fluyo.json`, no pongas `false` en la última escritura.** Para recuperarlo después basta
+repetir esa misma llamada sin el flag: las tools son deterministas y dan el mismo `resultRevision` con su documento (una llamada
+más). Normalmente no hace falta: el entregable es el enlace, que abre el diagrama en Fluyo y desde ahí se guarda. Las x/y que
+eligió el auto-layout de `create_diagram` tampoco vienen sin el documento: si las necesitas, `describe_document`.
 
 ---
 
@@ -658,6 +677,7 @@ test/
   fluyo-018-10.test.ts # editorUrl en author_document; retirada de edit_diagram (15 tools)
   fluyo-mcp-token-efficiency-002.test.ts # JSON compacto, revision e ids en create_*, enlace una vez, schema sin topes de entero seguro
   fluyo-mcp-token-efficiency-003.test.ts # el enlace #d= como document: equivalencia byte a byte, revisión, corrupción, topes
+  fluyo-mcp-token-efficiency-004.test.ts # returnDocument:false: catálogo, identidad sin el flag, sin enlace, rechazos, encadenado
   fixtures/         # Copias de fluyo/ejemplos/ (datos y previews de referencia)
 ```
 

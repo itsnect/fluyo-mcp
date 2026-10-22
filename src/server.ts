@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from "./schema.js";
-import { CreateDiagramInputShape, DocumentInputSchema, ThemeSchema, projectSkin } from "./model.js";
+import { CreateDiagramInputShape, DocumentInputSchema, ReturnDocumentSchema, ThemeSchema, projectSkin } from "./model.js";
 import { createDiagramResult, createFromTemplateResult, parseDocument, type CreateDiagramResult, type CreatedIds } from "./diagram.js";
 import type { FluyoProject } from "./model.js";
 import { pageToSVG } from "./svg.js";
@@ -73,8 +73,13 @@ function summarizeCreated(project: FluyoProject, revision: string, ids: CreatedI
 }
 
 /** create_diagram / create_from_template (FLUYO-018.9): el documento v5 del dominio, o el rechazo estructurado con la misma forma
- *  que author_document ([resumen, JSON {ok:false, errors…}], isError) y sin documento. */
-function createdOrRejected(r: CreateDiagramResult): ToolResult {
+ *  que author_document ([resumen, JSON {ok:false, errors…}], isError) y sin documento.
+ *  MCP-TOKEN-EFFICIENCY-004: con returnDocument:false y enlace, solo el resumen (que ya trae enlace, revisión e ids); sin enlace, igual
+ *  que siempre. */
+function createdOrRejected(r: CreateDiagramResult, returnDocument = true): ToolResult {
+  if (r.ok && !returnDocument && openLink(r.project).ok) {
+    return ok(`${summarizeCreated(r.project, r.revision, r.ids)}\nSin documento (returnDocument:false): sigue con el enlace y la revision.`);
+  }
   if (r.ok) return ok(summarizeCreated(r.project, r.revision, r.ids), json(r.project));
   const first = r.errors[0] ?? { code: "ERROR", message: "" };
   return { ...ok(`Diagrama RECHAZADO (${first.code}): ${first.message} No se devuelve ningún documento.`, json(r)), isError: true };
@@ -165,9 +170,9 @@ server.registerTool(
       "Usa list_icons para ver íconos válidos y list_templates si el patrón ya existe como plantilla.",
     inputSchema: CreateDiagramInputShape,
   },
-  async (input) => {
+  async ({ returnDocument, ...input }) => {
     try {
-      return createdOrRejected(createDiagramResult(input));
+      return createdOrRejected(createDiagramResult(input), returnDocument);
     } catch (err) {
       return fail(err);
     }
@@ -469,11 +474,12 @@ server.registerTool(
       baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La revisión de este documento (create_*, resultRevision anterior o describe_document)."),
       operations: z.array(AuthoringOperationSchema).min(1).max(200),
       dryRun: z.boolean().default(false).describe("Sólo validar y devolver los cambios; no se devuelve documento."),
+      returnDocument: ReturnDocumentSchema,
     },
   },
-  async ({ document, baseRevision, operations, dryRun }) => {
+  async ({ document, baseRevision, operations, dryRun, returnDocument }) => {
     try {
-      const result = authorDocument({ document, baseRevision, operations, dryRun });
+      const result = authorDocument({ document, baseRevision, operations, dryRun, returnDocument });
       const blocks = [summarizeAuthoring(result), json(result)];
       return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
     } catch (err) {

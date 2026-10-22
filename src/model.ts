@@ -308,6 +308,11 @@ const commonEdgeFields = {
 export const EdgeSpecSchema = z.object(commonEdgeFields);
 export type EdgeSpec = z.infer<typeof EdgeSpecSchema>;
 
+/** MCP-TOKEN-EFFICIENCY-004: con false, la respuesta de create_diagram / author_document no trae el documento si trae su enlace (con el
+ *  enlace + la revisión se sigue igual, TE-003); sin enlace (LINK_TOO_LARGE) lo trae igual. Solo en esas dos tools: el catálogo no da
+ *  para más (las de una operación tienen su operación en author_document). Una description corta: se publica dos veces. */
+export const ReturnDocumentSchema = z.boolean().default(true).describe("false: sin documento; sigue con el enlace y la revisión.");
+
 /* FLUYO-018.9: sin `.default()` en página, tema ni ajustes: lo omitido toma el valor del documento en blanco del editor (model.js), no
    una copia aquí. Los rangos de speed/stagger/dots son los de los controles del editor y de su carga (settingsFromProjectData); un test
    comprueba que el kernel no recorta nada dentro de ellos y sí fuera. */
@@ -326,4 +331,5 @@ export const CreateDiagramInputShape = {
   skin: SkinSchema,
   nodes: z.array(NodeSpecSchema).min(1),
   edges: z.array(EdgeSpecSchema).default([]),
+  returnDocument: ReturnDocumentSchema,
 };
