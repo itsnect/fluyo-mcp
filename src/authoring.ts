@@ -132,7 +132,7 @@ const NodeSpec = z
 const ConnectionKind = z
   .enum(["FLOWS_TO", "REQUIRES"])
   .nullable()
-  .describe("FLOWS_TO = Flujo (la ruta va de source a target) | REQUIRES = Requisito (source necesita a target) | null = genérica. No cambia la ejecución.");
+  .describe("FLOWS_TO = Flujo (source → target) | REQUIRES = Requisito (source necesita a target) | null = genérica. No cambia la ejecución.");
 const ConnectionSpec = z
   .strictObject({
     id: Id.optional(),
@@ -154,7 +154,7 @@ const ConnectionSpec = z
     speedFac: z.number().optional(),
     dots: z.number().int().optional(),
     dotsGlobal: z.boolean().optional(),
-    arrowSize: z.number().nullable().optional().describe("FLUYO-018.27: tamaño de las puntas (1 = el de siempre, 1.5, 2; el kernel acota en [1, 2]; null = quitarlo). Solo dibujo: la ruta no cambia."),
+    arrowSize: z.number().nullable().optional().describe("Tamaño de las puntas: 1 (el de siempre), 1.5 o 2; null = quitarlo. Solo dibujo: la ruta no cambia."), // FLUYO-018.27; el kernel acota en [1, 2]
     kind: ConnectionKind.optional(),
   })
   .describe("Campos opcionales de la conexión (lados, ruta, etiqueta, estilo); sin ellos, los defaults del editor. 'ref', 'source' y 'target' NO van aquí.");
@@ -207,9 +207,9 @@ const WaitsForArrivalOf = z
   .array(IdOrRef)
   .max(1000)
   .describe(
-    "Ids (o {ref} del lote) de pasos SEND de la MISMA Historia en un momento ANTERIOR cuya llegada espera este paso: su momento no empieza (al reproducir en Fluyo) hasta que llegue el token de ese envío. " +
-      "Úsalo siempre que el paso narre la recepción, el procesamiento o la consecuencia de ese envío: waitMs NO espera al token (se cuenta desde el inicio del momento anterior) y, sin esta lista, un paso sobre el nodo destino se ve a su hora aunque el token siga en vuelo; Fluyo no deduce recepciones. " +
-      "Se guarda en la Historia (arrivalDependencies), no en el paso. Lo inválido se rechaza (INVALID_ARRIVAL_DEPENDENCY). Nunca se infiere de las conexiones."
+    "Pasos SEND (ids o {ref}) de la MISMA Historia en un momento ANTERIOR cuya llegada espera este paso: su momento no empieza hasta que llegue el token. " +
+      "Úsalo siempre que el paso narre la recepción, el procesamiento o la consecuencia de ese envío: waitMs no espera al token, y sin esta lista un paso sobre el nodo destino se ve aunque el token siga en vuelo. " +
+      "Se guarda en la Historia. Nunca se infiere de las conexiones. Inválido: INVALID_ARRIVAL_DEPENDENCY."
   );
 
 

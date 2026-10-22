@@ -143,7 +143,7 @@ describe("MCP-STEP-REVERSE-001 · schema de target", () => {
       assert.match(find(op).properties.target.description, /reverse:true \(solo conexión\) la recorre de to a from/);
     }
     const desc = tools.find(t => t.name === "author_document")!.description!;
-    assert.match(desc, /SENTIDO de un paso FLOW: target \{edgeId\|ref, reverse:true\}/);
+    assert.match(desc, /SENTIDO: target \{edgeId\|ref, reverse:true\} recorre la conexión de to a from: la respuesta va por la MISMA conexión, no dibujes la inversa/); // MCP-DESCRIPTIONS-001
     assert.match(tools.find(t => t.name === "describe_document")!.description!, /target\.reverse:true/);
     assert.match(tools.find(t => t.name === "run_story")!.description!, /target\.reverse:true/);
   });

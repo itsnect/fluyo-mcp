@@ -52,7 +52,7 @@ const MUTATIONS: Mutation[] = [
   M("el resumen de author_document sin enlace", AUTHORING, ["`\\n${openLinkLine({ ok: true, url: r.editorUrl }, \"Ábrelo en Fluyo\")}` : \"\")", "\"\" : \"\")"]),
   M("otra codificación #d= (v0 JSON sin comprimir)", LINK, ["const carga = Buffer.concat([Buffer.from([1]), deflateRawSync(json, { level: 9 })]);", "const carga = Buffer.concat([Buffer.from([0]), json]);"]),
   M("enlace truncado cuando no cabe", LINK, ["  if (url.length <= MAX_LINK_CHARS) return { ok: true, url };", "  return { ok: true, url: url.slice(0, MAX_LINK_CHARS) };"]),
-  M("la descripción de author_document no documenta editorUrl", SERVER, ["'resultRevision' y 'editorUrl': el enlace fluyo.space/#d=… que abre el documento resultante en Fluyo (dáselo al usuario; si no cabe, editorUrlError LINK_TOO_LARGE)", "'resultRevision'"]),
+  M("la descripción de author_document no documenta editorUrl", SERVER, ["resultRevision (el baseRevision de la siguiente) y editorUrl: el enlace fluyo.space/#d=… del resultado; dáselo al usuario y pásalo como 'document' en la siguiente llamada (si no cabe, editorUrlError LINK_TOO_LARGE)", "resultRevision (el baseRevision de la siguiente)"]),
   /* ── propose_layout (el sustituto de relayout) */
   M("propose_layout se vuelve mutante (devuelve documento)", PROPOSE, ["    readOnly: true as const,", "    readOnly: true as const,\n    document: input.document,"]),
   M("propose_layout propone posiciones de otro motor", PROPOSE, ["return { id: n.id, x: p.x, y: p.y,", "return { id: n.id, x: p.x + 10, y: p.y,"]),

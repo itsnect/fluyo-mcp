@@ -1,0 +1,3328 @@
+[
+ {
+  "name": "create_diagram",
+  "title": "Crear diagrama Fluyo",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "pageName": {
+     "type": "string"
+    },
+    "theme": {
+     "type": "string",
+     "enum": [
+      "dark",
+      "crema",
+      "claro"
+     ]
+    },
+    "grid": {
+     "type": "boolean"
+    },
+    "build": {
+     "type": "boolean"
+    },
+    "autoLayout": {
+     "default": true,
+     "type": "boolean"
+    },
+    "speed": {
+     "type": "number",
+     "minimum": 0.2,
+     "maximum": 2
+    },
+    "dots": {
+     "type": "integer",
+     "minimum": 1,
+     "maximum": 6
+    },
+    "stagger": {
+     "type": "number",
+     "minimum": 0.2,
+     "maximum": 1.2
+    },
+    "single": {
+     "type": "boolean"
+    },
+    "font": {
+     "type": "string"
+    },
+    "customBg": {
+     "type": "string"
+    },
+    "skin": {
+     "type": "string",
+     "enum": [
+      "flat",
+      "built"
+     ]
+    },
+    "nodes": {
+     "minItems": 1,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "key": {
+        "type": "string"
+       },
+       "shape": {
+        "type": "string",
+        "enum": [
+         "rect",
+         "cylinder",
+         "diamond",
+         "circle",
+         "hex",
+         "text",
+         "icon",
+         "anim",
+         "code"
+        ]
+       },
+       "label": {
+        "type": "string"
+       },
+       "color": {
+        "type": "string"
+       },
+       "icon": {
+        "type": "string"
+       },
+       "anim": {
+        "type": "string"
+       },
+       "tint": {
+        "type": "boolean"
+       },
+       "x": {
+        "type": "number"
+       },
+       "y": {
+        "type": "number"
+       },
+       "w": {
+        "type": "number"
+       },
+       "h": {
+        "type": "number"
+       },
+       "pulse": {
+        "type": "boolean"
+       },
+       "order": {
+        "type": "number"
+       },
+       "fs": {
+        "type": "number"
+       },
+       "fill": {
+        "type": "string"
+       },
+       "border": {
+        "type": "string",
+        "enum": [
+         "solid",
+         "dashed",
+         "dotted"
+        ]
+       },
+       "lblPos": {
+        "type": "string",
+        "enum": [
+         "center",
+         "top",
+         "bottom",
+         "left",
+         "right"
+        ]
+       },
+       "textBg": {
+        "type": "string"
+       },
+       "textColor": {
+        "type": "string"
+       },
+       "font": {
+        "type": "string"
+       },
+       "bold": {
+        "type": "boolean"
+       },
+       "lang": {
+        "type": "string",
+        "enum": [
+         "sql",
+         "none"
+        ]
+       },
+       "keywords": {
+        "type": "array",
+        "items": {
+         "type": "string"
+        }
+       },
+       "kwBg": {
+        "type": "string"
+       },
+       "kwColor": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "key",
+       "shape"
+      ]
+     }
+    },
+    "edges": {
+     "default": [],
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "from": {
+        "type": "string"
+       },
+       "to": {
+        "type": "string"
+       },
+       "label": {
+        "type": "string"
+       },
+       "route": {
+        "type": "string",
+        "enum": [
+         "straight",
+         "ortho"
+        ]
+       },
+       "dashed": {
+        "type": "boolean"
+       },
+       "animated": {
+        "type": "boolean"
+       },
+       "flowDir": {
+        "type": "string",
+        "enum": [
+         "normal",
+         "reverse",
+         "alternate"
+        ]
+       },
+       "fromSide": {
+        "type": "string",
+        "enum": [
+         "n",
+         "e",
+         "s",
+         "w"
+        ]
+       },
+       "toSide": {
+        "type": "string",
+        "enum": [
+         "n",
+         "e",
+         "s",
+         "w"
+        ]
+       },
+       "startArrow": {
+        "type": "boolean"
+       },
+       "endArrow": {
+        "type": "boolean"
+       },
+       "lineColor": {
+        "type": "string"
+       },
+       "dotColor": {
+        "type": "string"
+       },
+       "fs": {
+        "type": "number"
+       },
+       "font": {
+        "type": "string"
+       },
+       "bold": {
+        "type": "boolean"
+       },
+       "speedFac": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 4
+       },
+       "dots": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 6
+       },
+       "dotsGlobal": {
+        "type": "boolean"
+       },
+       "arrowSize": {
+        "type": "number",
+        "minimum": 1,
+        "maximum": 2
+       },
+       "kind": {
+        "anyOf": [
+         {
+          "type": "string",
+          "enum": [
+           "FLOWS_TO",
+           "REQUIRES"
+          ]
+         },
+         {
+          "type": "null"
+         }
+        ]
+       }
+      },
+      "required": [
+       "from",
+       "to"
+      ]
+     }
+    },
+    "returnDocument": {
+     "default": true,
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "nodes"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "export_diagram",
+  "title": "Exportar diagrama Fluyo a SVG",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "pageIndex": {
+     "type": "number"
+    },
+    "scale": {
+     "default": 1,
+     "type": "number",
+     "minimum": 0.25,
+     "maximum": 4
+    },
+    "crop": {
+     "default": false,
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "document"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "list_icons",
+  "title": "Listar íconos disponibles",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "list_colors",
+  "title": "Listar colores semánticos",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "list_anims",
+  "title": "Listar GIFs animados",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "list_fonts",
+  "title": "Listar tipografías",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "list_templates",
+  "title": "Listar templates de diagramas",
+  "inputSchema": {
+   "type": "object",
+   "properties": {},
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "create_from_template",
+  "title": "Crear diagrama desde un template",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "templateId": {
+     "type": "string"
+    },
+    "pageName": {
+     "type": "string"
+    },
+    "theme": {
+     "type": "string",
+     "enum": [
+      "dark",
+      "crema",
+      "claro"
+     ]
+    },
+    "labelOverrides": {
+     "default": {},
+     "type": "object",
+     "propertyNames": {
+      "type": "string"
+     },
+     "additionalProperties": {
+      "type": "string"
+     }
+    }
+   },
+   "required": [
+    "templateId"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "describe_document",
+  "title": "Describir un documento Fluyo",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "pageIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "includeSteps": {
+     "default": true,
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "document"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "run_story",
+  "title": "Ejecutar una Historia de Fluyo",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "pageIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "storyId": {
+     "type": "integer",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "document",
+    "storyId"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "author_document",
+  "title": "Crear, modificar y eliminar el diagrama (nodos y conexiones), Historias y eventos de un documento Fluyo",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "operations": {
+     "minItems": 1,
+     "maxItems": 200,
+     "type": "array",
+     "items": {
+      "oneOf": [
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "create_story"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+         },
+         "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "rename_story"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "name"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "duplicate_story"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+         },
+         "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "delete_story"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "add_step"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "eventTypeId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "target": {
+          "$ref": "#/definitions/Target"
+         },
+         "waitMs": {
+          "allOf": [
+           {
+            "$ref": "#/definitions/Wait"
+           }
+          ]
+         },
+         "placement": {
+          "type": "object",
+          "properties": {
+           "sameMomentAs": {
+            "$ref": "#/definitions/IdOrRef"
+           },
+           "position": {
+            "type": "string",
+            "enum": [
+             "before",
+             "after"
+            ]
+           }
+          },
+          "required": [
+           "sameMomentAs"
+          ],
+          "additionalProperties": false
+         },
+         "waitsForArrivalOf": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+           "$ref": "#/definitions/IdOrRef"
+          }
+         },
+         "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+         },
+         "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "eventTypeId",
+         "target"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "remove_step"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "stepId": {
+          "$ref": "#/definitions/IdOrRef"
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "stepId"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "move_step"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "stepId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "direction": {
+          "type": "string",
+          "enum": [
+           "earlier",
+           "later"
+          ]
+         },
+         "to": {
+          "anyOf": [
+           {
+            "type": "object",
+            "properties": {
+             "gapIndex": {
+              "type": "integer",
+              "minimum": 0
+             }
+            },
+            "required": [
+             "gapIndex"
+            ],
+            "additionalProperties": false
+           },
+           {
+            "type": "object",
+            "properties": {
+             "sameMomentAs": {
+              "$ref": "#/definitions/IdOrRef"
+             },
+             "after": {
+              "type": "boolean"
+             }
+            },
+            "required": [
+             "sameMomentAs"
+            ],
+            "additionalProperties": false
+           }
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "stepId"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "duplicate_step"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "stepId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "stepId"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "retarget_step"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "stepId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "target": {
+          "$ref": "#/definitions/Target"
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "stepId",
+         "target"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "set_wait"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "stepId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "waitMs": {
+          "$ref": "#/definitions/Wait"
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "stepId",
+         "waitMs"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "set_step_message"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "stepId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "message": {
+          "anyOf": [
+           {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "stepId",
+         "message"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "set_arrival_dependencies"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "stepId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "waitsForArrivalOf": {
+          "maxItems": 1000,
+          "type": "array",
+          "items": {
+           "$ref": "#/definitions/IdOrRef"
+          }
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "stepId",
+         "waitsForArrivalOf"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "create_node"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "spec": {
+          "type": "object",
+          "properties": {
+           "shape": {
+            "type": "string",
+            "enum": [
+             "rect",
+             "cylinder",
+             "diamond",
+             "circle",
+             "hex",
+             "text",
+             "icon",
+             "anim",
+             "code"
+            ]
+           },
+           "x": {
+            "type": "number"
+           },
+           "y": {
+            "type": "number"
+           },
+           "id": {
+            "type": "integer",
+            "minimum": 1
+           },
+           "w": {
+            "type": "number"
+           },
+           "h": {
+            "type": "number"
+           },
+           "label": {
+            "type": "string",
+            "maxLength": 500
+           },
+           "color": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "fill": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "border": {
+            "type": "string",
+            "enum": [
+             "solid",
+             "dashed",
+             "dotted",
+             "none"
+            ]
+           },
+           "lblPos": {
+            "type": "string",
+            "enum": [
+             "center",
+             "top",
+             "bottom",
+             "left",
+             "right"
+            ]
+           },
+           "textBg": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "textColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "font": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 120
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "bold": {
+            "type": "boolean"
+           },
+           "pulse": {
+            "type": "boolean"
+           },
+           "order": {
+            "type": "number"
+           },
+           "fs": {
+            "anyOf": [
+             {
+              "type": "number"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "icon": {
+            "type": "string",
+            "maxLength": 80
+           },
+           "anim": {
+            "type": "string",
+            "maxLength": 80
+           },
+           "tint": {
+            "type": "boolean"
+           },
+           "lang": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "keywords": {
+            "anyOf": [
+             {
+              "maxItems": 200,
+              "type": "array",
+              "items": {
+               "type": "string",
+               "maxLength": 80
+              }
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "kwBg": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "kwColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           }
+          },
+          "required": [
+           "shape",
+           "x",
+           "y"
+          ],
+          "additionalProperties": false
+         },
+         "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "spec"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "create_connection"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "source": {
+          "$ref": "#/definitions/Endpoint"
+         },
+         "target": {
+          "$ref": "#/definitions/Endpoint"
+         },
+         "spec": {
+          "type": "object",
+          "properties": {
+           "id": {
+            "type": "integer",
+            "minimum": 1
+           },
+           "fromSide": {
+            "anyOf": [
+             {
+              "type": "string",
+              "enum": [
+               "n",
+               "e",
+               "s",
+               "w"
+              ]
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "toSide": {
+            "anyOf": [
+             {
+              "type": "string",
+              "enum": [
+               "n",
+               "e",
+               "s",
+               "w"
+              ]
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "route": {
+            "type": "string",
+            "enum": [
+             "straight",
+             "ortho"
+            ]
+           },
+           "waypoints": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+             "type": "object",
+             "properties": {
+              "x": {
+               "type": "number"
+              },
+              "y": {
+               "type": "number"
+              }
+             },
+             "required": [
+              "x",
+              "y"
+             ],
+             "additionalProperties": false
+            }
+           },
+           "label": {
+            "type": "string",
+            "maxLength": 500
+           },
+           "font": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 120
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "bold": {
+            "type": "boolean"
+           },
+           "animated": {
+            "type": "boolean"
+           },
+           "dashed": {
+            "type": "boolean"
+           },
+           "startArrow": {
+            "type": "boolean"
+           },
+           "endArrow": {
+            "type": "boolean"
+           },
+           "flowDir": {
+            "type": "string",
+            "enum": [
+             "normal",
+             "reverse",
+             "alternate"
+            ]
+           },
+           "lineColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "dotColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "fs": {
+            "anyOf": [
+             {
+              "type": "number"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "speedFac": {
+            "type": "number"
+           },
+           "dots": {
+            "type": "integer"
+           },
+           "dotsGlobal": {
+            "type": "boolean"
+           },
+           "arrowSize": {
+            "anyOf": [
+             {
+              "type": "number"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "kind": {
+            "anyOf": [
+             {
+              "type": "string",
+              "enum": [
+               "FLOWS_TO",
+               "REQUIRES"
+              ]
+             },
+             {
+              "type": "null"
+             }
+            ]
+           }
+          },
+          "additionalProperties": false
+         },
+         "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "source",
+         "target"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "update_node"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "node": {
+          "$ref": "#/definitions/Endpoint"
+         },
+         "spec": {
+          "type": "object",
+          "properties": {
+           "x": {
+            "type": "number"
+           },
+           "y": {
+            "type": "number"
+           },
+           "w": {
+            "type": "number"
+           },
+           "h": {
+            "type": "number"
+           },
+           "shape": {
+            "type": "string",
+            "enum": [
+             "rect",
+             "cylinder",
+             "diamond",
+             "circle",
+             "hex",
+             "text",
+             "code"
+            ]
+           },
+           "label": {
+            "type": "string",
+            "maxLength": 500
+           },
+           "color": {
+            "type": "string",
+            "maxLength": 40
+           },
+           "fill": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "border": {
+            "type": "string",
+            "enum": [
+             "solid",
+             "dashed",
+             "dotted",
+             "none"
+            ]
+           },
+           "lblPos": {
+            "type": "string",
+            "enum": [
+             "center",
+             "top",
+             "bottom",
+             "left",
+             "right"
+            ]
+           },
+           "textBg": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "textColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "font": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 120
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "bold": {
+            "type": "boolean"
+           },
+           "pulse": {
+            "type": "boolean"
+           },
+           "order": {
+            "type": "number"
+           },
+           "fs": {
+            "anyOf": [
+             {
+              "type": "number"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "tint": {
+            "type": "boolean"
+           },
+           "lang": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "keywords": {
+            "anyOf": [
+             {
+              "maxItems": 200,
+              "type": "array",
+              "items": {
+               "type": "string",
+               "maxLength": 80
+              }
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "kwBg": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "kwColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           }
+          },
+          "additionalProperties": false
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "node",
+         "spec"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "update_connection"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "connection": {
+          "$ref": "#/definitions/Endpoint"
+         },
+         "source": {
+          "allOf": [
+           {
+            "$ref": "#/definitions/Endpoint"
+           }
+          ]
+         },
+         "target": {
+          "allOf": [
+           {
+            "$ref": "#/definitions/Endpoint"
+           }
+          ]
+         },
+         "spec": {
+          "type": "object",
+          "properties": {
+           "fromSide": {
+            "anyOf": [
+             {
+              "type": "string",
+              "enum": [
+               "n",
+               "e",
+               "s",
+               "w"
+              ]
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "toSide": {
+            "anyOf": [
+             {
+              "type": "string",
+              "enum": [
+               "n",
+               "e",
+               "s",
+               "w"
+              ]
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "route": {
+            "type": "string",
+            "enum": [
+             "straight",
+             "ortho"
+            ]
+           },
+           "waypoints": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+             "type": "object",
+             "properties": {
+              "x": {
+               "type": "number"
+              },
+              "y": {
+               "type": "number"
+              }
+             },
+             "required": [
+              "x",
+              "y"
+             ],
+             "additionalProperties": false
+            }
+           },
+           "label": {
+            "type": "string",
+            "maxLength": 500
+           },
+           "font": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 120
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "bold": {
+            "type": "boolean"
+           },
+           "animated": {
+            "type": "boolean"
+           },
+           "dashed": {
+            "type": "boolean"
+           },
+           "startArrow": {
+            "type": "boolean"
+           },
+           "endArrow": {
+            "type": "boolean"
+           },
+           "flowDir": {
+            "type": "string",
+            "enum": [
+             "normal",
+             "reverse",
+             "alternate"
+            ]
+           },
+           "lineColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "dotColor": {
+            "anyOf": [
+             {
+              "type": "string",
+              "maxLength": 40
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "fs": {
+            "anyOf": [
+             {
+              "type": "number"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "speedFac": {
+            "type": "number"
+           },
+           "dots": {
+            "type": "integer"
+           },
+           "dotsGlobal": {
+            "type": "boolean"
+           },
+           "arrowSize": {
+            "anyOf": [
+             {
+              "type": "number"
+             },
+             {
+              "type": "null"
+             }
+            ]
+           },
+           "kind": {
+            "anyOf": [
+             {
+              "type": "string",
+              "enum": [
+               "FLOWS_TO",
+               "REQUIRES"
+              ]
+             },
+             {
+              "type": "null"
+             }
+            ]
+           }
+          },
+          "additionalProperties": false
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "connection"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "delete_node"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "node": {
+          "allOf": [
+           {
+            "$ref": "#/definitions/Endpoint"
+           }
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "node"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "delete_connection"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "connection": {
+          "allOf": [
+           {
+            "$ref": "#/definitions/Endpoint"
+           }
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "connection"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "create_page"
+         },
+         "scope": {
+          "type": "string",
+          "const": "document"
+         },
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+         }
+        },
+        "required": [
+         "op",
+         "scope"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "rename_page"
+         },
+         "scope": {
+          "type": "string",
+          "const": "document"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "name"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "delete_page"
+         },
+         "scope": {
+          "type": "string",
+          "const": "document"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "expectedName": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "expectedName"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "set_theme"
+         },
+         "scope": {
+          "type": "string",
+          "const": "document"
+         },
+         "theme": {
+          "type": "string",
+          "enum": [
+           "dark",
+           "crema",
+           "claro"
+          ]
+         },
+         "customBg": {
+          "anyOf": [
+           {
+            "type": "string",
+            "maxLength": 40
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "reorder_nodes"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "nodes": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+           "$ref": "#/definitions/Endpoint"
+          }
+         },
+         "to": {
+          "type": "string",
+          "enum": [
+           "front",
+           "back",
+           "forward",
+           "backward"
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "nodes",
+         "to"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "duplicate_node"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "nodes": {
+          "minItems": 1,
+          "maxItems": 100,
+          "type": "array",
+          "items": {
+           "type": "object",
+           "properties": {
+            "source": {
+             "$ref": "#/definitions/Endpoint"
+            },
+            "ref": {
+             "type": "string",
+             "minLength": 1,
+             "maxLength": 40
+            }
+           },
+           "required": [
+            "source"
+           ],
+           "additionalProperties": false
+          }
+         },
+         "connections": {
+          "type": "string",
+          "enum": [
+           "internal",
+           "none"
+          ]
+         },
+         "offset": {
+          "type": "object",
+          "properties": {
+           "x": {
+            "type": "number"
+           },
+           "y": {
+            "type": "number"
+           }
+          },
+          "required": [
+           "x",
+           "y"
+          ],
+          "additionalProperties": false
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "nodes"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "set_observed_flow"
+         },
+         "scope": {
+          "type": "string",
+          "const": "story"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "storyId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "source": {
+          "anyOf": [
+           {
+            "$ref": "#/definitions/IdOrRef"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         },
+         "target": {
+          "anyOf": [
+           {
+            "$ref": "#/definitions/IdOrRef"
+           },
+           {
+            "type": "null"
+           }
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "storyId",
+         "source",
+         "target"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "set_initial_availability"
+         },
+         "scope": {
+          "type": "string",
+          "const": "page"
+         },
+         "pageIndex": {
+          "type": "integer",
+          "minimum": 0
+         },
+         "nodeId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "state": {
+          "type": "string",
+          "enum": [
+           "UP",
+           "DOWN"
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "pageIndex",
+         "nodeId",
+         "state"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "create_event_type"
+         },
+         "scope": {
+          "type": "string",
+          "const": "eventType"
+         },
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+         },
+         "sentence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+         },
+         "symbol": {
+          "type": "string",
+          "maxLength": 16
+         },
+         "motion": {
+          "type": "string",
+          "enum": [
+           "fast",
+           "normal",
+           "slow"
+          ]
+         },
+         "availability": {
+          "type": "string",
+          "enum": [
+           "UP",
+           "DOWN"
+          ]
+         },
+         "presentation": {
+          "allOf": [
+           {
+            "$ref": "#/definitions/Presentation"
+           }
+          ]
+         },
+         "primitive": {
+          "type": "string",
+          "enum": [
+           "FLOW",
+           "OCCURRENCE",
+           "SET_AVAILABILITY"
+          ]
+         },
+         "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "name",
+         "sentence",
+         "primitive"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "update_event_type"
+         },
+         "scope": {
+          "type": "string",
+          "const": "eventType"
+         },
+         "eventTypeId": {
+          "$ref": "#/definitions/IdOrRef"
+         },
+         "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+         },
+         "sentence": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+         },
+         "symbol": {
+          "type": "string",
+          "maxLength": 16
+         },
+         "motion": {
+          "type": "string",
+          "enum": [
+           "fast",
+           "normal",
+           "slow"
+          ]
+         },
+         "availability": {
+          "type": "string",
+          "enum": [
+           "UP",
+           "DOWN"
+          ]
+         },
+         "presentation": {
+          "allOf": [
+           {
+            "$ref": "#/definitions/Presentation"
+           }
+          ]
+         },
+         "primitive": {
+          "type": "string",
+          "enum": [
+           "FLOW",
+           "OCCURRENCE",
+           "SET_AVAILABILITY"
+          ]
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "eventTypeId"
+        ],
+        "additionalProperties": false
+       },
+       {
+        "type": "object",
+        "properties": {
+         "op": {
+          "type": "string",
+          "const": "delete_event_type"
+         },
+         "scope": {
+          "type": "string",
+          "const": "eventType"
+         },
+         "eventTypeId": {
+          "$ref": "#/definitions/IdOrRef"
+         }
+        },
+        "required": [
+         "op",
+         "scope",
+         "eventTypeId"
+        ],
+        "additionalProperties": false
+       }
+      ]
+     }
+    },
+    "dryRun": {
+     "default": false,
+     "type": "boolean"
+    },
+    "returnDocument": {
+     "default": true,
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "document",
+    "baseRevision",
+    "operations"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#",
+   "definitions": {
+    "IdOrRef": {
+     "anyOf": [
+      {
+       "type": "integer",
+       "minimum": 1
+      },
+      {
+       "type": "object",
+       "properties": {
+        "ref": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 40
+        }
+       },
+       "required": [
+        "ref"
+       ],
+       "additionalProperties": false
+      }
+     ]
+    },
+    "Target": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "edgeId": {
+         "$ref": "#/definitions/IdOrRef"
+        },
+        "reverse": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "edgeId"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "nodeId": {
+         "$ref": "#/definitions/IdOrRef"
+        }
+       },
+       "required": [
+        "nodeId"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "from": {
+         "$ref": "#/definitions/IdOrRef"
+        },
+        "to": {
+         "$ref": "#/definitions/IdOrRef"
+        }
+       },
+       "required": [
+        "from",
+        "to"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "ref": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 40
+        },
+        "reverse": {
+         "type": "boolean"
+        }
+       },
+       "required": [
+        "ref"
+       ],
+       "additionalProperties": false
+      }
+     ]
+    },
+    "Wait": {
+     "type": "integer",
+     "minimum": 0,
+     "maximum": 86400000
+    },
+    "Endpoint": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "ref": {
+         "type": "string",
+         "minLength": 1,
+         "maxLength": 40
+        }
+       },
+       "required": [
+        "ref"
+       ],
+       "additionalProperties": false
+      },
+      {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "integer",
+         "minimum": 1
+        }
+       },
+       "required": [
+        "id"
+       ],
+       "additionalProperties": false
+      }
+     ]
+    },
+    "Presentation": {
+     "type": "object",
+     "properties": {
+      "nodeEffects": {
+       "type": "object",
+       "properties": {
+        "showSymbol": {
+         "type": "boolean"
+        },
+        "symbolSize": {
+         "type": "string",
+         "enum": [
+          "small",
+          "medium",
+          "large"
+         ]
+        },
+        "message": {
+         "type": "string",
+         "maxLength": 120
+        },
+        "messageColor": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": ""
+          },
+          {
+           "type": "string",
+           "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+         ]
+        },
+        "messageSize": {
+         "type": "string",
+         "enum": [
+          "small",
+          "medium",
+          "large"
+         ]
+        },
+        "messageWeight": {
+         "type": "string",
+         "enum": [
+          "normal",
+          "semibold",
+          "bold"
+         ]
+        },
+        "messageFont": {
+         "type": "string",
+         "enum": [
+          "default",
+          "sans",
+          "mono"
+         ]
+        },
+        "messagePosition": {
+         "type": "string",
+         "enum": [
+          "above",
+          "center",
+          "below"
+         ]
+        },
+        "highlight": {
+         "type": "boolean"
+        },
+        "blink": {
+         "type": "boolean"
+        },
+        "dim": {
+         "type": "boolean"
+        },
+        "fillColor": {
+         "anyOf": [
+          {
+           "type": "string",
+           "const": ""
+          },
+          {
+           "type": "string",
+           "pattern": "^#[0-9a-fA-F]{6}$"
+          }
+         ]
+        },
+        "visualDuration": {
+         "type": "string",
+         "enum": [
+          "brief",
+          "normal",
+          "long",
+          "custom"
+         ]
+        },
+        "visualDurationMs": {
+         "type": "integer",
+         "minimum": 300,
+         "maximum": 10000
+        }
+       },
+       "additionalProperties": false
+      },
+      "connectionEffects": {
+       "type": "object",
+       "properties": {
+        "size": {
+         "type": "string",
+         "enum": [
+          "small",
+          "medium",
+          "large"
+         ]
+        },
+        "style": {
+         "type": "string",
+         "enum": [
+          "direct",
+          "smooth",
+          "impulse"
+         ]
+        },
+        "trail": {
+         "type": "string",
+         "enum": [
+          "none",
+          "subtle",
+          "marked"
+         ]
+        },
+        "arrival": {
+         "type": "string",
+         "enum": [
+          "none",
+          "pulse",
+          "glow",
+          "bounce"
+         ]
+        },
+        "during": {
+         "type": "string",
+         "enum": [
+          "none",
+          "halo",
+          "breathe"
+         ]
+        }
+       },
+       "additionalProperties": false
+      }
+     },
+     "additionalProperties": false
+    }
+   }
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "propose_layout",
+  "title": "Proponer posiciones (auto-layout) para una página de un documento Fluyo",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "pageIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "clearWaypoints": {
+     "default": true,
+     "type": "boolean"
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    }
+   },
+   "required": [
+    "document"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "set_theme",
+  "title": "Cambiar el tema y el fondo de un documento Fluyo",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "dryRun": {
+     "default": false,
+     "type": "boolean"
+    },
+    "theme": {
+     "type": "string",
+     "enum": [
+      "dark",
+      "crema",
+      "claro"
+     ]
+    },
+    "customBg": {
+     "anyOf": [
+      {
+       "type": "string",
+       "maxLength": 40
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   "required": [
+    "document",
+    "baseRevision"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "reorder_nodes",
+  "title": "Cambiar el orden Z (capas) de elementos de una página",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "dryRun": {
+     "default": false,
+     "type": "boolean"
+    },
+    "pageIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "nodes": {
+     "minItems": 1,
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 1
+       }
+      },
+      "required": [
+       "id"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "to": {
+     "type": "string",
+     "enum": [
+      "front",
+      "back",
+      "forward",
+      "backward"
+     ]
+    }
+   },
+   "required": [
+    "document",
+    "baseRevision",
+    "pageIndex",
+    "nodes",
+    "to"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ },
+ {
+  "name": "duplicate_node",
+  "title": "Duplicar uno o varios elementos de una página",
+  "inputSchema": {
+   "type": "object",
+   "properties": {
+    "document": {
+     "anyOf": [
+      {
+       "type": "object",
+       "properties": {
+        "app": {
+         "type": "string",
+         "const": "fluyo"
+        },
+        "version": {
+         "type": "number"
+        },
+        "doc": {
+         "type": "object",
+         "properties": {
+          "theme": {
+           "type": "string"
+          },
+          "pages": {
+           "type": "array",
+           "items": {}
+          },
+          "cur": {
+           "type": "number"
+          },
+          "customBg": {
+           "type": "string"
+          }
+         },
+         "additionalProperties": {}
+        },
+        "settings": {
+         "type": "object",
+         "properties": {},
+         "additionalProperties": {}
+        }
+       },
+       "additionalProperties": {}
+      },
+      {
+       "type": "string"
+      }
+     ]
+    },
+    "baseRevision": {
+     "type": "string",
+     "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "dryRun": {
+     "default": false,
+     "type": "boolean"
+    },
+    "pageIndex": {
+     "type": "integer",
+     "minimum": 0
+    },
+    "nodes": {
+     "minItems": 1,
+     "maxItems": 100,
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "id": {
+        "type": "integer",
+        "minimum": 1
+       }
+      },
+      "required": [
+       "id"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "connections": {
+     "type": "string",
+     "enum": [
+      "internal",
+      "none"
+     ]
+    },
+    "offset": {
+     "type": "object",
+     "properties": {
+      "x": {
+       "type": "number"
+      },
+      "y": {
+       "type": "number"
+      }
+     },
+     "required": [
+      "x",
+      "y"
+     ],
+     "additionalProperties": false
+    }
+   },
+   "required": [
+    "document",
+    "baseRevision",
+    "pageIndex",
+    "nodes"
+   ],
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "annotations": {
+   "readOnlyHint": true,
+   "destructiveHint": false,
+   "idempotentHint": true,
+   "openWorldHint": false
+  },
+  "execution": {
+   "taskSupport": "forbidden"
+  }
+ }
+]

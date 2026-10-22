@@ -55,8 +55,8 @@ const MUTATIONS: Mutation[] = [
   M("la respuesta no trae pageMap", AUTHORING, ["    ...(result.pageMap ? { pageMap: result.pageMap } : {}),\n", ""]),
   M("la respuesta trae pageMap siempre", AUTHORING, ["    ...(result.pageMap ? { pageMap: result.pageMap } : {}),", "    pageMap: result.pageMap ?? [],"]),
   M("el resumen no menciona las páginas eliminadas", AUTHORING, ["(pagesDeleted ? `${pagesDeleted} página(s) eliminada(s): los índices de página del documento nuevo están en pageMap. ` : \"\")", "\"\""]),
-  M("la descripción no documenta delete_page", SERVER, ['      "delete_page {pageIndex, expectedName}: expectedName = nombre ACTUAL exacto', '      "expectedName = nombre ACTUAL exacto']),
-  M("la descripción no documenta índices estables ni pageMap", SERVER, ['      "Dentro del lote los pageIndex NO se desplazan (los del inicio + los creados al final); usar una página eliminada es PAGE_DELETED. La respuesta trae pageMap [{from,to}] (to null = eliminada): refs y touchedStories ya usan los índices finales. " +\n', ""]),
+  M("la descripción no documenta delete_page", SERVER, ["delete_page {pageIndex, expectedName} exige su nombre actual exacto", "exige su nombre actual exacto"]),
+  M("la descripción no documenta índices estables ni pageMap", SERVER, ["; dentro del lote los pageIndex no se desplazan (usar una página eliminada es PAGE_DELETED); delete_page {pageIndex, expectedName} exige su nombre actual exacto; pageMap da los índices finales.", "; delete_page {pageIndex, expectedName} exige su nombre actual exacto."]),
 ];
 
 /* ── infraestructura */

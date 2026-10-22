@@ -45,9 +45,9 @@ const MUTATIONS: Mutation[] = [
   M("run_story: el target pierde reverse", STORIES, ["target: stepTarget({ edgeId, nodeId, reverse, ends: ends.get(stepId) }, edge, label),", "target: stepTarget({ edgeId, nodeId, ends: ends.get(stepId) }, edge, label),"]),
   M("run_story: sin extremos del recorrido", STORIES, ["target: stepTarget({ edgeId, nodeId, reverse, ends: ends.get(stepId) }, edge, label),", "target: stepTarget({ edgeId, nodeId, reverse, ends: undefined }, edge, label),"]),
   /* ── 4. Descripciones publicadas y README */
-  M("author_document no publica el SENTIDO", SERVER, ['      "SENTIDO de un paso FLOW: target {edgeId|ref, reverse:true} recorre la conexión de to a from (la respuesta va por la MISMA conexión: no dibujes la inversa); retarget_step fija conexión y sentido (sin reverse = normal). " +\n', ""]),
-  M("describe_document no publica target.reverse", SERVER, ['      "Un paso con target.reverse:true recorre su conexión de to a from: label y frase van en ese sentido (from/to son los de la conexión). " +\n', ""]),
-  M("run_story no publica target.reverse", SERVER, ['      "Un paso con target.reverse:true recorre su conexión de to a from: frase, reasonNode y Trace (reverse:true) van en ese sentido. " +\n', ""]),
+  M("author_document no publica el SENTIDO", SERVER, ['      "SENTIDO: target {edgeId|ref, reverse:true} recorre la conexión de to a from: la respuesta va por la MISMA conexión, no dibujes la inversa. " +\n', ""]),
+  M("describe_document no publica target.reverse", SERVER, ['      "Un paso con target.reverse:true recorre su conexión de to a from (label y frase en ese sentido). " +\n', ""]),
+  M("run_story no publica target.reverse", SERVER, ['      "Un paso con target.reverse:true recorre su conexión de to a from (frase, reasonNode y Trace). " +\n', ""]),
   M("README: el paso 3 guardado sin reverse", README, ['{"id":3,"at":1000,"action":"SEND","edgeId":5,"eventTypeId":2,"reverse":true}', '{"id":3,"at":1000,"action":"SEND","edgeId":5,"eventTypeId":2}']),
   M("README: motivo del ejemplo con la regla vieja (target_down)", README, ['"outcome":{"status":"not_completed","reason":"source_down","reasonNode":{"id":3,"label":"DB"}}}', '"outcome":{"status":"not_completed","reason":"target_down","reasonNode":{"id":3,"label":"DB"}}}']),
   M("README: label del ejemplo en el sentido de la conexión", README, ['"reverse":true,"label":"DB → API"}', '"reverse":true,"label":"API → DB"}']),

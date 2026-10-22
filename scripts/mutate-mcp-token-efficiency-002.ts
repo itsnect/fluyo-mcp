@@ -33,7 +33,7 @@ const MUTATIONS: Mutation[] = [
   M("create_*: sin ids por key", SERVER, ['(nodes ? `\\nIds por key: ${nodes}.` : "")', '""']),
   M("create_*: ids de aristas en otro orden", DIAGRAM, ["edges: created.map(e => e.id) }", "edges: created.map(e => e.id).reverse() }"]),
   M("create_*: todas las keys con el id del primer nodo", DIAGRAM, ["id: idByKey.get(n.key) as number", "id: idByKey.get(input.nodes[0].key) as number"]),
-  M("create_*: la descripción publicada ya no lo anuncia", SERVER, [`"El resumen trae su 'revision' (el baseRevision de author_document: no hace falta describe_document) y los ids asignados (key→id; aristas en el orden de edges). " +\n`, ""]),
+  M("create_*: la descripción publicada ya no lo anuncia", SERVER, [`"El resumen trae su 'revision' (el baseRevision de author_document: no hace falta describe_document) y los ids (key→id; aristas en el orden de edges); sigue con author_document (el enlace vale como 'document') o export_diagram. " +\n`, ""]),
   /* ── 3. editorUrl una vez */
   M("author_document: la URL vuelve al resumen", AUTH, ['"\\nEnlace para abrirlo en Fluyo (dáselo al usuario): editorUrl, en el 2.º bloque."', "`\\nÁbrelo en Fluyo: ${r.editorUrl}`"]),
   M("author_document: editorUrl desaparece del JSON", AUTH, ["link.ok ? { editorUrl: link.url }", "link.ok ? {}"]),

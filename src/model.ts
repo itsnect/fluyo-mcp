@@ -242,7 +242,7 @@ export type FluyoProject = z.infer<typeof FluyoProjectSchema>;
    ═══════════════════════════════════════════════════════════════════════════ */
 
 const commonNodeFields = {
-  key: z.string().describe("Identificador temporal usado solo dentro de esta llamada para que las aristas referencien este nodo (ej: 'gateway', 'kafka')."),
+  key: z.string().describe("Id temporal de esta llamada, para referenciar el nodo en edges (ej. 'gateway')."),
   shape: CreatableShapeSchema,
   /** Sin default: si se omite, el del dominio (createNodeIn): "Nodo", "Texto" en un texto, el SQL de ejemplo en `code`, vacío en
    *  iconos y GIFs. */
@@ -250,41 +250,41 @@ const commonNodeFields = {
   color: z.string().optional().describe("Nombre de list_colors o HEX (#rgb, #rrggbb, #rrggbbaa)."),
   icon: z.string().optional().describe("Solo si shape='icon'. Usa list_icons para ver claves válidas (kafka, gke, cloudsql, lambda, s3, azvm, etc)."),
   anim: z.string().optional().describe("Solo si shape='anim'. Usa list_anims para ver claves válidas (spinner, progress, check, etc)."),
-  tint: z.boolean().optional().describe("Solo si shape='icon'. Tiñe la pastilla del ícono con `color` en vez de dejarle el suyo. Por defecto false: los íconos conservan su color de marca."),
-  x: z.number().optional().describe("Posición X manual. Si se omite junto con y, se calcula con auto-layout."),
+  tint: z.boolean().optional().describe("Solo shape='icon': tiñe el ícono con color (por defecto conserva su color de marca)."),
+  x: z.number().optional(),
   y: z.number().optional(),
   w: z.number().optional(),
   h: z.number().optional(),
-  pulse: z.boolean().optional().describe("Resalta el nodo con un pulso de brillo (útil para el componente central de un diagrama)."),
+  pulse: z.boolean().optional().describe("Pulso de brillo (p. ej. el componente central)."),
   order: z.number().optional().describe("Orden de aparición si se anima 'build' (0 = primero)."),
-  fs: z.number().optional().describe("Tamaño de fuente manual del texto."),
-  fill: z.string().optional().describe("Relleno de la forma: hex, o 'none' para dejarla hueca. Por defecto, el color del nodo al 18% de opacidad."),
-  border: BorderSchema.optional().describe("Estilo del borde de la forma."),
-  lblPos: LabelPosSchema.optional().describe("Dónde va la etiqueta dentro de la forma."),
+  fs: z.number().optional(),
+  fill: z.string().optional().describe("Hex o 'none' (hueco). Por defecto, el color al 18 %."),
+  border: BorderSchema.optional(),
+  lblPos: LabelPosSchema.optional(),
   textBg: z.string().optional().describe("Color de una caja de fondo tras el texto (hex)."),
-  textColor: z.string().optional().describe("Color del texto. Por defecto lo decide el tema."),
+  textColor: z.string().optional(),
   font: z.string().optional().describe("Familia tipográfica. Usa list_fonts; si se omite, hereda la global."),
   bold: z.boolean().optional(),
 
   /* Solo tienen efecto en shape:"code". */
   lang: z.enum(CODE_LANG_NAMES).optional()
-    .describe("Solo en shape='code'. Preset de palabras clave a resaltar. 'sql' cubre SQL y ksqlDB; 'none' desactiva el resaltado. Por defecto 'sql'."),
+    .describe("Solo shape='code': preset de palabras clave ('sql' cubre SQL y ksqlDB; 'none' sin resaltado). Por defecto 'sql'."),
   keywords: z.array(z.string()).optional()
-    .describe("Solo en shape='code'. Lista propia de palabras clave; si se da y no está vacía, sustituye al preset de 'lang'."),
+    .describe("Solo shape='code': lista propia; si no está vacía, sustituye al preset de lang."),
   kwBg: z.string().optional()
-    .describe("Solo en shape='code'. Color de fondo del resaltado de las palabras clave. Por defecto lo pone el tema."),
+    .describe("Solo shape='code': fondo de las palabras clave."),
   kwColor: z.string().optional()
-    .describe("Solo en shape='code'. Color del texto de las palabras clave resaltadas. Por defecto lo pone el tema."),
+    .describe("Solo shape='code': color de las palabras clave."),
 };
 
 export const NodeSpecSchema = z.object(commonNodeFields);
 export type NodeSpec = z.infer<typeof NodeSpecSchema>;
 
 const commonEdgeFields = {
-  from: z.string().describe("key del nodo de origen (el mismo 'key' usado en nodes)."),
+  from: z.string().describe("key del nodo de origen."),
   to: z.string().describe("key del nodo de destino."),
   label: z.string().optional(),
-  route: RouteSchema.optional().describe("'ortho' para líneas en ángulo recto (recomendado en diagramas técnicos), 'straight' para línea directa."),
+  route: RouteSchema.optional().describe("'ortho' (ángulo recto, recomendado en diagramas técnicos) o 'straight'."),
   dashed: z.boolean().optional(),
   animated: z.boolean().optional().describe("Puntos animados fluyendo por la línea (default true)."),
   flowDir: FlowDirSchema.optional(),
@@ -300,7 +300,7 @@ const commonEdgeFields = {
   speedFac: z.number().min(1).max(4).optional().describe("Multiplica la velocidad de los puntos de esta arista (1–4)."),
   dots: z.number().int().min(1).max(6).optional().describe("Número de puntos propio de esta arista. Requiere dotsGlobal=false."),
   dotsGlobal: z.boolean().optional().describe("Si es false, esta arista usa su propio 'dots' en vez del global."),
-  arrowSize: z.number().min(1).max(2).optional().describe("Tamaño de las puntas de esta conexión: 1 (el de siempre, 11×8 px), 1.5 o 2. Solo cambia el dibujo de la punta, no la ruta."),
+  arrowSize: z.number().min(1).max(2).optional().describe("1 (el de siempre), 1.5 o 2. Solo dibujo."),
   /* SCENARIOS-SEMANTICS-001 FASE 5 (D9): antes, z.object lo quitaba en silencio. */
   kind: z.enum(["FLOWS_TO", "REQUIRES"]).nullable().optional().describe("FLOWS_TO = Flujo | REQUIRES = Requisito; sin kind, genérica."),
 };
@@ -318,14 +318,14 @@ export const ReturnDocumentSchema = z.boolean().default(true).describe("false: s
    comprueba que el kernel no recorta nada dentro de ellos y sí fuera. */
 export const CreateDiagramInputShape = {
   pageName: z.string().optional().describe("1 a 80 caracteres. Por defecto, el del editor."),
-  theme: ThemeSchema.optional().describe("Por defecto, el del editor."),
+  theme: ThemeSchema.optional(),
   grid: z.boolean().optional(),
   build: z.boolean().optional().describe("Si es true, los nodos aparecen escalonados según 'order' al reproducir la animación."),
-  autoLayout: z.boolean().default(true).describe("Si es true, calcula x/y de los nodos que no las traigan explícitas, en capas de izquierda a derecha según el grafo de aristas."),
+  autoLayout: z.boolean().default(true),
   speed: z.number().min(0.2).max(2).optional().describe("Velocidad del flujo animado (rango del editor)."),
   dots: z.number().int().min(1).max(6).optional().describe("Cuántos puntos recorren cada arista."),
-  stagger: z.number().min(0.2).max(1.2).optional().describe("Segundos entre la aparición de un nodo y el siguiente cuando build=true (rango del editor)."),
-  single: z.boolean().optional().describe("Modo 'pelota única por ruta': en vez de puntos por flecha, una sola pelota recorre el diagrama y se parte en cada bifurcación."),
+  stagger: z.number().min(0.2).max(1.2).optional().describe("Segundos entre apariciones con build=true."),
+  single: z.boolean().optional().describe("Una sola pelota por ruta, que se parte en cada bifurcación, en vez de puntos por flecha."),
   font: z.string().optional().describe("Tipografía global: la familia CSS completa de list_fonts (otra se rechaza). Por defecto, la del editor."),
   customBg: z.string().optional().describe("Fondo HEX (#rgb, #rrggbb, #rrggbbaa) que sobrescribe el del tema; \"\" = el del tema."),
   skin: SkinSchema,

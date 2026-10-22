@@ -104,7 +104,9 @@ describe("contrato: schema, describe_document y herramientas", () => {
   it("la descripción de author_document documenta páginas, reglas y límites; edit_diagram ya no existe (retirada en 018.10)", async () => {
     const tools = (await h.client.listTools()).tools;
     const a = tools.find(t => t.name === "author_document")!.description!;
-    for (const w of ["create_page", "rename_page", "HEX", "LIMIT_EXCEEDED", "maxNodesPerPage", "coordMax"]) assert.ok(a.includes(w), w);
+    /* MCP-DESCRIPTIONS-001: los nombres de cada límite (coordMax, maxNodesPerPage…) ya no se repiten aquí: la description remite a
+       capabilities.limits y create_node.spec da los números. */
+    for (const w of ["create_page", "rename_page", "HEX", "LIMIT_EXCEEDED", "capabilities.limits"]) assert.ok(a.includes(w), w);
     assert.doesNotMatch(a, /edit_diagram/);
     assert.equal(tools.find(t => t.name === "edit_diagram"), undefined);
     assert.equal(tools.length, 15, "12 de 018.5 + propose_layout (018.6) + set_theme, reorder_nodes, duplicate_node (018.7a) − edit_diagram (018.10)");

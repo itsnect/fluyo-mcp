@@ -42,7 +42,7 @@ const MUTATIONS: Mutation[] = [
     [LOOP, `${LOOP}\n    if (k === "allOf" && Array.isArray(v) && v.length === 1 && (v[0] as { $ref?: string })?.$ref) { out.$ref = (v[0] as { $ref: string }).$ref; continue; }`]),
   M("M10 una definición publicada distinta de la expandida (sin su description)", SERVER,
     [PUBLISH, "return { ...r, tools: r.tools.map(t => { const s = withoutSafeIntBounds(t.inputSchema) as any; if (s.definitions?.Wait) delete s.definitions.Wait.description; return { ...t, inputSchema: s }; }) };"]),
-  M("M11 la guarda de 63 000: Wait con 1,4 KB más de texto", AUTH, [WAIT_TAIL, `${WAIT_TAIL} + " ·".repeat(700)`]),
+  M("M11 la guarda de 63 000: Wait con 9 KB más de texto", AUTH, [WAIT_TAIL, `${WAIT_TAIL} + " ·".repeat(3000)`]), // MCP-DESCRIPTIONS-001 dejó ≈ 8,3 KB de margen
 ];
 
 function layout(root: string) {

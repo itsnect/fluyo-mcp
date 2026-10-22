@@ -59,8 +59,8 @@ const MUTATIONS: Mutation[] = [
   M("kernel: validateProject sin avisos", KERNEL, ["if(warnings.length) out.warnings = warnings;", ""]),
   M("kernel: GENERIC también avisa (W3)", KERNEL, ["&& e.kind!==EDGE_KIND_GENERIC)", ")"]),
   /* ── 5. lo que lee el agente */
-  M("server: author_document no anuncia set_observed_flow", SERVER, ["set_wait, set_arrival_dependencies, set_observed_flow (alcance 'story')", "set_wait, set_arrival_dependencies (alcance 'story')"]),
-  M("server: describe_document no anuncia connectionKind", SERVER, ['"Solo si los hay: connectionKind (FLOWS_TO|REQUIRES),', '"Solo si los hay: (FLOWS_TO|REQUIRES),']),
+  M("server: author_document no anuncia set_observed_flow", SERVER, ["set_arrival_dependencies, set_observed_flow (alcance 'story')", "set_arrival_dependencies (alcance 'story')"]),
+  M("server: describe_document no anuncia connectionKind", SERVER, ['"Si los hay: connectionKind, observedFlow y warnings. "', '"Si los hay: observedFlow y warnings. "']),
 ];
 
 function layout(root: string) {

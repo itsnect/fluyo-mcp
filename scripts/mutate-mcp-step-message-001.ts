@@ -39,8 +39,8 @@ const MUTATIONS: Mutation[] = [
   M("schema: la description de message no dice «no en FLOW»", AUTH, ["(solo eventos de elemento; no en FLOW)", "(solo eventos de elemento)"]),
   /* ── 2. Descriptions de las tools */
   M("author_document: set_step_message fuera de la lista", SERVER, ["set_wait, set_step_message, set_arrival_dependencies", "set_wait, set_arrival_dependencies"]),
-  M("describe_document no dice que da message", SERVER, ["objetivo, frase y message (el globo propio del paso, si lo tiene).", "objetivo y frase."]),
-  M("run_story no dice que da message", SERVER, ["la frase de cada paso (y su message si lo tiene) y las versiones", "la frase de cada paso y las versiones"]),
+  M("describe_document no dice que da message", SERVER, ["objetivo, frase y message (el globo propio del paso, si lo tiene),", "objetivo y frase,"]),
+  M("run_story no dice que da message", SERVER, ["la frase de cada paso (y su message si lo tiene).", "la frase de cada paso."]),
   /* ── 3. describe_document */
   M("describe: el modelo pierde message", STORIES, ["sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId)), message: s.message}))}))", "sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId))}))}))"]),
   M("describe: message siempre (null en los documentos antiguos)", STORIES, ["                        ...(s.message !== undefined ? { message: s.message } : {}),", "                        message: s.message ?? null,"]),
