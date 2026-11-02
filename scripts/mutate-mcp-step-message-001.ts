@@ -26,7 +26,7 @@ const M = (name: string, file: string, ...edits: Edit[]): Mutation => ({ name, f
 
 const AUTH = "src/authoring.ts", STORIES = "src/stories.ts", SERVER = "src/server.ts", KERNEL = "src/generated/kernel-sources.ts";
 /* PRODUCT-NARRATION-001 (fluyo, decisión 258): message vale también en FLOW; las mutaciones que vigilaban el veto vigilan ahora que no vuelva. */
-const ADD_MESSAGE = '    message: StepMessage.describe("In the language of the user's request. Frase de ESTE paso (cualquier evento, también FLOW): al reproducir es el título de su momento y, en un elemento, su globo. El evento y su frase no cambian. No cambia tiempos ni Trace.").optional(),\n';
+const ADD_MESSAGE = '    message: StepMessage.describe("In the language of the user\'s request. Frase de ESTE paso (cualquier evento, también FLOW): al reproducir es el título de su momento y, en un elemento, su globo. El evento y su frase no cambian. No cambia tiempos ni Trace.").optional(),\n';
 const SET_OP = '  z.strictObject({ op: z.literal("set_step_message"), scope: story, ...stepRef, message: StepMessage.nullable().describe("null lo quita.") }),\n';
 
 const MUTATIONS: Mutation[] = [
