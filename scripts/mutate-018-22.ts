@@ -56,7 +56,7 @@ const MUTATIONS: Mutation[] = [
   M("describe_document no expone waitsForArrivalOf del paso", STORIES, ["                        ...(waits.get(s.id)?.length ? { waitsForArrivalOf: waits.get(s.id) } : {}),\n", ""]),
   M("describe_document no expone waitsFor del momento (atómico)", STORIES, ["                    ...(momentWaits.length ? { waitsFor: momentWaits } : {}),\n", ""]),
   M("describe_document mezcla lo inactivo con lo almacenado", STORIES, ["            ...(sc.arrival.ignored.length ? { inactiveArrivalDependencies: sc.arrival.ignored } : {}),\n", ""]),
-  M("author_document pierde los warnings", AUTHTS, ["{ warnings: result.warnings }", "{ warnings: result.warnings.slice(0, 0) }"]),
+  M("author_document pierde los warnings", AUTHTS, ["...(warnings.length ? { warnings } : {}),", "...(warnings.length ? { warnings: warnings.slice(0, 0) } : {}),"]),
   M("el schema MCP no publica set_arrival_dependencies", AUTHTS, ['    op: z.literal("set_arrival_dependencies"),', '    op: z.literal("set_arrival_dependencies_"),']),
 ];
 
