@@ -36,8 +36,8 @@ const MUTATIONS: Mutation[] = [
   M("deriva: el evento admite UNKNOWN", AUTH, ['availability: z.enum(["UP", "DOWN"]).optional()', 'availability: z.enum(["UP", "DOWN", "UNKNOWN"]).optional()']),
   M("deriva: set_initial_availability solo UP", AUTH, ['state: z.enum(["UP", "DOWN"]) }),', 'state: z.enum(["UP"]) }),']),
   /* ── 2. describe_document */
-  M("describe: sin connectionKind", STORIES, ['          ...(e.kind !== "GENERIC" ? { connectionKind: e.kind } : {}),\n', ""]),
-  M("describe: connectionKind con el nombre de target.kind", STORIES, ["? { connectionKind: e.kind } :", "? { kind: e.kind } :"]),
+  M("describe: sin connectionKind", STORIES, ['          ...(e.kind !== "GENERIC" ? { connectionKind: e.kind } : {}),\n', ""], [', ...(e.connectionKind ? { connectionKind: e.connectionKind } : {}) })),', " })),"]),
+  M("describe: connectionKind con el nombre de target.kind", STORIES, ["? { connectionKind: e.kind } :", "? { kind: e.kind } :"], [', ...(e.connectionKind ? { connectionKind: e.connectionKind } : {}) })),', " })),"]),
   M("describe: connectionKind también en la genérica", STORIES, ['...(e.kind !== "GENERIC" ? { connectionKind', '...(true ? { connectionKind']),
   M("describe: sin observedFlow", STORIES, ["            ...(sc.observedFlow\n              ? {", "            ...(sc.observedFlow && sc.stepCount < 0\n              ? {"]),
   M("describe: observedFlow con from/to (no source/target)", STORIES, ["{ observedFlow: { source: sc.observedFlow.from, target: sc.observedFlow.to,", "{ observedFlow: { from: sc.observedFlow.from, to: sc.observedFlow.to,"]),

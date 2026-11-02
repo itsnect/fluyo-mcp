@@ -63,6 +63,7 @@ const MUTATIONS: Mutation[] = [
   /* G5: summary */
   M("M30 full por defecto pasa a summary", MODEL, ['z.enum(["full", "summary"]).default("full")', 'z.enum(["full", "summary"]).default("summary")']),
   M("M31 describe summary pierde los ids de conexión", STORIES, ["connections: p.connections.map(e => ({ id: e.id, from: e.from,", "connections: p.connections.map(e => ({ from: e.from,"]),
+  M("M31b describe summary pierde connectionKind", STORIES, [', ...(e.connectionKind ? { connectionKind: e.connectionKind } : {}) })),', " })),"]),
   M("M32 describe summary pierde la disponibilidad inicial", STORIES, ['...(n.availability !== "UP" ? { availability: n.availability } : {}) })),\n      connections', "})),\n      connections"]),
   M("M33 describe summary pierde unmodeled", STORIES, ["    unmodeled: d.unmodeled,\n  };\n}\n\n/* ===================== run_story", "  };\n}\n\n/* ===================== run_story"]),
   M("M34 run summary conserva el Trace", SERVER, ['json(detail === "summary" ? summaryOfRun(result) : result)', "json(result)"]),

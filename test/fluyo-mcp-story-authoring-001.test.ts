@@ -550,6 +550,10 @@ describe("T8 · detail:summary (G5)", () => {
     assert.deepEqual(j.pages[0].nodes[2], { id: 3, label: "Bank", availability: "DOWN" });
     assert.equal(j.pages[0].nodes[0].label, "Store / front");
     assert.deepEqual(j.eventTypes[2], { id: 3, name: "Outage", primitive: "SET_AVAILABILITY", availability: "DOWN" });
+    /* La semántica de la conexión también cuenta para escribir: un Requisito no se recorre como un Flujo. */
+    const kind = await author({ doc: a.document, revision: a.resultRevision }, [{ op: "update_connection", scope: "page", pageIndex: 0, connection: { id: 4 }, spec: { kind: "REQUIRES" } }]);
+    const k = data(await call("describe_document", { document: kind.document, detail: "summary" }));
+    assert.deepEqual(k.pages[0].connections[0], { id: 4, from: 1, to: 2, connectionKind: "REQUIRES" });
   });
 
   it("documento ilegible: la misma respuesta en los dos modos", async () => {
