@@ -60,7 +60,7 @@ describe("kernel: copia verbatim de fluyo/js", () => {
 
   it("incluye el dominio y la autoridad de integridad, en orden de carga", () => {
     assert.deepEqual(KERNEL_FILES.map(f => f.name), [
-      "config.js", "safe-svg.js", "model.js", "scenario-engine.js", "scenario-playback.js", "story-playback.js", "document-integrity.js", "story-authoring.js",
+      "config.js", "safe-svg.js", "model.js", "scenario-engine.js", "scenario-playback.js", "story-playback.js", "story-clock.js", "document-integrity.js", "story-authoring.js",
     ]);
   });
 

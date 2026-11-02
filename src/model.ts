@@ -224,7 +224,7 @@ export const DocumentObjectSchema = z
 export const DocumentInputSchema = z
   .union([DocumentObjectSchema, z.string()])
   .describe(
-    "El documento Fluyo (.fluyo.json) o su enlace #d= (editorUrl o el del resumen de create_*) copiado EXACTO; con enlace, baseRevision obligatorio."
+    "El documento Fluyo (.fluyo.json) o su enlace #d= copiado EXACTO; con enlace, baseRevision obligatorio (solo describe_document lo lee sin ella y te la da)."
   );
 
 export type Shape = z.infer<typeof ShapeSchema>;
@@ -312,6 +312,8 @@ export type EdgeSpec = z.infer<typeof EdgeSpecSchema>;
  *  enlace + la revisión se sigue igual, TE-003); sin enlace (LINK_TOO_LARGE) lo trae igual. Solo en esas dos tools: el catálogo no da
  *  para más (las de una operación tienen su operación en author_document). Una description corta: se publica dos veces. */
 export const ReturnDocumentSchema = z.boolean().default(true).describe("false: sin documento; sigue con el enlace y la revisión.");
+/** FLUYO-MCP-STORY-AUTHORING-001 (G5): `summary` quita lo que no hace falta para escribir una Historia. Sin él, la respuesta es la de siempre. */
+export const DetailSchema = z.enum(["full", "summary"]).default("full");
 
 /* FLUYO-018.9: sin `.default()` en página, tema ni ajustes: lo omitido toma el valor del documento en blanco del editor (model.js), no
    una copia aquí. Los rangos de speed/stagger/dots son los de los controles del editor y de su carga (settingsFromProjectData); un test

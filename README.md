@@ -101,11 +101,39 @@ fluyo/js (kernel)  ──sync:kernel──▶  src/generated/kernel-sources.ts  
  modelo · motor · FluyoStory · FluyoIntegrity   (copia verbatim + sha256)      describe_document · run_story
 ```
 
-- **El motor no se reimplementa.** `npm run sync:kernel` copia, sin modificarlos, los scripts de `fluyo/js` (`config`, `safe-svg`, `model`, `scenario-engine`, `scenario-playback`, `story-playback`, `document-integrity`). Cada llamada los carga en un contexto `vm` nuevo. `npm run check:kernel` (y el job `drift`) falla si la copia se desvía de `fluyo/`. Cada resultado trae el `kernelId` (hash del conjunto) para poder reproducirlo. El `vm` no trae los globals web que el kernel da por existentes; `src/kernel.ts` envuelve `atob`, `btoa`, `TextEncoder` y `TextDecoder` de Node en la frontera (los usan los nodos `image` al leer un documento). Eso no modifica el kernel ni cambia el `kernelId`.
+- **El motor no se reimplementa.** `npm run sync:kernel` copia, sin modificarlos, los scripts de `fluyo/js` (`config`, `safe-svg`, `model`, `scenario-engine`, `scenario-playback`, `story-playback`, `story-clock`, `document-integrity`, `story-authoring`). Cada llamada los carga en un contexto `vm` nuevo. `npm run check:kernel` (y el job `drift`) falla si la copia se desvía de `fluyo/`. Cada resultado trae el `kernelId` (hash del conjunto) para poder reproducirlo. El `vm` no trae los globals web que el kernel da por existentes; `src/kernel.ts` envuelve `atob`, `btoa`, `TextEncoder` y `TextDecoder` de Node en la frontera (los usan los nodos `image` al leer un documento). Eso no modifica el kernel ni cambia el `kernelId`.
 - **Validación única.** La integridad (referencias a elementos, conexiones y eventos, acciones compatibles con su evento, Behaviors, ids, versión de schema y de motor) la decide `FluyoIntegrity` de Fluyo, no este servidor.
 - **Un paso `OCCURRENCE` es siempre `narrated`**: el motor lo registra aunque el elemento esté no disponible; no prueba que ocurriera nada real. Reintentos, colas, timeouts y lógica interna de los elementos no están en el modelo y se declaran en `unmodeled`.
 - Si una Historia no es válida (p. ej. apunta a una conexión eliminada) no hay Trace: se devuelven los errores con su Historia y Step.
+- **El desenlace de una Historia** es el mismo que muestran el editor, Present y el Viewer: sale de `FluyoStoryClock.outcome`, el archivo del producto, no de una copia. Lo da `describe_document` en cada Historia (`outcome`), `run_story` (`storyOutcome`) y `author_document` en las que toca (`stories[].outcome`). Es un dato estructurado; el texto visible es de la app y de su idioma:
+
+  ```json
+  { "status": "no_failures" }
+  { "status": "failed", "moment": 3, "stepId": 3, "reason": "target_down", "reasonNode": { "id": 3, "label": "Bank" } }
+  { "status": "empty" }
+  { "status": "not_executable" }
+  ```
+
+  `moment` empieza en 1, como «Falla en el paso N» de la app; `steps[].moment` de `run_story` empieza en 0.
 - **Sentido del recorrido**: un paso que recorre su conexión al revés (`reverse:true`, ver la autoría) sale en `describe_document` y en `run_story` con `target.reverse:true`. `target.from`/`target.to` son siempre los de la **conexión**; `target.label`, la frase y el motivo de un fallo (`reasonNode`) van en el sentido del **recorrido**. Sus eventos del Trace (`send_started`, `send_succeeded`, `send_failed`) llevan `reverse:true` detrás de `edgeId`. Sin `reverse`, la salida es la de siempre, clave a clave.
+
+---
+
+## Escribir una Historia: el recorrido mínimo
+
+```text
+enlace o documento ─▶ describe_document (detail:"summary") ─▶ author_document (baseRevision, detail:"summary") ─▶ editorUrl para la persona
+                       revision, ids, eventos, outcome          stories[].outcome, warnings, storyRefs, resultRevision
+```
+
+- **Dos llamadas.** `run_story` solo hace falta para ver el Trace o cada paso: el desenlace ya viene en la respuesta, también con `dryRun:true`.
+- **Un enlace de una persona.** `describe_document` lo lee **sin** `baseRevision` y da su `revision` canónica (con `linkRevisionUnverified:true`, porque sin revisión no se puede comprobar una copia). Es solo para leer: cualquier escritura sigue exigiendo `baseRevision`, y lo truncado o corrupto se rechaza sin reconstruir nada. Un enlace de Compartir (`/s/`) lo marca `linkKind:"viewer"`: es una instantánea, sin las Historias de otras páginas.
+- **Un fallo es del motor.** El destino pasa a `DOWN` con un evento `SET_AVAILABILITY` en un momento **anterior** al envío: el envío queda `not_completed` y `outcome` es `failed`, con el mismo Trace que «Falla aquí» de la app. En el mismo momento no falla, y un `message` nunca causa un fallo.
+- **Otras Historias.** `set_initial_availability` es de la página y afecta a todas sus Historias. Si un lote cambia el desenlace de una Historia que no editó, sigue siendo `ok:true`, pero `warnings[]` lleva `STORY_OUTCOME_CHANGED` con `before` y `after`.
+- **Idioma.** `name` y `message` van en el idioma de la petición del usuario, aunque el catálogo esté en español. Los elementos del documento no se traducen.
+- **`detail:"summary"`** quita lo que no hace falta para escribir: en `describe_document`, coordenadas, pasos y `capabilities`; en `author_document`, `changes` y `unmodeled`; en `run_story`, `trace` y `unmodeled`. Sin él, las respuestas son las de siempre, con los campos nuevos añadidos.
+- **Errores de schema.** Lo que Zod rechaza antes de llegar a la tool lleva un 2.º bloque `{ok:false, errors:[{code:"SCHEMA_INVALID", path, operationIndex, operation, issue, expected, received}]}`. `TARGET_NOT_FOUND` y `TARGET_INCOMPATIBLE` traen `candidates` de esa página.
+- **Sin parentesco.** Una variante es otra Historia de la misma página: `duplicate_story` y `remove_step` dan lo mismo que «Otra forma desde aquí». El modelo no guarda de qué Historia sale.
 
 ---
 
@@ -653,6 +681,7 @@ src/
   templates.ts      # Plantillas de arquitectura
   link.ts           # Enlace fluyo.space/#d=… (deflate-raw + base64url)
   link-input.ts     # El enlace #d= como document: lectura, baseRevision y documento normalizado
+  schema-errors.ts  # Los rechazos de Zod, estructurados y cortos (SCHEMA_INVALID)
   server.ts         # Registro de las tools MCP — común a los dos transportes
   index.ts          # Entry point 1: stdio
   http.ts           # Entry point 2: Streamable HTTP (stateless) + rutas del host
@@ -678,6 +707,7 @@ test/
   fluyo-mcp-token-efficiency-002.test.ts # JSON compacto, revision e ids en create_*, enlace una vez, schema sin topes de entero seguro
   fluyo-mcp-token-efficiency-003.test.ts # el enlace #d= como document: equivalencia byte a byte, revisión, corrupción, topes
   fluyo-mcp-token-efficiency-004.test.ts # returnDocument:false: catálogo, identidad sin el flag, sin enlace, rechazos, encadenado
+  fluyo-mcp-story-authoring-001.test.ts # Desenlace, aviso de efectos, enlace de una persona, errores de schema, candidatos y summary
   fixtures/         # Copias de fluyo/ejemplos/ (datos y previews de referencia)
 ```
 

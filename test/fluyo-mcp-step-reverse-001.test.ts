@@ -401,29 +401,40 @@ describe("MCP-STEP-REVERSE-001 · documentos antiguos", () => {
     return dirs.flatMap(dir => readdirSync(dir).filter(f => f.endsWith(".fluyo.json")).map(f => ({ name: f, doc: JSON.parse(readFileSync(join(dir, f), "utf8")) })));
   };
 
-  it("ningún documento del corpus lleva reverse; describe_document y run_story no añaden ni una clave y la etiqueta sigue siendo from → to", () => {
+  /* Hasta FLUYO-EXAMPLES-001 ningún documento del corpus llevaba reverse. Desde entonces, los ejemplos sí (compra-online): el contrato real es que
+     reverse solo aparece en los pasos que lo llevan. */
+  it("describe_document y run_story solo dicen reverse donde el documento lo lleva; sin él, ni una clave y la etiqueta sigue siendo from → to", () => {
     const docs = corpus();
-    let stories = 0;
+    let stories = 0, withoutReverse = 0, reversed = 0;
     for (const { name, doc } of docs) {
-      assert.ok(!JSON.stringify(doc).includes('"reverse"'), name);
+      const lacksReverse = !JSON.stringify(doc).includes('"reverse"');
       const d: any = describeDocument({ document: doc });
       if (!d.readable) continue;
-      assert.ok(!JSON.stringify(d).includes('"reverse"'), `${name}: describe_document`);
+      if (lacksReverse) withoutReverse++;
+      if (lacksReverse) assert.ok(!JSON.stringify(d).includes('"reverse"'), `${name}: describe_document`);
       d.pages.forEach((pg: any, pageIndex: number) => {
         const label = new Map(pg.nodes.map((n: any) => [n.id, n.label]));
         for (const sc of pg.stories) {
           stories++;
           for (const s of sc.moments.flatMap((m: any) => m.steps)) {
             if (s.target.kind !== "connection" || s.target.from === undefined) continue;
-            assert.deepEqual(Object.keys(s.target), ["kind", "id", "from", "to", "label"], name);
-            assert.equal(s.target.label, `${label.get(s.target.from)} → ${label.get(s.target.to)}`, name);
+            if (s.target.reverse) {
+              reversed++;
+              assert.deepEqual(Object.keys(s.target), ["kind", "id", "from", "to", "reverse", "label"], name);
+              assert.equal(s.target.label, `${label.get(s.target.to)} → ${label.get(s.target.from)}`, name);
+            } else {
+              assert.deepEqual(Object.keys(s.target), ["kind", "id", "from", "to", "label"], name);
+              assert.equal(s.target.label, `${label.get(s.target.from)} → ${label.get(s.target.to)}`, name);
+            }
           }
           const run: any = runStory({ document: doc, pageIndex, storyId: sc.storyId });
-          assert.ok(!JSON.stringify(run).includes('"reverse"'), `${name}: run_story ${sc.storyId}`);
+          if (lacksReverse) assert.ok(!JSON.stringify(run).includes('"reverse"'), `${name}: run_story ${sc.storyId}`);
         }
       });
     }
     assert.ok(stories >= 5, `el corpus tiene Historias (${stories})`);
+    assert.ok(withoutReverse >= 5, `documentos sin reverse: ${withoutReverse}`);
+    assert.ok(!existsSync(join(FLUYO, "ejemplos", "data")) || reversed >= 1, "los ejemplos publicados usan reverse");
   });
 
   it("los mismos lotes sin reverse dan el mismo documento que antes: revisiones fijadas en la base (kernel 544fd4b)", () => {

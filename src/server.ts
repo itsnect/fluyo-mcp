@@ -2,16 +2,17 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 
 import { ANIMS, CANVAS, DEFAULT_FONT, FONTS, ICON_GROUPS, ICONS, PALETTE } from "./schema.js";
-import { CreateDiagramInputShape, DocumentInputSchema, ReturnDocumentSchema, ThemeSchema, projectSkin } from "./model.js";
+import { CreateDiagramInputShape, DetailSchema, DocumentInputSchema, ReturnDocumentSchema, ThemeSchema, projectSkin } from "./model.js";
 import { createDiagramResult, createFromTemplateResult, parseDocument, type CreateDiagramResult, type CreatedIds } from "./diagram.js";
 import type { FluyoProject } from "./model.js";
 import { pageToSVG } from "./svg.js";
 import { openLink, openLinkLine } from "./link.js";
 import { TEMPLATES } from "./templates.js";
-import { describeDocument, runStory, summarizeDescription, summarizeRun } from "./stories.js";
-import { AuthoringOperationSchema, DuplicateFields, ThemeFields, ZPlacement, authorDocument, authorSingle, summarizeAuthoring } from "./authoring.js";
+import { describeDocument, runStory, summarizeDescription, summarizeRun, summaryOfDescription, summaryOfRun } from "./stories.js";
+import { AuthoringOperationSchema, DuplicateFields, ThemeFields, ZPlacement, authorDocument, authorSingle, summarizeAuthoring, summaryOfAuthoring } from "./authoring.js";
 import { proposeLayout, summarizeLayout } from "./propose-layout.js";
-import { linkErrorText, resolveDocument } from "./link-input.js";
+import { isViewerLink, linkErrorText, resolveDocument, resolveLinkForRead } from "./link-input.js";
+import { withStructuredSchemaError } from "./schema-errors.js";
 import { createKernel } from "./kernel.js";
 import { REVISION_MISMATCH_MESSAGE, revisionOf } from "./revision.js";
 
@@ -103,6 +104,17 @@ function readDocument(document: unknown, baseRevision: string | undefined): unkn
   return r.document;
 }
 
+/** FLUYO-MCP-STORY-AUTHORING-001 (G1): lo que describe_document añade a la respuesta cuando recibe un enlace. */
+function linkFacts(document: unknown, baseRevision: string | undefined) {
+  if (typeof document !== "string") return {};
+  return {
+    ...(baseRevision === undefined ? { linkRevisionUnverified: true as const } : {}),
+    ...(isViewerLink(document)
+      ? { linkKind: "viewer" as const, linkNote: "Enlace de Compartir: instantánea con esta Historia y su familia, sin las Historias de otras páginas." }
+      : {}),
+  };
+}
+
 /* ===================== schema publicado (MCP-TOKEN-EFFICIENCY-002) =====================
    Zod 4 publica cada z.number().int() con minimum/maximum = ±Number.MAX_SAFE_INTEGER (eran 79 topes, ~2 KB de tools/list). Esos topes
    solo repiten lo que ya exige la validación real (Zod, que no se toca: un entero no seguro se sigue rechazando); los topes propios
@@ -124,6 +136,8 @@ export function withoutSafeIntBounds(schema: unknown): unknown {
 }
 
 type ListHandler = (request: unknown, extra: unknown) => Promise<{ tools: Array<{ inputSchema?: unknown }> }>;
+type CallRequest = { params?: { arguments?: unknown } };
+type CallHandler = (request: CallRequest, extra: unknown) => Promise<{ content?: Array<{ type: string; text?: string }>; isError?: boolean }>;
 
 /** Envuelve el tools/list que instala McpServer (al registrar la primera tool) para publicar el schema sin esos topes. El SDK no
  *  ofrece un gancho público para esto; la versión está fijada (1.29.0) y, si cambia el mapa de handlers, esto falla al arrancar en
@@ -142,6 +156,16 @@ function withCompactToolSchemas(server: McpServer): McpServer {
 /** Registra las herramientas de Fluyo sobre una instancia nueva de McpServer. Separado de
  *  index.ts para poder conectarlo tanto a stdio (uso real) como a un InMemoryTransport
  *  (los tests de test/) sin duplicar las definiciones de herramientas. */
+/** FLUYO-MCP-STORY-AUTHORING-001 (G4): el rechazo de Zod lo emite el SDK antes de la tool, así que solo aquí se le puede dar forma. Mismo gancho y
+ *  misma salvaguarda que withCompactToolSchemas: si el mapa de handlers cambia, falla al arrancar. */
+function withStructuredSchemaErrors(server: McpServer): McpServer {
+  const handlers = (server.server as unknown as { _requestHandlers?: Map<string, CallHandler> })._requestHandlers;
+  const call = handlers?.get("tools/call");
+  if (!handlers || !call) throw new Error("fluyo-mcp: el SDK ya no expone el handler de tools/call; revisa withStructuredSchemaErrors.");
+  handlers.set("tools/call", async (request, extra) => withStructuredSchemaError(await call(request, extra), request.params?.arguments));
+  return server;
+}
+
 export function buildServer(): McpServer {
   return withCompactToolSchemas(buildServerAsSdkPublishes());
 }
@@ -361,18 +385,33 @@ server.registerTool(
       "Si los hay: connectionKind, observedFlow y warnings. " +
       "Valida la integridad con la regla del motor y declara lo que el modelo NO representa. " +
       "No modifica nada. " +
-      "Los storyId son por página; includeSteps:false omite los pasos.",
+      "Los storyId son por página; includeSteps:false omite los pasos. " +
+      "Cada Historia trae outcome (no_failures, failed con moment y stepId, empty o not_executable). " +
+      "ENLACE DE UNA PERSONA: pásalo sin baseRevision; la respuesta trae su 'revision' para author_document (solo esta tool lo lee sin ella). " +
+      "detail:\"summary\" da lo necesario para escribir una Historia (ids, nombres, conexiones, eventos, outcome), sin coordenadas ni pasos.",
     inputSchema: {
       document: DocumentInputSchema,
       baseRevision: LinkRevision,
       pageIndex: z.number().int().min(0).optional().describe("Describe sólo esta página (por defecto, todas)."),
       includeSteps: z.boolean().default(true).describe("Incluir los pasos de cada Historia."),
+      detail: DetailSchema,
     },
   },
-  async ({ document, baseRevision, pageIndex, includeSteps }) => {
+  async ({ document, baseRevision, pageIndex, includeSteps, detail }) => {
     try {
-      const description = describeDocument({ document: readDocument(document, baseRevision), pageIndex, includeSteps });
-      return ok(summarizeDescription(description), json(description));
+      /* Un enlace sin revisión solo se admite aquí, para leer. Las escrituras siguen exigiéndola (resolveDocument). */
+      let input: unknown;
+      if (typeof document === "string" && baseRevision === undefined) {
+        const r = resolveLinkForRead(document);
+        if (!r.ok) throw new Error(linkErrorText(r.error));
+        input = r.document;
+      } else {
+        input = readDocument(document, baseRevision);
+      }
+      const summary = detail === "summary";
+      const description = describeDocument({ document: input, pageIndex, includeSteps: includeSteps && !summary });
+      const view = summary ? summaryOfDescription(description) : description;
+      return ok(summarizeDescription(description), json({ ...view, ...linkFacts(document, baseRevision) }));
     } catch (err) {
       return fail(err);
     }
@@ -390,18 +429,20 @@ server.registerTool(
       "Si la Historia no es válida, errores y sin Trace. " +
       "Un paso con target.reverse:true recorre su conexión de to a from (frase, reasonNode y Trace). " +
       "No modifica el documento. " +
-      "pageIndex y storyId (por página) salen de describe_document.",
+      "pageIndex y storyId (por página) salen de describe_document. " +
+      "storyOutcome es el desenlace de la Historia (moment empieza en 1; steps[].moment, en 0). detail:\"summary\" omite trace y unmodeled.",
     inputSchema: {
       document: DocumentInputSchema,
       baseRevision: LinkRevision,
       pageIndex: z.number().int().min(0).optional().describe("Página de la Historia (por defecto, la página actual del documento)."),
       storyId: z.number().int().min(1).describe("Id de la Historia en esa página (los ids de Historia son por página)."),
+      detail: DetailSchema,
     },
   },
-  async ({ document, baseRevision, pageIndex, storyId }) => {
+  async ({ document, baseRevision, pageIndex, storyId, detail }) => {
     try {
       const result = runStory({ document: readDocument(document, baseRevision), pageIndex, storyId });
-      return ok(summarizeRun(result), json(result));
+      return ok(summarizeRun(result), json(detail === "summary" ? summaryOfRun(result) : result));
     } catch (err) {
       return fail(err);
     }
@@ -419,17 +460,19 @@ server.registerTool(
        primeros 2 048 caracteres, porque hay clientes que truncan las descriptions largas; lo que el schema ya dice no se repite, y la lista de
        operaciones por alcance (K9) va al FINAL. Un test fija ese orden. */
     description:
-      "Aplica un LOTE ATÓMICO (todo o nada) de operaciones sobre una COPIA del documento; el original no cambia. " +
+      "Historia = Story. Aplica un LOTE ATÓMICO (todo o nada) de operaciones sobre una COPIA del documento; el original no cambia. " +
+      "LANGUAGE: names and messages in the language of the user's request, not of this catalog. " +
       "CLAVE: baseRevision = la revisión de ESTE documento ('revision' de create_* o de describe_document, o el resultRevision de la autoría anterior); si no coincide, REVISION_MISMATCH con la real en 'actual'. " +
       "La respuesta trae changes, refs [{ref,type,pageIndex,id}], resultRevision (el baseRevision de la siguiente) y editorUrl: el enlace fluyo.space/#d=… del resultado; dáselo al usuario y pásalo como 'document' en la siguiente llamada (si no cabe, editorUrlError LINK_TOO_LARGE). " +
-      "Después, run_story para ver el Trace. " +
+      "stories[] trae el outcome; run_story para ver el Trace. " +
       "LOTE: 'ref' nombra algo creado en el lote (no se guarda; por página) y {ref} vale después en source/target, update_*/delete_*, storyId, eventTypeId y target de pasos: diagrama, eventos e Historia caben en una sola llamada. " +
       "Se evalúa el ESTADO FINAL: si deja una Historia apuntando a algo eliminado se rechaza TODO con REFERENCED_ENTITY (nada se limpia en silencio). " +
       "EVENTOS (alcance 'eventType', GLOBALES al documento, sin pageIndex): primitive FLOW = conexión, OCCURRENCE = elemento, SET_AVAILABILITY = elemento que pasa a availability UP|DOWN; sentence con {source} {target} {name} (en un evento de elemento, {target} es el elemento). " +
       "Un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) ni se elimina (REFERENCED_ENTITY). " +
+      "FALLO: destino DOWN en un momento ANTERIOR al envío. " +
       "SENTIDO: target {edgeId|ref, reverse:true} recorre la conexión de to a from: la respuesta va por la MISMA conexión, no dibujes la inversa. " +
       "TIEMPO: add_step añade al final tras waitMs (por defecto 1000, el primero 0) o en el mismo momento con placement; waitMs 0 = el mismo momento que el anterior. " +
-      "waitMs se cuenta desde el INICIO del momento anterior y no incluye ni espera el viaje visual del token de un SEND (motion fast/normal/slow = 500/1100/1800 ms es presentación: no lo uses para calcular esperas). " +
+      "waitMs se cuenta desde el INICIO del momento anterior y no incluye ni espera el viaje visual del token de un SEND. " +
       "DEPENDENCIAS DE LLEGADA (explícitas, nunca se infieren de las conexiones). " +
       "PATRÓN: todo paso que narre la recepción, el procesamiento o la consecuencia de un envío declara waitsForArrivalOf de ese SEND (A→B→C: M1 A envía a B; M2 B procesa, waitsForArrivalOf [M1]; M3 B envía a C; M4 C procesa, waitsForArrivalOf [M3]); lo que no dependa de una llegada lleva solo waitMs; un paso sobre el nodo destino sin dependencia no es una recepción. " +
       "Solo se espera a pasos SEND de un momento ANTERIOR (un paso de elemento no llega a ningún sitio; tras él basta waitMs: un retraso desplaza también los momentos siguientes). " +
@@ -439,19 +482,25 @@ server.registerTool(
       "DIAGRAMA: colores SOLO en HEX; icon/anim de list_icons/list_anims; los límites (capabilities.limits) se evalúan sobre el estado final (LIMIT_EXCEEDED). " +
       "update_* solo cambia lo enviado. " +
       "duplicate_node copia también las conexiones ENTRE los elementos; 'ref' nombra la copia. " +
+      "motion fast/normal/slow = 500/1100/1800 ms es presentación: no lo uses para calcular esperas. " +
+      "FALLO REAL: evento SET_AVAILABILITY DOWN sobre el destino, ANTES del envío: este queda not_completed y outcome failed (moment = el paso N de la app). En el MISMO momento no falla y un message nunca causa un fallo. " +
+      "set_initial_availability afecta a TODAS las Historias de la página: si otra cambia de desenlace, aviso STORY_OUTCOME_CHANGED. " +
+      "storyRefs da los ids de lo creado con 'ref' en Historias, pasos y eventos. " +
+      "No traduzcas los elementos que ya tiene el documento. " +
       "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait, set_step_message, set_arrival_dependencies, set_observed_flow (alcance 'story'); set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection, reorder_nodes, duplicate_node (alcance 'page'); create_page, rename_page, delete_page, set_theme (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id).",
     inputSchema: {
       document: DocumentInputSchema,
       baseRevision: z.string().regex(/^sha256:[0-9a-f]{64}$/).describe("La revisión de este documento (create_*, resultRevision anterior o describe_document)."),
       operations: z.array(AuthoringOperationSchema).min(1).max(200),
-      dryRun: z.boolean().default(false).describe("Sólo validar y devolver los cambios; no se devuelve documento."),
+      dryRun: z.boolean().default(false).describe("Sólo validar y devolver los cambios y stories; no se devuelve documento."),
       returnDocument: ReturnDocumentSchema,
+      detail: DetailSchema.describe("summary: sin changes ni unmodeled; quedan refs, stories, warnings, resultRevision y editorUrl."),
     },
   },
-  async ({ document, baseRevision, operations, dryRun, returnDocument }) => {
+  async ({ document, baseRevision, operations, dryRun, returnDocument, detail }) => {
     try {
       const result = authorDocument({ document, baseRevision, operations, dryRun, returnDocument });
-      const blocks = [summarizeAuthoring(result), json(result)];
+      const blocks = [summarizeAuthoring(result), json(detail === "summary" ? summaryOfAuthoring(result) : result)];
       return result.ok ? ok(...blocks) : { ...ok(...blocks), isError: true };
     } catch (err) {
       return fail(err);
@@ -558,5 +607,5 @@ server.registerTool(
     })
 );
 
-  return server;
+  return withStructuredSchemaErrors(server);
 }

@@ -37,18 +37,20 @@ const stripDescriptions = (v: unknown): unknown =>
 const authorTool = async () => (await h.client.listTools()).tools.find(t => t.name === "author_document")!;
 
 describe("T1 · tamaño de tools/list", () => {
-  it("≤ 55 000 B (la ganancia no se diluye en silencio), bajo la guarda de 63 000 y el tope de 72 000", async () => {
+  it("≤ 57 000 B (la ganancia no se diluye en silencio; STORY-AUTHORING-001 subió 55 000), bajo la guarda de 63 000 y el tope de 72 000", async () => {
     const bytes = Buffer.byteLength(JSON.stringify(await h.client.listTools()));
-    assert.ok(bytes <= 55_000, `tools/list = ${bytes} B`);
+    assert.ok(bytes <= 57_000, `tools/list = ${bytes} B`);
     assert.ok(bytes <= 63_000 && bytes < 72_000);
   });
 });
 
 describe("T2 · el contrato funcional no cambia", () => {
-  it("sin descriptions, cada tool publicada es idéntica a la de 2672fe6", async () => {
+  it("sin descriptions y sin `detail` (STORY-AUTHORING-001, opcional), cada tool publicada es idéntica a la de 2672fe6", async () => {
     const golden = JSON.parse(readFileSync(join(FIXTURES_DIR, "mcp-descriptions-001-schema.json"), "utf8")) as Array<{ name: string }>;
     /* La forma que viaja (JSON): el cliente rellena claves con undefined, p. ej. _meta, que no se publican. */
-    const now = stripDescriptions(JSON.parse(JSON.stringify((await h.client.listTools()).tools))) as Array<{ name: string }>;
+    const published = JSON.parse(JSON.stringify((await h.client.listTools()).tools)) as Array<{ inputSchema: { properties: Record<string, unknown> } }>;
+    for (const t of published) delete t.inputSchema.properties.detail;
+    const now = stripDescriptions(published) as Array<{ name: string }>;
     assert.deepEqual(now.map(t => t.name), golden.map(t => t.name));
     for (const [i, t] of now.entries()) assert.deepEqual(t, golden[i], t.name);
   });
@@ -57,6 +59,10 @@ describe("T2 · el contrato funcional no cambia", () => {
 describe("T3 · lo imprescindible de author_document cabe en los primeros 2 048 caracteres", () => {
   const RULES: Array<[string, RegExp]> = [
     ["baseRevision: de dónde sale", /CLAVE: baseRevision = la revisión de ESTE documento/],
+    ["Historia = Story", /Historia = Story/],
+    ["idioma del contenido", /LANGUAGE: names and messages in the language of the user's request/],
+    ["outcome en la respuesta", /stories\[\] trae el outcome/],
+    ["el fallo va antes del envío", /FALLO: destino DOWN en un momento ANTERIOR al envío/],
     ["editorUrl: dárselo al usuario y encadenarlo", /editorUrl: el enlace fluyo\.space\/#d=… del resultado; dáselo al usuario y pásalo como 'document'/],
     ["run_story después", /run_story para ver el Trace/],
     ["ref del lote", /LOTE: 'ref' nombra algo creado en el lote/],

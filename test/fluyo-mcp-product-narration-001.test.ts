@@ -82,9 +82,9 @@ describe("PRODUCT-NARRATION-001 · schema publicado y catálogo", () => {
     assert.match(m.description, /No cambia tiempos ni Trace/);
     assert.ok(lt.tools.find(t => t.name === "describe_document")!.description!.includes("frase y message (la frase propia del paso, si la tiene)"));
   });
-  it("tools/list ≤ 55 000 B (guarda de DESCRIPTIONS-001), < 63 000 y < 72 000", async () => {
+  it("tools/list ≤ 57 000 B (guarda de DESCRIPTIONS-001, subida en STORY-AUTHORING-001), < 63 000 y < 72 000", async () => {
     const bytes = Buffer.byteLength(JSON.stringify(await h.client.listTools()));
-    assert.ok(bytes <= 55_000 && bytes <= 63_000 && bytes < 72_000, `tools/list = ${bytes} B`);
+    assert.ok(bytes <= 57_000 && bytes <= 63_000 && bytes < 72_000, `tools/list = ${bytes} B`);
   });
 });
 

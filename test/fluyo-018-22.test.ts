@@ -11,7 +11,7 @@
  *   · integridad: remove_step (objetivo y dependiente), duplicate_step (dependiente y objetivo), duplicate_story, move/set_wait (aviso);
  *   · describe_document: lo almacenado, lo que aplica y lo ignorado; Historias antiguas sin cambios;
  *   · PARIDAD con el editor (mismas funciones de model.js, story-clock.js real de fluyo/) y reproducción 0→1100→1600→2700, 0→500→1100;
- *   · Share (#d=) conserva el dato; el MCP no ejecuta el reloj (story-clock.js fuera del kernel).
+ *   · Share (#d=) conserva el dato; el MCP no ejecuta el reloj (STORY-AUTHORING-001: story-clock.js está en el kernel solo por la regla del desenlace).
  */
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
@@ -398,10 +398,9 @@ describe("018.22 · paridad con el editor y reproducción", { skip: skipSinFluyo
 
 /* ═══════════════ 7. Kernel y contrato ═══════════════ */
 describe("018.22 · kernel y contrato", () => {
-  it("story-clock.js NO entra en el kernel; la regla sí (model.js) y FluyoAuthoring la usa", () => {
-    assert.deepEqual(KERNEL_FILES.map(f => f.name), ["config.js", "safe-svg.js", "model.js", "scenario-engine.js", "scenario-playback.js", "story-playback.js", "document-integrity.js", "story-authoring.js"]);
+  it("story-clock.js entra en el kernel por el desenlace (STORY-AUTHORING-001, D2), pero la regla de llegada sigue en model.js y FluyoAuthoring la usa", () => {
+    assert.ok(KERNEL_FILES.some(f => f.name === "story-clock.js"));
     const k = createKernel();
-    assert.equal(k.call<string>("typeof FluyoStoryClock"), "undefined");
     assert.equal(k.call<string>("[typeof arrivalDependencies, typeof arrivalCandidates, typeof withArrivalWaits, typeof pruneArrivalDependencies, typeof copyArrivalWaits].join()"), "function,function,function,function,function");
     assert.equal(k.call<string>("FluyoAuthoring.OPERATION_SCOPE.set_arrival_dependencies"), "story");
   });

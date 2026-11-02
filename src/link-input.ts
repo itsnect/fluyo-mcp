@@ -30,7 +30,7 @@ export const LINK_MAX_BYTES = 2 * 1024 * 1024;
  *  de línea es una copia inexacta. */
 const LINK_RE = /^[^#\s]*#d=([A-Za-z0-9_-]+)$/;
 
-export type LinkReason = "format" | "base64" | "version" | "decode" | "too_large" | "json";
+export type LinkReason = "format" | "base64" | "version" | "decode" | "too_large" | "json" | "not_a_document";
 
 export type LinkError =
   | { code: "DOCUMENT_LINK_UNREADABLE"; reason: LinkReason; message: string }
@@ -46,13 +46,14 @@ const unreadable = (reason: LinkReason, why: string): LinkError => ({
 });
 
 export const LINK_REVISION_REQUIRED_MESSAGE =
-  "Un enlace #d= como document necesita baseRevision: pasa la revision o el resultRevision de la respuesta que te dio el enlace.";
+  "Un enlace #d= como document necesita baseRevision: pasa la revision o el resultRevision de la respuesta que te dio el enlace. " +
+  "Si te lo dio una persona, describe_document lo lee sin baseRevision y te da su revision.";
 
 /** Sin 'actual', a propósito: con un enlace, que no coincida es casi siempre una copia inexacta, y reintentar con la revisión de lo
  *  copiado aceptaría la corrupción (el texto de REVISION_MISMATCH invita justo a eso). */
 export const LINK_REVISION_MISMATCH_MESSAGE =
-  "El enlace no corresponde a baseRevision: casi siempre es una copia inexacta del enlace. " +
-  "Cópialo de nuevo EXACTO de la última respuesta o pasa el JSON. No reintentes con otra revisión.";
+  "El enlace no corresponde a baseRevision: o esa revisión no es la de este enlace, o es una copia inexacta. " +
+  "Cópialo de nuevo EXACTO de la última respuesta o pasa el JSON; si te lo dio una persona, describe_document sin baseRevision te da su revision. No reintentes con otra revisión.";
 
 /** Decodifica la carga de un enlace a su valor JSON, como el lector de la app. */
 export function decodeLink(link: string): { ok: true; value: unknown } | { ok: false; error: LinkError } {
@@ -101,6 +102,23 @@ export function resolveDocument(document: unknown, baseRevision: string | undefi
   if (normalized === null || revisionOfProject(normalized) !== baseRevision) {
     return { ok: false, error: { code: "LINK_REVISION_MISMATCH", message: LINK_REVISION_MISMATCH_MESSAGE } };
   }
+  return { ok: true, document: DocumentObjectSchema.parse(normalized) };
+}
+
+/** Un enlace de /s/ (Compartir): una instantánea con la Historia elegida y su familia, sin las Historias de otras páginas. */
+export const isViewerLink = (link: string): boolean => /\/s\/?#d=/.test(link);
+
+/**
+ * FLUYO-MCP-STORY-AUTHORING-001 (G1, D1 del PO): el enlace que aporta una PERSONA, solo para leer. La persona no tiene revisión, así que aquí no se
+ * exige: la respuesta da la canónica y cualquier escritura posterior sigue exigiéndola (resolveDocument). Lo que no se decodifica se rechaza; no
+ * se intenta reconstruir nada. Sin revisión no se puede saber si una copia inexacta decodifica a otro documento válido: por eso quien llama lo
+ * declara en la respuesta (linkRevisionUnverified).
+ */
+export function resolveLinkForRead(link: string): { ok: true; document: unknown } | { ok: false; error: LinkError } {
+  const decoded = decodeLink(link);
+  if (!decoded.ok) return decoded;
+  const normalized = normalizeWith(createKernel(), decoded.value);
+  if (normalized === null) return { ok: false, error: unreadable("not_a_document", "lo que lleva no es un documento de Fluyo") };
   return { ok: true, document: DocumentObjectSchema.parse(normalized) };
 }
 

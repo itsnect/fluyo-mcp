@@ -36,6 +36,7 @@ const KERNEL_SCRIPTS = [
   "scenario-engine.js",
   "scenario-playback.js",
   "story-playback.js",
+  "story-clock.js",   // FLUYO-MCP-STORY-AUTHORING-001: la regla del desenlace (FluyoStoryClock.outcome), la misma que usa el producto
   "document-integrity.js",
   "story-authoring.js",
 ] as const;

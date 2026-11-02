@@ -219,9 +219,9 @@ describe("T3 · de dónde puede venir el enlace", () => {
 /* ═══════════════ T4. Revisión obligatoria ═══════════════ */
 
 describe("T4 · un enlace sin baseRevision no se ejecuta", () => {
-  it("export_diagram, describe_document, run_story y propose_layout → LINK_REVISION_REQUIRED, sin documento", async () => {
+  it("export_diagram, run_story y propose_layout → LINK_REVISION_REQUIRED, sin documento (describe_document lo lee: STORY-AUTHORING-001, D1)", async () => {
     const { link } = authored();
-    for (const tool of [...READ_TOOLS, "propose_layout"]) {
+    for (const tool of [...READ_TOOLS.filter(t => t !== "describe_document"), "propose_layout"]) {
       const r = await h.call(tool, argsFor(tool, link));
       assert.equal(isToolError(r), true, tool);
       if (tool === "propose_layout") {
@@ -365,7 +365,21 @@ describe("T8 · con el documento como objeto, cada respuesta es la de la base 3d
   /* El kernelId (hash de los archivos del kernel) viaja en algunas respuestas. Una resincronización posterior del kernel lo cambia sin cambiar
      el camino JSON (SCENARIOS-SEMANTICS-001 FASE 6, B1 en model.js): se compara con el de la base, del mismo largo, y nada más cambia. */
   const BASE_KERNEL_ID = "4105228c61e77f2d36354eeeca2ea6b75a7bdfbc078c68766f97b7a81e85f8d3";
-  const atBaseKernel = (r: ToolResponse) => bytesOf(r).split(KERNEL_ID).join(BASE_KERNEL_ID);
+  /* STORY-AUTHORING-001: los campos nuevos son aditivos. Sin ellos, cada respuesta sigue siendo la de la base byte a byte. */
+  const withoutAdded = (v: any): unknown => {
+    if (!v || typeof v !== "object") return v;
+    const { storyOutcome: _s, storyRefs: _r, ...rest } = v;
+    if (rest.touchedStories) delete rest.stories;                                                  // author_document
+    for (const pg of Array.isArray(rest.pages) ? rest.pages : []) for (const st of pg.stories ?? []) delete st.outcome;   // describe_document
+    return rest;
+  };
+  const baseShape = (r: ToolResponse): ToolResponse => ({
+    ...r,
+    content: (r.content as Array<{ type: string; text: string }>).map(c => {
+      try { return { ...c, text: JSON.stringify(withoutAdded(JSON.parse(c.text))) }; } catch { return c; }
+    }),
+  });
+  const atBaseKernel = (r: ToolResponse) => bytesOf(baseShape(r)).split(KERNEL_ID).join(BASE_KERNEL_ID);
   for (const n of [10, 30]) {
     it(`sesión de ${n} nodos en modo JSON: hash a hash igual que en ${golden.base} (salvo el kernelId)`, async () => {
       const steps = n === 10 ? jsonSession : await runSession(h.call, { n, mode: "json" });

@@ -113,6 +113,7 @@ function hayFluyo(): boolean { try { readFileSync(join(fluyoDir(), "js", "model.
 /** Todo lo que puede aparecer en describe_document. Lo que no esté aquí es una fuga accidental. */
 const ALLOWED_KEYS = new Set([
   "readable", "schemaVersion", "sourceSchemaVersion", "engineVersion", "kernelId", "valid", "errorCount", "errors", "currentPageIndex",
+  "outcome", "status", "moment", "reasonNode",   // FLUYO-MCP-STORY-AUTHORING-001: el desenlace de cada Historia
   "revision", "code", "message", "scope", "pageIndex", "storyId", "stepId", "entityId", "entityKind", "path", "limit", "reason", "endpoint",
   "capabilities", "readsDocumentVersions", "eventPrimitives", "stepActions", "limits", "maxSteps", "maxTraceEvents", "maxVirtualMs", "maxRuntimeJobs", "maxNodesPerPage", "maxConnectionsPerPage", "coordMax", "sizeMin", "sizeMax", "tools", "authoring",
   "eventTypes", "id", "name", "sentence", "symbol", "primitive", "action", "target", "availability", "motion", "usedBy",
@@ -173,7 +174,7 @@ describe("describe_document: auditoría de contrato", () => {
     for (let i = 0; i < 59; i++) { const p = clone(page); p.name = "Página " + i; doc.doc.pages.push(p); }
     const completo = JSON.stringify(doc).length;
     const compacto = JSON.stringify(await describeDoc(doc, { includeSteps: false })).length;
-    assert.ok(compacto < completo * 0.6, `describe(includeSteps:false) ${compacto} vs documento ${completo}`);
+    assert.ok(compacto < completo * 0.66, `describe(includeSteps:false) ${compacto} vs documento ${completo}`);   // 0,6 hasta STORY-AUTHORING-001: cada Historia dice su desenlace
     const acotado = JSON.stringify(await describeDoc(doc, { pageIndex: 3 })).length;
     assert.ok(acotado < 6_500, `describe de una página: ${acotado}`);
   });

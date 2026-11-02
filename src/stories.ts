@@ -35,6 +35,46 @@ interface ValidationReport {
 }
 interface IntegrityWarning { code: string; message: string; scope: string; pageIndex: number; storyId?: number; entityKind?: string; entityId?: number; kind?: string; missing?: string[] }
 
+/**
+ * FLUYO-MCP-STORY-AUTHORING-001 (G2): el desenlace de una Historia. La regla es la del producto (FluyoStoryClock.outcome, la misma del editor,
+ * Present y el Viewer): aquí solo se le da forma estructurada. El texto visible es de la UI y de su idioma.
+ * `moment` empieza en 1, como el N de la UI; `steps[].moment` de run_story empieza en 0.
+ */
+export type StoryOutcome =
+  | { status: "no_failures" }
+  | { status: "failed"; moment: number; stepId: number; reason?: string; reasonNode?: { id: number; label: string } }
+  | { status: "empty" }
+  | { status: "not_executable" };
+
+export const STORY_OUTCOME = `const storyOutcome = (pg, sc) => {
+    if(!sc.steps.length) return {status: "empty"};
+    const run = FluyoStory.run(pg, sc);
+    const o = run.ok ? FluyoStoryClock.outcome(sc, run.trace) : null;
+    if(!o) return {status: "not_executable"};
+    if(o.ok) return {status: "no_failures"};
+    const s = FluyoStory.outcomes(run.trace, sc, pg).find(x => x.stepId === o.stepId) || {};
+    const n = pg.nodes.find(x => x.id === s.reasonNodeId);
+    return {status: "failed", moment: o.moment, stepId: o.stepId, reason: s.reason, reasonNode: n ? {id: n.id, label: n.label} : undefined};
+  };`;
+
+export interface StoryFacts { pageIndex: number; storyId: number; name: string; stepCount: number; momentCount: number; outcome: StoryOutcome }
+
+const STORY_FACTS = `(function(){
+  let d; try { d = projectFromProjectData(__a).doc; } catch (e) { return []; }
+  doc = d;
+  ${STORY_OUTCOME}
+  return d.pages.flatMap((pg, pageIndex) => pg.scenarios.map(sc => ({pageIndex, storyId: sc.id, name: sc.name, stepCount: sc.steps.length,
+    momentCount: storyboardGroups(sc.steps).length, outcome: storyOutcome(pg, sc)})));
+})()`;
+
+/** Cada Historia de un documento con su desenlace, para author_document. */
+export const storyFacts = (kernel: Kernel, project: unknown): StoryFacts[] => kernel.call<StoryFacts[]>(STORY_FACTS, project);
+
+/** Las etiquetas salen en una línea, como en el resto de la descripción. */
+export function presentOutcome(o: StoryOutcome): StoryOutcome {
+  return o.status === "failed" && o.reasonNode ? { ...o, reasonNode: { id: o.reasonNode.id, label: oneLine(o.reasonNode.label) } } : o;
+}
+
 /** Lo que el modelo NO representa. Se devuelve siempre: es lo que impide que el agente lo invente. */
 export const UNMODELED: readonly string[] = [
   "reintentos, colas ni timeouts: el motor ejecuta cada paso aunque uno anterior no se haya completado",
@@ -105,6 +145,7 @@ interface KernelModel {
       name: string;
       engineVersion: number;
       stepCount: number;
+      outcome: StoryOutcome;
       /** SCENARIOS-SEMANTICS-001 FASE 5: la ruta observada TAL CUAL está guardada (null = automática). */
       observedFlow: { from: number; to: number } | null;
       /** FLUYO-018.22: lo ALMACENADO (forma canónica), lo que aplica al reproducir (por paso) y lo ignorado con su razón. */
@@ -167,6 +208,7 @@ const READ_MODEL = `(function(){
   let d; try { d = projectFromProjectData(__a).doc; } catch (e) { return null; }
   doc = d;
   ${SEND_ENDS}
+  ${STORY_OUTCOME}
   return {
     documentVersion: serializeProject().version,
     engineVersion: FluyoScenarios.ENGINE_VERSION,
@@ -190,7 +232,7 @@ const READ_MODEL = `(function(){
         fromSide: e.fromSide || null, toSide: e.toSide || null, waypoints: (e.waypoints || []).map(w => ({x: w.x, y: w.y})), kind: edgeKind(e)})),
       behaviors: pg.behaviors,
       stories: pg.scenarios.map(sc => ({
-        id: sc.id, name: sc.name, engineVersion: sc.engineVersion, stepCount: sc.steps.length,
+        id: sc.id, name: sc.name, engineVersion: sc.engineVersion, stepCount: sc.steps.length, outcome: storyOutcome(pg, sc),
         observedFlow: sc.observedFlow ? {from: sc.observedFlow.from, to: sc.observedFlow.to} : null,
         arrival: (function(){ const a = arrivalDependencies(sc); return {stored: arrivalCanonical(arrivalRawMap(sc)), waits: [...a.waits], ignored: a.ignored}; })(),
         groups: storyboardGroups(sc.steps).map(g => ({at: g.at, steps: g.steps.map(s => ({
@@ -299,6 +341,8 @@ export function describeDocument(input: DescribeInput) {
             stepCount: sc.stepCount,
             durationMs: last,
             executable: executable.get(`${pageIndex}:${sc.id}`) ?? false,
+            /* FLUYO-MCP-STORY-AUTHORING-001: como en run_story, una Historia que la integridad rechaza no tiene desenlace. */
+            outcome: executable.get(`${pageIndex}:${sc.id}`) ? presentOutcome(sc.outcome) : ({ status: "not_executable" } as const),
             /* SCENARIOS-SEMANTICS-001 FASE 5 (D5, D9): la ruta observada GUARDADA, con source/target como set_observed_flow. Sin ella, la
                Historia usa la ruta automática (si la hay) y aquí no sale nada. Un extremo perdido sale con label "?" y un aviso W2. */
             ...(sc.observedFlow
@@ -389,6 +433,33 @@ export function describeDocument(input: DescribeInput) {
   };
 }
 
+/**
+ * FLUYO-MCP-STORY-AUTHORING-001 (G5): `detail:"summary"`, lo necesario para escribir una Historia: ids, nombres, qué conecta con qué, la
+ * biblioteca y el desenlace de lo que ya hay. Sin coordenadas, pasos ni capabilities. `unmodeled` se queda: es la primera lectura del agente y
+ * es lo que le impide inventar lo que el modelo no representa.
+ */
+export function summaryOfDescription(d: ReturnType<typeof describeDocument>) {
+  if (!d.readable) return d;
+  return {
+    readable: true as const,
+    revision: d.revision,
+    valid: d.valid,
+    errorCount: d.errorCount,
+    errors: d.errors,
+    ...("warnings" in d && d.warnings ? { warnings: d.warnings } : {}),
+    currentPageIndex: d.currentPageIndex,
+    eventTypes: d.eventTypes.map(e => ({ id: e.id, name: e.name, primitive: e.primitive, ...(e.availability ? { availability: e.availability } : {}) })),
+    pages: d.pages.map(p => ({
+      pageIndex: p.pageIndex,
+      name: p.name,
+      nodes: p.nodes.map(n => ({ id: n.id, label: n.label, ...(n.availability !== "UP" ? { availability: n.availability } : {}) })),
+      connections: p.connections.map(e => ({ id: e.id, from: e.from, to: e.to, ...(e.label ? { label: e.label } : {}), ...(e.connectionKind ? { connectionKind: e.connectionKind } : {}) })),
+      stories: p.stories.map(s => ({ storyId: s.storyId, name: s.name, stepCount: s.stepCount, outcome: s.outcome })),
+    })),
+    unmodeled: d.unmodeled,
+  };
+}
+
 /* ===================== run_story ===================== */
 
 export interface RunStoryInput {
@@ -410,6 +481,7 @@ interface RunModel {
   ordered: Array<{ id: number; sentence: string; message?: string; ends?: TraversalEnds }>;
   run: { ok: true; trace: { engineVersion: number; scenarioId: number; events: Array<Record<string, unknown>> } } | { ok: false; errors: unknown[] };
   outcomes?: Array<Record<string, any>>;
+  storyOutcome?: StoryOutcome;
   finalAvailability?: Record<string, string>;
 }
 
@@ -424,6 +496,7 @@ const RUN_STORY = `(function(){
   const sc = pg.scenarios.find(s => s.id === __a.storyId);
   if (!sc) return {error: "story_not_found", pageIndex, storyIds: pg.scenarios.map(s => s.id)};
   ${SEND_ENDS}
+  ${STORY_OUTCOME}
   const run = FluyoStory.run(pg, sc);
   return {
     pageIndex, pageName: pg.name,
@@ -434,6 +507,7 @@ const RUN_STORY = `(function(){
     ordered: storyboardOrderedSteps(sc.steps).map(s => ({id: s.id, sentence: FluyoStory.sentence(pg, s, eventTypeById(s.eventTypeId)), message: s.message, ends: sendEnds(pg, s)})),
     run,
     outcomes: run.ok ? FluyoStory.outcomes(run.trace, sc, pg) : undefined,
+    storyOutcome: storyOutcome(pg, sc),
     finalAvailability: run.ok ? FluyoStory.finalAvailability(run.trace, pg) : undefined
   };
 })()`;
@@ -477,7 +551,7 @@ export function runStory(input: RunStoryInput) {
   };
   // La Historia sólo se entrega ejecutada si el motor Y la integridad la dan por válida.
   if (!executable || !model.run.ok || !model.outcomes) {
-    return { executed: false as const, reason: "story_not_executable" as const, ...common };
+    return { executed: false as const, reason: "story_not_executable" as const, ...common, storyOutcome: { status: "not_executable" } as StoryOutcome };
   }
 
   const label = new Map(model.nodes.map(n => [n.id, oneLine(n.label)]));
@@ -522,6 +596,7 @@ export function runStory(input: RunStoryInput) {
   return {
     executed: true as const,
     ...common,
+    storyOutcome: presentOutcome(model.storyOutcome as StoryOutcome),
     steps,
     // Disponibilidad de cada elemento al terminar la Historia (Behaviors iniciales + cambios del Trace).
     finalAvailability: model.nodes.map(n => ({ id: n.id, label: oneLine(n.label), availability: model.finalAvailability?.[String(n.id)] ?? "UP" })),
@@ -529,6 +604,14 @@ export function runStory(input: RunStoryInput) {
     traceEngineVersion: trace.engineVersion,
     traceDigest: `sha256:${sha256Hex(JSON.stringify(trace.events))}`,
   };
+}
+
+/** FLUYO-MCP-STORY-AUTHORING-001 (G5): sin Trace ni `unmodeled` (ya los dio la primera lectura). `traceDigest` identifica ese Trace igual. */
+export function summaryOfRun(r: ReturnType<typeof runStory>) {
+  const { unmodeled: _unmodeled, ...rest } = r;
+  if (!("trace" in rest)) return rest;
+  const { trace: _trace, ...withoutTrace } = rest;
+  return withoutTrace;
 }
 
 /* ===================== Resúmenes de texto (primer bloque de la respuesta) ===================== */

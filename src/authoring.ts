@@ -5,7 +5,7 @@ import { openLink, type OpenLink } from "./link.js";
 import { CreatableShapeSchema, FlowDirSchema, LabelPosSchema, RouteSchema, SideSchema, ThemeSchema } from "./model.js";
 import { resolveDocument } from "./link-input.js";
 import { REVISION_MISMATCH_MESSAGE, normalizeWith, revisionOfProject } from "./revision.js";
-import { UNMODELED } from "./stories.js";
+import { UNMODELED, presentOutcome, storyFacts, type StoryFacts, type StoryOutcome } from "./stories.js";
 
 /**
  * author_document (FLUYO-017.2 Historias · 017.3 EventTypes · 018.2 crear y 018.3 modificar/eliminar nodos y conexiones): autoría sobre una COPIA, en un lote atómico.
@@ -85,8 +85,8 @@ const Presentation = z
 const Primitive = z.enum(["FLOW", "OCCURRENCE", "SET_AVAILABILITY"]);
 /** Campos de un evento; en create_event_type name, sentence y primitive son obligatorios; en update_event_type todos opcionales. */
 const EventFields = {
-  name: z.string().min(1).max(60),
-  sentence: z.string().min(1).max(200).describe("Frase con marcadores {source}, {target}, {name}."),
+  name: z.string().min(1).max(60).describe("In the language of the user's request."),
+  sentence: z.string().min(1).max(200).describe("In the language of the user's request. Marcadores {source}, {target} y {name} (el nombre del evento, no el del elemento)."),
   symbol: z.string().max(16).optional(),
   motion: z.enum(["fast", "normal", "slow"]).optional().describe("Sólo FLOW."),
   availability: z.enum(["UP", "DOWN"]).optional().describe("Sólo SET_AVAILABILITY: el estado que provoca."),
@@ -225,7 +225,7 @@ export const DuplicateFields = {
 };
 
 export const AuthoringOperationSchema = z.discriminatedUnion("op", [
-  z.strictObject({ op: z.literal("create_story"), scope: story, pageIndex: PageIndex, name: z.string().min(1).max(120).optional(), ref: z.string().min(1).max(40).optional() }),
+  z.strictObject({ op: z.literal("create_story"), scope: story, pageIndex: PageIndex, name: z.string().min(1).max(120).optional().describe("In the language of the user's request."), ref: z.string().min(1).max(40).optional() }),
   z.strictObject({ op: z.literal("rename_story"), scope: story, ...storyRef, name: z.string().min(1).max(120) }),
   z.strictObject({ op: z.literal("duplicate_story"), scope: story, ...storyRef, name: z.string().min(1).max(120).optional(), ref: z.string().min(1).max(40).optional() }),
   z.strictObject({ op: z.literal("delete_story"), scope: story, ...storyRef }),
@@ -240,7 +240,7 @@ export const AuthoringOperationSchema = z.discriminatedUnion("op", [
       .strictObject({ sameMomentAs: IdOrRef, position: z.enum(["before", "after"]).optional() })
       .optional(),
     waitsForArrivalOf: WaitsForArrivalOf.optional(),
-    message: StepMessage.describe("Frase de ESTE paso (cualquier evento, también FLOW): al reproducir es el título de su momento y, en un elemento, su globo. El evento y su frase no cambian. No cambia tiempos ni Trace.").optional(),
+    message: StepMessage.describe("In the language of the user's request. Frase de ESTE paso (cualquier evento, también FLOW): al reproducir es el título de su momento y, en un elemento, su globo. El evento y su frase no cambian. No cambia tiempos ni Trace.").optional(),
     ref: z.string().min(1).max(40).optional(),
   }),
   z.strictObject({ op: z.literal("remove_step"), scope: story, ...stepRef }),
@@ -338,6 +338,72 @@ interface KernelApply {
   errors?: Array<Record<string, unknown>>;
 }
 
+/* ===================== FLUYO-MCP-STORY-AUTHORING-001: desenlaces, efectos sobre otras Historias, refs y candidatos =====================
+   Todo se calcula fuera del lote, sobre lo que ya decidió el kernel: el lote no cambia y un rechazo sigue siendo un rechazo. */
+
+/** Dos desenlaces son el mismo si dicen lo mismo del motor; que cambie el nombre del nodo caído no es un cambio de desenlace. */
+const outcomeKey = (o: StoryOutcome): string => (o.status === "failed" ? `failed:${o.moment}:${o.stepId}:${o.reason ?? ""}:${o.reasonNode?.id ?? ""}` : o.status);
+
+/** G3: una Historia que el lote NO editó y cuyo desenlace cambió. Es un aviso: a veces es lo que se quiere, pero el agente tiene que saberlo. */
+function outcomeWarnings(before: StoryFacts[], after: StoryFacts[], touched: Array<{ pageIndex: number; storyId: number }>, pageMap?: Array<{ from: number; to: number | null }>) {
+  const edited = new Set(touched.map(t => `${t.pageIndex}:${t.storyId}`));
+  const now = new Map(after.map(s => [`${s.pageIndex}:${s.storyId}`, s]));
+  return before.flatMap(b => {
+    const pageIndex = pageMap ? pageMap.find(p => p.from === b.pageIndex)?.to ?? null : b.pageIndex;
+    if (pageIndex === null || edited.has(`${pageIndex}:${b.storyId}`)) return [];
+    const a = now.get(`${pageIndex}:${b.storyId}`);
+    if (!a || outcomeKey(a.outcome) === outcomeKey(b.outcome)) return [];
+    return [{
+      code: "STORY_OUTCOME_CHANGED",
+      pageIndex,
+      storyId: b.storyId,
+      name: a.name,
+      directlyEdited: false,
+      before: presentOutcome(b.outcome),
+      after: presentOutcome(a.outcome),
+      message: `El lote no editó la Historia ${b.storyId}, pero su desenlace cambió.`,
+    }];
+  });
+}
+
+/** Lo creado con `ref` en Historias, pasos y eventos: el kernel solo lista elementos y conexiones, y `summary` no lleva `changes`. Solo lo que sigue en el documento final. */
+function storyRefs(operations: unknown[], changes: Array<Record<string, unknown>>, facts: StoryFacts[], project: unknown, pageMap?: Array<{ from: number; to: number | null }>) {
+  const doc = (project as { doc: { eventTypes: Array<{ id: number }>; pages: Array<{ scenarios: Array<{ id: number; steps: Array<{ id: number }> }> }> } }).doc;
+  return changes.flatMap(c => {
+    const op = operations[c.operationIndex as number] as { ref?: unknown } | undefined;
+    const ref = op?.ref, id = c.entityId as number;
+    if (typeof ref !== "string") return [];
+    if (c.operation === "create_event_type") return doc.eventTypes.some(e => e.id === id) ? [{ ref, type: "eventType", id }] : [];
+    const pageIndex = pageMap ? pageMap.find(p => p.from === c.pageIndex)?.to ?? null : (c.pageIndex as number);
+    if (pageIndex === null) return [];
+    if (c.operation === "create_story" || c.operation === "duplicate_story") return facts.some(s => s.pageIndex === pageIndex && s.storyId === id) ? [{ ref, type: "story", pageIndex, id }] : [];
+    if (c.operation !== "add_step" && c.operation !== "duplicate_step") return [];
+    const story = doc.pages[pageIndex]?.scenarios.find(s => s.id === c.storyId);
+    return story?.steps.some(s => s.id === id) ? [{ ref, type: "step", pageIndex, storyId: c.storyId as number, id }] : [];
+  });
+}
+
+const MAX_CANDIDATES = 30;
+
+/** G4: con un objetivo que no existe o no encaja, los objetivos válidos de esa página, para corregir sin releer el documento. TARGET_INCOMPATIBLE
+ *  (la forma no es la del evento) se comprueba antes que la existencia y así sigue: es lo primero que hay que arreglar. */
+function withCandidates(errors: Array<Record<string, unknown>>, operations: unknown[], base: unknown) {
+  const pages = (base as { doc?: { pages?: Array<{ nodes: Array<{ id: number; label?: string }>; edges: Array<{ id: number; from: number; to: number }> }> } }).doc?.pages ?? [];
+  return errors.map(e => {
+    if (e.code !== "TARGET_NOT_FOUND" && e.code !== "TARGET_INCOMPATIBLE") return e;
+    const pageIndex = (operations[e.operationIndex as number] as { pageIndex?: number } | undefined)?.pageIndex;
+    const page = pageIndex === undefined ? undefined : pages[pageIndex];
+    const target = e.target as Record<string, unknown> | undefined;
+    if (!page || !target || target.ref !== undefined) return e;
+    const gaveNode = target.nodeId !== undefined;
+    const wantsNode = e.code === "TARGET_NOT_FOUND" ? gaveNode : !gaveNode;
+    const list = wantsNode
+      ? page.nodes.map(n => ({ id: n.id, label: String(n.label ?? "").split(/\r?\n/)[0].slice(0, 80) }))
+      : page.edges.map(c => ({ id: c.id, from: c.from, to: c.to }));
+    return { ...e, candidates: { [wantsNode ? "nodes" : "connections"]: list.slice(0, MAX_CANDIDATES) }, ...(list.length > MAX_CANDIDATES ? { candidatesTruncated: true } : {}) };
+  });
+}
+
 export function authorDocument(input: AuthorInput) {
   const kernel = createKernel();
   const head = { engineVersion: kernel.call<number>("FluyoScenarios.ENGINE_VERSION"), kernelId: kernel.kernelId };
@@ -375,9 +441,17 @@ export function authorDocument(input: AuthorInput) {
   }
 
   const result = kernel.call<KernelApply>("FluyoAuthoring.apply(__a.p, __a.o)", { p: document, o: input.operations });
-  if (!result.ok) return rejected(result.errors ?? [{ code: "INVALID_OPERATION", message: "El lote no se pudo aplicar." }]);
+  if (!result.ok) return rejected(withCandidates(result.errors ?? [{ code: "INVALID_OPERATION", message: "El lote no se pudo aplicar." }], input.operations, base));
 
   const resultRevision = revisionOfProject(result.project);
+  const facts = storyFacts(kernel, result.project);
+  const touchedStories = result.touched ?? [];
+  /* Una operación de Historia solo cambia esa Historia: sin otra clase de operación, ninguna otra puede cambiar de desenlace. */
+  const sideEffects = (result.changes ?? []).some(c => c.scope !== "story")
+    ? outcomeWarnings(storyFacts(kernel, base), facts, touchedStories, result.pageMap)
+    : [];
+  const warnings = [...(result.warnings ?? []), ...sideEffects];
+  const createdStoryRefs = storyRefs(input.operations, result.changes ?? [], facts, result.project, result.pageMap);
   /* FLUYO-018.10 (D1): el enlace #d= al documento FINAL es parte del resultado, como en create_diagram (misma codificación, link.ts). Sin
      documento (dryRun) no hay enlace; si no cabe, no se emite (nunca truncado) y se dice por qué. */
   const link: OpenLink | null = input.dryRun ? null : openLink(result.project);
@@ -392,12 +466,17 @@ export function authorDocument(input: AuthorInput) {
     changed: resultRevision !== input.baseRevision,
     changes: result.changes ?? [],
     refs: result.refs ?? [],
-    touchedStories: result.touched ?? [],
+    /* Aparte de `refs`, que sigue siendo de elementos y conexiones: quien ya lo lee recibe lo mismo. Solo si hay. */
+    ...(createdStoryRefs.length ? { storyRefs: createdStoryRefs } : {}),
+    touchedStories,
+    /* G2: el desenlace de cada Historia creada o editada, también con dryRun: saberlo no pide otra llamada. */
+    stories: touchedStories.flatMap(t => facts.filter(s => s.pageIndex === t.pageIndex && s.storyId === t.storyId)).map(s => ({ ...s, outcome: presentOutcome(s.outcome) })),
     /* FLUYO-018.7c: solo si el lote eliminó páginas. Índice del lote (from) → índice en el documento resultante (to; null = eliminada). */
     ...(result.pageMap ? { pageMap: result.pageMap } : {}),
     validation: result.validation ?? { valid: true, preexistingErrors: 0 },
-    /* FLUYO-018.22: dependencias de llegada que el lote dejó sin efecto (se conservan y se ignoran al reproducir). Solo si hay. */
-    ...(result.warnings?.length ? { warnings: result.warnings } : {}),
+    /* FLUYO-018.22: dependencias de llegada que el lote dejó sin efecto (se conservan y se ignoran al reproducir). STORY-AUTHORING-001: y
+       otras Historias cuyo desenlace cambió. Solo si hay. */
+    ...(warnings.length ? { warnings } : {}),
     unmodeled: UNMODELED,
     ...(link === null ? {} : link.ok ? { editorUrl: link.url } : { editorUrlError: { code: link.code, chars: link.chars, maxChars: link.maxChars, message: link.message } }),
     /* MCP-TOKEN-EFFICIENCY-004: con returnDocument:false el documento solo se omite si el enlace salió (editorUrl lo codifica entero);
@@ -406,12 +485,20 @@ export function authorDocument(input: AuthorInput) {
   };
 }
 
+/** FLUYO-MCP-STORY-AUTHORING-001 (G5): sin `changes` ni `unmodeled`. Quedan refs, stories (con su desenlace), warnings, resultRevision y editorUrl. */
+export function summaryOfAuthoring(r: ReturnType<typeof authorDocument>) {
+  if (!r.ok) return r;
+  const { changes: _changes, unmodeled: _unmodeled, ...rest } = r;
+  return rest;
+}
+
 export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string {
   if (!r.ok) {
     const first = r.errors[0] ?? {};
     return `Lote RECHAZADO (${String(first.code ?? "ERROR")}): ${String(first.message ?? "")} El documento original no se modificó y no se devuelve ninguno.`;
   }
   const n = r.changes.length;
+  const warningCount = (code: string) => ("warnings" in r ? (r.warnings ?? []).filter(w => w.code === code).length : 0);
   const count = (kind: string, flag: "created" | "updated" | "deleted") => r.changes.filter(c => c.entityKind === kind && c[flag] === true).length;
   const part = (flag: "created" | "updated" | "deleted", word: string) =>
     count("node", flag) + count("connection", flag) > 0 ? `${count("node", flag)} elemento(s) y ${count("connection", flag)} conexión(es) ${word}. ` : "";
@@ -422,7 +509,8 @@ export function summarizeAuthoring(r: ReturnType<typeof authorDocument>): string
     `${r.dryRun ? "Simulación (dryRun): " : ""}${n} operación(es) aplicada(s) sobre una copia; ` +
     diagram +
     `${r.touchedStories.length} Historia(s) creada(s)/editada(s), todas ejecutables. ` +
-    ("warnings" in r && r.warnings?.length ? `Aviso: ${r.warnings.length} dependencia(s) de llegada sin efecto (ver warnings). ` : "") +
+    (warningCount("ARRIVAL_DEPENDENCY_INACTIVE") ? `Aviso: ${warningCount("ARRIVAL_DEPENDENCY_INACTIVE")} dependencia(s) de llegada sin efecto (ver warnings). ` : "") +
+    (warningCount("STORY_OUTCOME_CHANGED") ? `Aviso: ${warningCount("STORY_OUTCOME_CHANGED")} Historia(s) que el lote no editó cambiaron de desenlace (ver warnings). ` : "") +
     `${r.dryRun ? "No se devuelve documento." : "document" in r ? "Documento nuevo en el 2.º bloque." : "Sin documento (returnDocument:false): sigue con editorUrl y resultRevision."} resultRevision ${r.resultRevision.slice(0, 19)}…` +
     /* MCP-TOKEN-EFFICIENCY-002: el enlace va UNA vez, en editorUrl del 2.º bloque (antes se repetía aquí: hasta 16.000 caracteres). */
     ("editorUrl" in r && r.editorUrl ? "\nEnlace para abrirlo en Fluyo (dáselo al usuario): editorUrl, en el 2.º bloque." : "") +
