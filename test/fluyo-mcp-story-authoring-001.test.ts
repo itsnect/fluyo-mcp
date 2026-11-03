@@ -104,7 +104,7 @@ describe("T1 · catálogo", () => {
     const { tools } = await client.listTools();
     const d = tools.find(t => t.name === "author_document")!.description!;
     assert.match(d, /FALLO REAL: evento SET_AVAILABILITY DOWN sobre el destino, ANTES del envío/);
-    assert.match(d, /En el MISMO momento no falla y un message nunca causa un fallo/);
+    assert.match(d, /Un message nunca causa un fallo/);
     assert.match(d, /set_initial_availability afecta a TODAS las Historias de la página/);
     assert.match(d, /LANGUAGE: names and messages in the language of the user's request, not of this catalog/);
     assert.match(d, /No traduzcas los elementos que ya tiene el documento/);
@@ -647,5 +647,44 @@ describe("T9 · escenarios y formato", () => {
     assert.equal(a.document.doc.pages[0].scenarios[0].steps[1].message, "The bank goes silent");
     assert.equal(a.document.doc.pages[0].scenarios[0].steps[1].eventTypeId, undefined);
     assert.equal(JSON.stringify(a.document.doc.pages[0].nodes), JSON.stringify(ui.doc.pages[0].nodes));
+  });
+});
+
+/* ═══════════════ VARIANTS-EXPERIMENT · Fase B ═══════════════ */
+
+describe("Variantes: lo que la description debe dejar inequívoco", () => {
+  /* Solo cuenta lo que ve un cliente que trunca a 2 048 caracteres: una regla cortada no es una regla. */
+  const head = async () => (await client.listTools()).tools.find(t => t.name === "author_document")!.description!.slice(0, 2048);
+  const RULES: Array<[string, RegExp]> = [
+    ["Historia NUEVA", /\bNEW Story\b/],
+    ["en la misma página", /NEW Story on the same page/],
+    ["la original no se edita", /never edit the original/],
+    ["no hay parentesco", /no parent\/variant field/],
+    ["N es la posición en moments[]", /Step N = the Nth element of moments\[\]/],
+    ["N no es el stepId", /moments\[\], not its stepId/],
+    ["conserva los momentos 1..N", /Keep moments 1\.\.N unchanged/],
+    ["diverge DESPUÉS de N", /diverge AFTER moment N/],
+    ["pregunta ante varias candidatas, antes de escribir", /more than one existing Story reasonably matches[^.]*ask the user which one before any write\./],
+    ["DOWN antes del envío", /FALLO: destino DOWN en un momento ANTERIOR al envío/],
+    ["DOWN en el mismo momento no falla", /en el MISMO momento no falla/],
+  ];
+  for (const [name, re] of RULES) it(`${name}, entero dentro de los primeros 2 048 caracteres`, async () => assert.match(await head(), re));
+
+  it("la regla de la variante queda junto a la del fallo", async () => {
+    const h = await head();
+    assert.ok(h.indexOf("VARIANT / ANOTHER WAY") - h.indexOf("FALLO:") < 100, "no están adyacentes");
+  });
+
+  it("el catálogo no gana ninguna primitive de variantes", async () => {
+    assert.doesNotMatch(JSON.stringify(await client.listTools()), /variantOf|create_variant|upToStepId|parentStory/);
+  });
+
+  it("lo que dice es cierto: con dos pasos en un momento, el paso 2 es moments[1] y su stepId es 3", async () => {
+    const step = (extra: Record<string, unknown>) => S("add_step", { storyId: { ref: "v" }, eventTypeId: { ref: "req" }, target: { edgeId: 4 }, ...extra });
+    const a = await author(await system(), [REQ, S("create_story", { ref: "v", name: "Two at once" }), step({ ref: "a" }), step({ placement: { sameMomentAs: { ref: "a" } } }), step({})]);
+    const moments = data(await call("describe_document", { document: a.editorUrl })).pages[0].stories[0].moments;
+    assert.equal(moments.length, 2);
+    assert.equal(moments[0].steps.length, 2);
+    assert.equal(moments[1].steps[0].stepId, 3, "el paso 2 que ve la persona es el stepId 3");
   });
 });

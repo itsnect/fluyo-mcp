@@ -456,25 +456,25 @@ server.registerTool(
   {
     title: "Crear, modificar y eliminar el diagrama (nodos y conexiones), Historias y eventos de un documento Fluyo",
     annotations: TOOL_PURA,
-    /* MCP-DESCRIPTIONS-001: lo imprescindible (baseRevision, enlace, refs, estado final, eventos, reverse, tiempo y dependencias) va en los
+    /* MCP-DESCRIPTIONS-001: lo imprescindible (baseRevision, enlace, refs, estado final, eventos, fallo, variantes, reverse, tiempo y dependencias) va en los
        primeros 2 048 caracteres, porque hay clientes que truncan las descriptions largas; lo que el schema ya dice no se repite, y la lista de
        operaciones por alcance (K9) va al FINAL. Un test fija ese orden. */
     description:
       "Historia = Story. Aplica un LOTE ATÓMICO (todo o nada) de operaciones sobre una COPIA del documento; el original no cambia. " +
       "LANGUAGE: names and messages in the language of the user's request, not of this catalog. " +
-      "CLAVE: baseRevision = la revisión de ESTE documento ('revision' de create_* o de describe_document, o el resultRevision de la autoría anterior); si no coincide, REVISION_MISMATCH con la real en 'actual'. " +
+      "CLAVE: baseRevision = la revisión de ESTE documento ('revision' de create_* o de describe_document, o el resultRevision de la autoría anterior). " +
       "La respuesta trae changes, refs [{ref,type,pageIndex,id}], resultRevision (el baseRevision de la siguiente) y editorUrl: el enlace fluyo.space/#d=… del resultado; dáselo al usuario y pásalo como 'document' en la siguiente llamada (si no cabe, editorUrlError LINK_TOO_LARGE). " +
       "stories[] trae el outcome; run_story para ver el Trace. " +
       "LOTE: 'ref' nombra algo creado en el lote (no se guarda; por página) y {ref} vale después en source/target, update_*/delete_*, storyId, eventTypeId y target de pasos: diagrama, eventos e Historia caben en una sola llamada. " +
-      "Se evalúa el ESTADO FINAL: si deja una Historia apuntando a algo eliminado se rechaza TODO con REFERENCED_ENTITY (nada se limpia en silencio). " +
-      "EVENTOS (alcance 'eventType', GLOBALES al documento, sin pageIndex): primitive FLOW = conexión, OCCURRENCE = elemento, SET_AVAILABILITY = elemento que pasa a availability UP|DOWN; sentence con {source} {target} {name} (en un evento de elemento, {target} es el elemento). " +
-      "Un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) ni se elimina (REFERENCED_ENTITY). " +
-      "FALLO: destino DOWN en un momento ANTERIOR al envío. " +
+      "Se evalúa el ESTADO FINAL: si deja una Historia apuntando a algo eliminado se rechaza TODO con REFERENCED_ENTITY. " +
+      "EVENTOS (alcance 'eventType', GLOBALES al documento, sin pageIndex): primitive FLOW = conexión, OCCURRENCE = elemento, SET_AVAILABILITY = elemento que pasa a availability UP|DOWN; sentence con {source} {target} {name}. " +
+      "FALLO: destino DOWN en un momento ANTERIOR al envío; en el MISMO momento no falla. " +
+      "VARIANT / ANOTHER WAY FROM STEP N: a NEW Story on the same page; never edit the original; no parent/variant field exists. Step N = the Nth element of moments[], not its stepId. Keep moments 1..N unchanged and diverge AFTER moment N. If more than one existing Story reasonably matches the request, ask the user which one before any write. " +
       "SENTIDO: target {edgeId|ref, reverse:true} recorre la conexión de to a from: la respuesta va por la MISMA conexión, no dibujes la inversa. " +
-      "TIEMPO: add_step añade al final tras waitMs (por defecto 1000, el primero 0) o en el mismo momento con placement; waitMs 0 = el mismo momento que el anterior. " +
+      "TIEMPO: add_step añade al final tras waitMs o en el mismo momento con placement; waitMs 0 = el mismo momento que el anterior. " +
       "waitMs se cuenta desde el INICIO del momento anterior y no incluye ni espera el viaje visual del token de un SEND. " +
-      "DEPENDENCIAS DE LLEGADA (explícitas, nunca se infieren de las conexiones). " +
       "PATRÓN: todo paso que narre la recepción, el procesamiento o la consecuencia de un envío declara waitsForArrivalOf de ese SEND (A→B→C: M1 A envía a B; M2 B procesa, waitsForArrivalOf [M1]; M3 B envía a C; M4 C procesa, waitsForArrivalOf [M3]); lo que no dependa de una llegada lleva solo waitMs; un paso sobre el nodo destino sin dependencia no es una recepción. " +
+      "DEPENDENCIAS DE LLEGADA: explícitas, nunca se infieren de las conexiones. " +
       "Solo se espera a pasos SEND de un momento ANTERIOR (un paso de elemento no llega a ningún sitio; tras él basta waitMs: un retraso desplaza también los momentos siguientes). " +
       "Un envío fallido también llega: se ve el fallo en el destino. " +
       "Después: set_arrival_dependencies (reemplaza; [] las quita). " +
@@ -483,10 +483,12 @@ server.registerTool(
       "update_* solo cambia lo enviado. " +
       "duplicate_node copia también las conexiones ENTRE los elementos; 'ref' nombra la copia. " +
       "motion fast/normal/slow = 500/1100/1800 ms es presentación: no lo uses para calcular esperas. " +
-      "FALLO REAL: evento SET_AVAILABILITY DOWN sobre el destino, ANTES del envío: este queda not_completed y outcome failed (moment = el paso N de la app). En el MISMO momento no falla y un message nunca causa un fallo. " +
+      "FALLO REAL: evento SET_AVAILABILITY DOWN sobre el destino, ANTES del envío: este queda not_completed y outcome failed (moment = el paso N de la app). Un message nunca causa un fallo. " +
       "set_initial_availability afecta a TODAS las Historias de la página: si otra cambia de desenlace, aviso STORY_OUTCOME_CHANGED. " +
       "storyRefs da los ids de lo creado con 'ref' en Historias, pasos y eventos. " +
       "No traduzcas los elementos que ya tiene el documento. " +
+      "Si baseRevision no coincide: REVISION_MISMATCH con la real en 'actual'. Nada se limpia en silencio. waitMs por defecto 1000, el primero 0. En un evento de elemento, {target} es el elemento. " +
+      "Un evento en uso no cambia de primitiva ni de disponibilidad (EVENT_TYPE_LOCKED) ni se elimina (REFERENCED_ENTITY). " +
       "Operaciones: create_story, rename_story, duplicate_story, delete_story, add_step, remove_step, move_step, duplicate_step, retarget_step, set_wait, set_step_message, set_arrival_dependencies, set_observed_flow (alcance 'story'); set_initial_availability, create_node, create_connection, update_node, update_connection, delete_node, delete_connection, reorder_nodes, duplicate_node (alcance 'page'); create_page, rename_page, delete_page, set_theme (alcance 'document'); create_event_type, update_event_type, delete_event_type (alcance 'eventType': los eventos son GLOBALES al documento, sin pageIndex; las Historias sólo los referencian por id).",
     inputSchema: {
       document: DocumentInputSchema,

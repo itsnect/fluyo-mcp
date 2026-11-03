@@ -22,7 +22,7 @@ interface Mutation { name: string; file: string; edits: Edit[] }
 const M = (name: string, file: string, ...edits: Edit[]): Mutation => ({ name, file, edits });
 
 const SERVER = "src/server.ts", AUTH = "src/authoring.ts", MODEL = "src/model.ts";
-const CLAVE = `      "CLAVE: baseRevision = la revisión de ESTE documento ('revision' de create_* o de describe_document, o el resultRevision de la autoría anterior); si no coincide, REVISION_MISMATCH con la real en 'actual'. " +\n`;
+const CLAVE = `      "CLAVE: baseRevision = la revisión de ESTE documento ('revision' de create_* o de describe_document, o el resultRevision de la autoría anterior). " +\n`;
 const SENTIDO = '      "SENTIDO: target {edgeId|ref, reverse:true} recorre la conexión de to a from: la respuesta va por la MISMA conexión, no dibujes la inversa. " +\n';
 const LAST_RULE = `      "duplicate_node copia también las conexiones ENTRE los elementos; 'ref' nombra la copia. " +\n`;
 const FIRST = '      "Historia = Story. Aplica un LOTE ATÓMICO (todo o nada) de operaciones sobre una COPIA del documento; el original no cambia. " +\n';

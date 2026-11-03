@@ -71,9 +71,20 @@ const MUTATIONS: Mutation[] = [
   M("M36 storyRefs incluye lo borrado en el lote", AUTH, ["return facts.some(s => s.pageIndex === pageIndex && s.storyId === id) ? [{ ref, type: \"story\", pageIndex, id }] : [];", 'return [{ ref, type: "story", pageIndex, id }];']),
   M("M37 storyRefs dentro de refs (cambia lo que ya se leía)", AUTH, ["refs: result.refs ?? [],\n", "refs: [...(result.refs ?? []), ...createdStoryRefs],\n"]),
   /* Descriptions */
-  M("M38 sin la receta del fallo", SERVER, ['"FALLO REAL: evento SET_AVAILABILITY DOWN sobre el destino, ANTES del envío: este queda not_completed y outcome failed (moment = el paso N de la app). En el MISMO momento no falla y un message nunca causa un fallo. " +\n', ""]),
+  M("M38 sin la receta del fallo", SERVER, ['"FALLO REAL: evento SET_AVAILABILITY DOWN sobre el destino, ANTES del envío: este queda not_completed y outcome failed (moment = el paso N de la app). Un message nunca causa un fallo. " +\n', ""]),
   M("M39 sin la regla del idioma", SERVER, [`"LANGUAGE: names and messages in the language of the user's request, not of this catalog. " +\n`, ""]),
   M("M40 el campo del mensaje no recuerda el idioma", AUTH, [`StepMessage.describe("In the language of the user's request. Frase de ESTE paso`, 'StepMessage.describe("Frase de ESTE paso']),
+  /* Variantes (VARIANTS-EXPERIMENT, Fase B) */
+  M("M41 sin la regla de la variante", SERVER, ['      "VARIANT / ANOTHER WAY FROM STEP N: a NEW Story on the same page; never edit the original; no parent/variant field exists. Step N = the Nth element of moments[], not its stepId. Keep moments 1..N unchanged and diverge AFTER moment N. If more than one existing Story reasonably matches the request, ask the user which one before any write. " +\n', ""]),
+  M("M42 permite editar la original", SERVER, ["never edit the original; ", ""]),
+  M("M43 otra página", SERVER, ["a NEW Story on the same page;", "a NEW Story;"]),
+  M("M44 el paso N es el stepId", SERVER, ["Step N = the Nth element of moments[], not its stepId.", "Step N = the step with stepId N."]),
+  M("M45 reemplaza el momento N", SERVER, ["Keep moments 1..N unchanged and diverge AFTER moment N.", "Keep moments 1..N-1 unchanged and replace moment N."]),
+  M("M46 elige en vez de preguntar", SERVER, ["ask the user which one before any write.", "pick the closest one."]),
+  M("M47 pregunta después de escribir", SERVER, ["which one before any write.", "which one afterwards."]),
+  M("M48 sin la regla del mismo momento", SERVER, ["ANTERIOR al envío; en el MISMO momento no falla.", "ANTERIOR al envío."]),
+  M("M49 el fallo en el mismo momento", SERVER, ["en un momento ANTERIOR al envío; en el MISMO momento no falla.", "en el mismo momento que el envío."]),
+  M("M50 la regla se va fuera de los 2 048 caracteres", SERVER, ['      "VARIANT / ANOTHER WAY FROM STEP N: a NEW Story on the same page; never edit the original; no parent/variant field exists. Step N = the Nth element of moments[], not its stepId. Keep moments 1..N unchanged and diverge AFTER moment N. If more than one existing Story reasonably matches the request, ask the user which one before any write. " +\n', ""], ['      "motion fast', '      "VARIANT / ANOTHER WAY FROM STEP N: a NEW Story on the same page; never edit the original; no parent/variant field exists. Step N = the Nth element of moments[], not its stepId. Keep moments 1..N unchanged and diverge AFTER moment N. If more than one existing Story reasonably matches the request, ask the user which one before any write. " +\n      "motion fast']),
 ];
 
 function layout(root: string) {
